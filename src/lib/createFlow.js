@@ -1,8 +1,10 @@
 import { uploadAsset } from "../api/assets.js";
+import { storageKeyOf } from "./media.js";
 
 export async function materialToAsset(material) {
   if (!material) return null;
-  if (material.storageKey) return material;
+  const storageKey = material.storageKey || storageKeyOf(material.url || material.src);
+  if (storageKey) return { ...material, storageKey };
   if (material.file instanceof File) {
     return mergeMaterial(material, await uploadAsset(material.file));
   }
@@ -61,6 +63,24 @@ export function tasksToMessages(tasks = []) {
   for (const task of tasks) {
     if (task.prompt) messages.push({ type: "user", text: task.prompt });
     if (task.status === "SUCCEEDED") messages.push(taskToResultMessage(task));
+    if (task.status === "PENDING" || task.status === "RUNNING") {
+      messages.push({
+        type: "result",
+        pending: true,
+        taskId: task.id,
+        text: task.category === "video" ? "视频生成中，通常需要几分钟，请稍候或稍后刷新会话" : "图片生成中，请稍候…",
+        model: task.modelName || "模型",
+        creationType: task.category === "video" ? "视频" : "图片",
+        createdAt: formatClock(task.createdAt),
+        elapsed: elapsedOf(task),
+        credits: task.creditCost || 0,
+        ratio: task.params?.ratio || "—",
+        resolution: task.params?.resolution || "—",
+        duration: task.category === "video" ? `${task.params?.durationSec || "—"} 秒` : "—",
+        media: { type: task.category || "image", src: "" },
+        creations: [],
+      });
+    }
     if (task.status === "FAILED") {
       messages.push({
         type: "result",

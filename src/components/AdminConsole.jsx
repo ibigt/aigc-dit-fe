@@ -52,6 +52,49 @@ const categoryTabs = [{ id: "all", label: "全部" }, { id: "video", label: "视
 const providerOptions = ["全部来源", "ComfyUI", "RunningHub", "手动配置"];
 const usageColors = ["#665cf1", "#33a474", "#e2943b", "#d76588", "#8b94a1"];
 
+const MODE_CAP_OPTIONS = [
+  { id: "t2i", kind: "image", label: "t2i 文生图", pathKey: "t2iPath", pathLabel: "文生图路径", placeholder: "rhart-image-g-2/text-to-image", defaultPath: "rhart-image-g-2/text-to-image" },
+  { id: "i2i", kind: "image", label: "i2i 参考生图", pathKey: "i2iPath", pathLabel: "参考生图路径", placeholder: "厂商参考生图路径" },
+  { id: "t2v", kind: "video", label: "t2v 文生视频", pathKey: "t2vPath", pathLabel: "文生视频路径", placeholder: "rhart-video/sparkvideo-2.0/text-to-video", defaultPath: "rhart-video/sparkvideo-2.0/text-to-video" },
+  { id: "r2v", kind: "video", label: "r2v 参考生视频", pathKey: "r2vPath", pathLabel: "参考生视频路径", placeholder: "rhart-video/sparkvideo-2.0/multimodal-video", defaultPath: "rhart-video/sparkvideo-2.0/multimodal-video" },
+  { id: "v2v", kind: "video", label: "v2v 首尾帧", pathKey: "v2vPath", pathLabel: "首尾帧路径", placeholder: "厂商首尾帧路径" },
+];
+
+function pathValue(draft, pathKey) {
+  return draft?.[pathKey] || draft?.adapterConfig?.[pathKey] || "";
+}
+
+function capsForCategory(category) {
+  return MODE_CAP_OPTIONS.filter((item) => item.kind === category);
+}
+
+function filterCapsForCategory(caps, category) {
+  const allowed = new Set(capsForCategory(category).map((item) => item.id));
+  const next = [];
+  for (const item of canonicalizeCaps(caps)) {
+    if (item === category || allowed.has(item)) {
+      if (!next.includes(item)) next.push(item);
+    }
+  }
+  if (!next.includes(category)) next.unshift(category);
+  return next;
+}
+
+function canonicalizeCap(cap) {
+  if (cap === "i2v") return "r2v";
+  if (cap === "frames" || cap === "frame") return "v2v";
+  return cap;
+}
+
+function canonicalizeCaps(caps) {
+  const seen = [];
+  for (const item of caps || []) {
+    const next = canonicalizeCap(item);
+    if (!seen.includes(next)) seen.push(next);
+  }
+  return seen;
+}
+
 function formatInt(value) {
   return Number(value || 0).toLocaleString("zh-CN");
 }
@@ -264,9 +307,43 @@ function PriceEditor({ title, values, onChange }) {
 
 function ModelDialog({ model, onClose, onSave, saving }) {
   const emptyPricing = { unit: "张", sale: { input: "0", output: "3 积分", cache: "0" }, cost: { input: "0", output: "¥0.20", cache: "0" } };
-  const [draft, setDraft] = useState(model || { name: "", category: "image", provider: "ComfyUI", modelKey: "", endpoint: "http://127.0.0.1:8188", description: "", enabled: true, apiKey: "", concurrentLimit: 1, instanceType: "", proxy: "", pricing: emptyPricing, logo: "/model-logos/comfyui-color.svg" });
+  const [draft, setDraft] = useState(() => {
+    if (!model) {
+      return { name: "", category: "image", provider: "ComfyUI", modelKey: "", endpoint: "http://127.0.0.1:8188", description: "", enabled: true, apiKey: "", concurrentLimit: 1, instanceType: "", proxy: "", pricing: emptyPricing, logo: "/model-logos/comfyui-color.svg", capabilities: ["image", "t2i", "i2i"], adapterConfig: {}, t2iPath: "", i2iPath: "", t2vPath: "", r2vPath: "", v2vPath: "" };
+    }
+    return { ...model, capabilities: filterCapsForCategory(model.capabilities, model.category || "image") };
+  });
   const update = (key, value) => setDraft((current) => ({ ...current, [key]: value }));
-  const changeProvider = (provider) => setDraft((current) => ({ ...current, provider, endpoint: provider === "ComfyUI" ? "http://127.0.0.1:8188" : provider === "RunningHub" ? "https://www.runninghub.ai/api" : "/mock-api" }));
+  const runningHubCaps = (category) => (category === "video" ? ["video", "t2v"] : ["image", "t2i"]);
+  const changeProvider = (provider) => setDraft((current) => ({
+    ...current,
+    provider,
+    endpoint: provider === "ComfyUI" ? "http://127.0.0.1:8188" : provider === "RunningHub" ? "https://www.runninghub.ai" : "/mock-api",
+    capabilities: provider === "RunningHub" ? runningHubCaps(current.category) : current.capabilities,
+  }));
+  const changeCategory = (category) => setDraft((current) => ({
+    ...current,
+    category,
+    capabilities: current.provider === "RunningHub"
+      ? runningHubCaps(category)
+      : filterCapsForCategory(current.capabilities, category),
+  }));
+  const toggleCap = (cap) => setDraft((current) => {
+    const allowed = capsForCategory(current.category).some((item) => item.id === cap);
+    if (!allowed) return current;
+    const caps = filterCapsForCategory(current.capabilities, current.category);
+    const enable = !caps.includes(cap);
+    const next = { ...current, capabilities: enable ? [...caps, cap] : caps.filter((item) => item !== cap) };
+    if (enable) {
+      const field = MODE_CAP_OPTIONS.find((item) => item.id === cap);
+      if (field?.defaultPath && !pathValue(current, field.pathKey)) {
+        next[field.pathKey] = field.defaultPath;
+      }
+    }
+    return next;
+  });
+  const visibleCapOptions = capsForCategory(draft.category);
+  const caps = filterCapsForCategory(draft.capabilities, draft.category);
   const updatePrice = (side, key, value) => setDraft((current) => ({ ...current, pricing: { ...(current.pricing || emptyPricing), [side]: { ...(current.pricing?.[side] || emptyPricing[side]), [key]: value } } }));
   const providerCopy = draft.provider === "ComfyUI" ? "配置服务地址、API Key 与 API 格式工作流。" : draft.provider === "RunningHub" ? "配置独立 API Key、云端工作流标识与并发限制。" : "配置兼容 API 的 Base URL、模型标识与可选代理。";
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -276,6 +353,7 @@ function ModelDialog({ model, onClose, onSave, saving }) {
         event.preventDefault();
         onSave({
           ...draft,
+          capabilities: filterCapsForCategory(draft.capabilities, draft.category),
           badge: categoryLabels[draft.category] ? (draft.category === "video" ? "视频" : "图像") : draft.badge,
           category: draft.category,
           enabled: draft.enabled !== false,
@@ -284,11 +362,15 @@ function ModelDialog({ model, onClose, onSave, saving }) {
       }}>
         <div className="model-form-grid">
           <label>名称<input required value={draft.name} onChange={(event) => update("name", event.target.value)} placeholder="例如：自有视频模型" /></label>
-          <label>模型类型<select value={draft.category} onChange={(event) => update("category", event.target.value)}><option value="image">图像模型</option><option value="video">视频模型</option></select></label>
+          <label>模型类型<select value={draft.category} onChange={(event) => changeCategory(event.target.value)}><option value="image">图像模型</option><option value="video">视频模型</option></select></label>
           <label>接入来源<select value={draft.provider} onChange={(event) => changeProvider(event.target.value)}><option>ComfyUI</option><option>RunningHub</option><option>手动配置</option></select></label>
           <label>{draft.provider === "RunningHub" ? "工作流 / 模型 ID" : draft.provider === "ComfyUI" ? "工作流文件 / 模型标识" : "模型标识"}<input required value={draft.modelKey} onChange={(event) => update("modelKey", event.target.value)} placeholder="model-id / workflow.json" /></label>
           <label className="model-form-wide">{draft.provider === "ComfyUI" ? "ComfyUI 服务地址" : draft.provider === "RunningHub" ? "RunningHub API 地址" : "Base URL"}<input required value={draft.endpoint || ""} onChange={(event) => update("endpoint", event.target.value)} /></label>
           <label className="model-form-wide">API Key<input type="password" value={draft.apiKey || ""} onChange={(event) => update("apiKey", event.target.value)} placeholder={draft.hasApiKey ? "已加密保存，留空则保持不变" : "明文仅提交一次，服务端加密落库"} /></label>
+          <div className="model-form-wide model-cap-field"><span>能力勾选</span><div className="model-cap-row">{visibleCapOptions.map((cap) => <label key={cap.id} className="model-cap-chip"><input type="checkbox" checked={caps.includes(cap.id)} onChange={() => toggleCap(cap.id)} />{cap.label}</label>)}</div></div>
+          {draft.provider === "RunningHub" && visibleCapOptions.filter((cap) => caps.includes(cap.id)).map((cap) => (
+            <label key={cap.pathKey} className="model-form-wide">{cap.pathLabel}<input value={pathValue(draft, cap.pathKey)} onChange={(event) => update(cap.pathKey, event.target.value)} placeholder={cap.placeholder} /></label>
+          ))}
           {draft.provider === "RunningHub" && <><label>实例类型<input value={draft.instanceType || ""} onChange={(event) => update("instanceType", event.target.value)} placeholder="可选，如 48G" /></label><label>并发限制<input type="number" min="1" max="10" value={draft.concurrentLimit || 1} onChange={(event) => update("concurrentLimit", Number(event.target.value))} /></label></>}
           {draft.provider === "手动配置" && <label className="model-form-wide">代理地址<input value={draft.proxy || ""} onChange={(event) => update("proxy", event.target.value)} placeholder="可选，如 http://127.0.0.1:9090" /></label>}
           <label className="model-form-wide">能力说明<input value={draft.description || ""} onChange={(event) => update("description", event.target.value)} placeholder="简要说明适用场景" /></label>
@@ -319,14 +401,25 @@ function ModelCard({ model, onToggle, onEdit, onRemove }) {
 }
 
 function toModelPayload(draft) {
+  const category = draft.category;
+  const caps = filterCapsForCategory(draft.capabilities, category);
+  const adapterConfig = draft.provider === "RunningHub"
+    ? MODE_CAP_OPTIONS.reduce((config, field) => {
+      if (!caps.includes(field.id)) return config;
+      const value = (draft[field.pathKey] || config[field.pathKey] || field.defaultPath || "").trim();
+      if (value) config[field.pathKey] = value;
+      return config;
+    }, { ...(draft.adapterConfig || {}) })
+    : draft.adapterConfig;
   return {
     name: draft.name,
     modelKey: draft.modelKey,
     provider: draft.provider,
     endpoint: draft.endpoint,
     apiKey: draft.apiKey || undefined,
-    category: draft.category,
-    capabilities: draft.capabilities,
+    category,
+    capabilities: caps,
+    adapterConfig,
     pricing: draft.pricing,
     enabled: draft.enabled !== false,
     description: draft.description,
