@@ -53,23 +53,102 @@ const providerOptions = ["全部来源", "ComfyUI", "RunningHub", "手动配置"
 const usageColors = ["#665cf1", "#33a474", "#e2943b", "#d76588", "#8b94a1"];
 
 const MODE_CAP_OPTIONS = [
-  { id: "t2i", kind: "image", label: "t2i 文生图", pathKey: "t2iPath", pathLabel: "文生图路径", placeholder: "rhart-image-g-2/text-to-image", defaultPath: "rhart-image-g-2/text-to-image" },
-  { id: "i2i", kind: "image", label: "i2i 参考生图", pathKey: "i2iPath", pathLabel: "参考生图路径", placeholder: "厂商参考生图路径" },
-  { id: "t2v", kind: "video", label: "t2v 文生视频", pathKey: "t2vPath", pathLabel: "文生视频路径", placeholder: "rhart-video/sparkvideo-2.0/text-to-video", defaultPath: "rhart-video/sparkvideo-2.0/text-to-video" },
-  { id: "r2v", kind: "video", label: "r2v 参考生视频", pathKey: "r2vPath", pathLabel: "参考生视频路径", placeholder: "rhart-video/sparkvideo-2.0/multimodal-video", defaultPath: "rhart-video/sparkvideo-2.0/multimodal-video" },
-  { id: "v2v", kind: "video", label: "v2v 首尾帧", pathKey: "v2vPath", pathLabel: "首尾帧路径", placeholder: "厂商首尾帧路径" },
+  { id: "t2i", kind: "image", label: "t2i 文生图", pathKey: "t2iPath", pathLabel: "文生图路径 / URL", placeholder: "rhart-image-g-2/text-to-image", defaultPath: "rhart-image-g-2/text-to-image" },
+  { id: "i2i", kind: "image", label: "i2i 参考生图", pathKey: "i2iPath", pathLabel: "参考生图路径 / URL", placeholder: "厂商参考生图路径" },
+  { id: "t2v", kind: "video", label: "t2v 文生视频", pathKey: "t2vPath", pathLabel: "文生视频路径 / URL", placeholder: "rhart-video/sparkvideo-2.0/text-to-video", defaultPath: "rhart-video/sparkvideo-2.0/text-to-video" },
+  { id: "r2v", kind: "video", label: "r2v 参考生视频", pathKey: "r2vPath", pathLabel: "参考生视频路径 / URL", placeholder: "rhart-video/sparkvideo-2.0/multimodal-video", defaultPath: "rhart-video/sparkvideo-2.0/multimodal-video" },
+  { id: "i2v", kind: "video", label: "i2v 首尾帧", pathKey: "i2vPath", pathLabel: "首尾帧路径 / URL", placeholder: "厂商首尾帧路径" },
 ];
 
+const ADAPTER_OPTIONS = [
+  { key: "gpt-image-2", label: "GPT Image 2", category: "image", provider: "RunningHub", defaultEndpoint: "https://www.runninghub.ai", modes: ["t2i"], defaultPaths: { t2iPath: "rhart-image-g-2/text-to-image" } },
+  { key: "seedance-2", label: "Seedance 2.x", category: "video", provider: "RunningHub", defaultEndpoint: "https://www.runninghub.ai", modes: ["t2v", "r2v"], defaultPaths: { t2vPath: "rhart-video/sparkvideo-2.0/text-to-video", r2vPath: "rhart-video/sparkvideo-2.0/multimodal-video" } },
+  { key: "minimax-h3", label: "MiniMax-H3", category: "video", provider: "ComfyUI", defaultEndpoint: "http://127.0.0.1:8188", modes: ["t2v", "r2v", "i2v"], defaultPaths: {} },
+];
+
+function adaptersForCategory(category) {
+  return ADAPTER_OPTIONS.filter((item) => item.category === category);
+}
+
+function adapterOf(key) {
+  return ADAPTER_OPTIONS.find((item) => item.key === key);
+}
+
+function defaultAdapterKey(category) {
+  return adaptersForCategory(category)[0]?.key || "";
+}
+
+function inferAdapterKey(model) {
+  if (model?.adapterKey && adapterOf(model.adapterKey)) return model.adapterKey;
+  const provider = String(model?.provider || "").toLowerCase();
+  const key = String(model?.modelKey || "").toLowerCase();
+  const category = model?.category;
+  if (key.includes("minimax") || (provider.includes("comfy") && category === "video")) return "minimax-h3";
+  if (key.includes("seedance") || (provider.includes("running") && category === "video")) return "seedance-2";
+  if (key.includes("gpt-image") || (provider.includes("running") && category === "image")) return "gpt-image-2";
+  return defaultAdapterKey(category);
+}
+
+const MODEL_LOGO_CATALOG = [
+  { file: "/model-logos/openai.svg", label: "OpenAI / GPT", keys: ["gpt-image", "gpt", "openai", "dall-e", "dalle", "sora"] },
+  { file: "/model-logos/bytedance-color.svg", label: "字节 / Seedance", keys: ["seedance", "seedream", "bytedance"] },
+  { file: "/model-logos/doubao-color.svg", label: "豆包", keys: ["doubao", "豆包"] },
+  { file: "/model-logos/midjourney.svg", label: "Midjourney / Niji", keys: ["midjourney", "niji"] },
+  { file: "/model-logos/qwen-color.svg", label: "通义千问", keys: ["qwen", "tongyi", "千问"] },
+  { file: "/model-logos/kling-color.svg", label: "可灵", keys: ["kling", "可灵"] },
+  { file: "/model-logos/alibabacloud-color.svg", label: "阿里 / 万相", keys: ["wan2", "wan-", "万相", "alibaba", "aliyun"] },
+  { file: "/model-logos/minimax-color.svg", label: "MiniMax", keys: ["minimax"] },
+  { file: "/model-logos/hailuo-color.svg", label: "海螺", keys: ["hailuo", "海螺"] },
+  { file: "/model-logos/runway.svg", label: "Runway", keys: ["runway", "aleph"] },
+  { file: "/model-logos/google-color.svg", label: "Google", keys: ["google", "gemini", "imagen", "veo", "omni"] },
+  { file: "/model-logos/lightricks.svg", label: "Lightricks / LTX", keys: ["ltx", "lightricks"] },
+  { file: "/model-logos/nanobanana-color.svg", label: "Banana", keys: ["banana"] },
+  { file: "/model-logos/elevenlabs.svg", label: "ElevenLabs", keys: ["eleven"] },
+  { file: "/model-logos/comfyui-color.svg", label: "ComfyUI", keys: ["comfy"] },
+];
+const FALLBACK_LOGO = "/model-logos/comfyui-color.svg";
+
+function matchModelLogo(name, modelKey, provider) {
+  const haystack = `${name || ""} ${modelKey || ""}`.toLowerCase();
+  let best = null;
+  let bestLen = 0;
+  for (const item of MODEL_LOGO_CATALOG) {
+    for (const key of item.keys) {
+      if (haystack.includes(key.toLowerCase()) && key.length > bestLen) {
+        best = item.file;
+        bestLen = key.length;
+      }
+    }
+  }
+  if (best) return best;
+  return FALLBACK_LOGO;
+}
+
+function modelLogoSrc(model) {
+  return model?.logo || matchModelLogo(model?.name, model?.modelKey, model?.provider);
+}
+
+function pathPlaceholder(cap, adapterKey) {
+  const adapter = adapterOf(adapterKey);
+  if (adapter?.key === "minimax-h3") return "可留空（MiniMax-H3 使用内置工作流）";
+  if (adapter?.provider === "RunningHub") return cap.placeholder;
+  return "接口路径或完整 URL";
+}
+
 function pathValue(draft, pathKey) {
-  return draft?.[pathKey] || draft?.adapterConfig?.[pathKey] || "";
+  const direct = draft?.[pathKey] || draft?.adapterConfig?.[pathKey] || "";
+  if (direct) return direct;
+  if (pathKey === "i2vPath") return draft?.v2vPath || draft?.adapterConfig?.v2vPath || "";
+  return "";
 }
 
-function capsForCategory(category) {
-  return MODE_CAP_OPTIONS.filter((item) => item.kind === category);
+function capsForAdapter(category, adapterKey) {
+  const allowed = new Set(adapterOf(adapterKey)?.modes || []);
+  return MODE_CAP_OPTIONS.filter((item) => item.kind === category && allowed.has(item.id));
 }
 
-function filterCapsForCategory(caps, category) {
-  const allowed = new Set(capsForCategory(category).map((item) => item.id));
+function filterCapsForAdapter(caps, category, adapterKey) {
+  const allowed = new Set(capsForAdapter(category, adapterKey).map((item) => item.id));
   const next = [];
   for (const item of canonicalizeCaps(caps)) {
     if (item === category || allowed.has(item)) {
@@ -77,12 +156,15 @@ function filterCapsForCategory(caps, category) {
     }
   }
   if (!next.includes(category)) next.unshift(category);
+  const hasMode = next.some((item) => allowed.has(item));
+  if (!hasMode) {
+    for (const mode of allowed) next.push(mode);
+  }
   return next;
 }
 
 function canonicalizeCap(cap) {
-  if (cap === "i2v") return "r2v";
-  if (cap === "frames" || cap === "frame") return "v2v";
+  if (cap === "frames" || cap === "frame" || cap === "v2v") return "i2v";
   return cap;
 }
 
@@ -309,43 +391,78 @@ function ModelDialog({ model, onClose, onSave, saving }) {
   const emptyPricing = { unit: "张", sale: { input: "0", output: "3 积分", cache: "0" }, cost: { input: "0", output: "¥0.20", cache: "0" } };
   const [draft, setDraft] = useState(() => {
     if (!model) {
-      return { name: "", category: "image", provider: "ComfyUI", modelKey: "", endpoint: "http://127.0.0.1:8188", description: "", enabled: true, apiKey: "", concurrentLimit: 1, instanceType: "", proxy: "", pricing: emptyPricing, logo: "/model-logos/comfyui-color.svg", capabilities: ["image", "t2i", "i2i"], adapterConfig: {}, t2iPath: "", i2iPath: "", t2vPath: "", r2vPath: "", v2vPath: "" };
+      const adapterKey = defaultAdapterKey("image");
+      const adapter = adapterOf(adapterKey);
+      return { name: "", category: "image", adapterKey, provider: adapter.provider, modelKey: "", endpoint: adapter.defaultEndpoint, description: "", enabled: true, apiKey: "", concurrentLimit: 1, instanceType: "", proxy: "", pricing: emptyPricing, logo: FALLBACK_LOGO, capabilities: ["image", ...adapter.modes], adapterConfig: {}, t2iPath: adapter.defaultPaths.t2iPath || "", i2iPath: "", t2vPath: "", r2vPath: "", i2vPath: "" };
     }
-    return { ...model, capabilities: filterCapsForCategory(model.capabilities, model.category || "image") };
+    const adapterKey = inferAdapterKey(model);
+    return {
+      ...model,
+      adapterKey,
+      provider: adapterOf(adapterKey)?.provider || model.provider,
+      capabilities: filterCapsForAdapter(model.capabilities, model.category || "image", adapterKey),
+      t2iPath: pathValue(model, "t2iPath"),
+      i2iPath: pathValue(model, "i2iPath"),
+      t2vPath: pathValue(model, "t2vPath"),
+      r2vPath: pathValue(model, "r2vPath"),
+      i2vPath: pathValue(model, "i2vPath"),
+      logo: model.logo || matchModelLogo(model.name, model.modelKey, model.provider),
+    };
   });
   const update = (key, value) => setDraft((current) => ({ ...current, [key]: value }));
-  const runningHubCaps = (category) => (category === "video" ? ["video", "t2v"] : ["image", "t2i"]);
-  const changeProvider = (provider) => setDraft((current) => ({
-    ...current,
-    provider,
-    endpoint: provider === "ComfyUI" ? "http://127.0.0.1:8188" : provider === "RunningHub" ? "https://www.runninghub.ai" : "/mock-api",
-    capabilities: provider === "RunningHub" ? runningHubCaps(current.category) : current.capabilities,
-  }));
-  const changeCategory = (category) => setDraft((current) => ({
-    ...current,
-    category,
-    capabilities: current.provider === "RunningHub"
-      ? runningHubCaps(category)
-      : filterCapsForCategory(current.capabilities, category),
-  }));
+  const updateIdentity = (patch) => setDraft((current) => {
+    const next = { ...current, ...patch };
+    const auto = matchModelLogo(next.name, next.modelKey, next.provider);
+    const prevAuto = matchModelLogo(current.name, current.modelKey, current.provider);
+    if (!current.logo || current.logo === prevAuto || current.logo === FALLBACK_LOGO) {
+      next.logo = auto;
+    }
+    return next;
+  });
+  const applyAdapter = (current, adapterKey, category = current.category) => {
+    const adapter = adapterOf(adapterKey);
+    if (!adapter) return current;
+    const prevDefault = adapterOf(current.adapterKey)?.defaultEndpoint;
+    const next = {
+      ...current,
+      category,
+      adapterKey: adapter.key,
+      provider: adapter.provider,
+      capabilities: filterCapsForAdapter(current.capabilities, category, adapter.key),
+    };
+    if (!current.endpoint || current.endpoint === prevDefault) {
+      next.endpoint = adapter.defaultEndpoint;
+    }
+    for (const [pathKey, path] of Object.entries(adapter.defaultPaths || {})) {
+      if (!pathValue(next, pathKey)) next[pathKey] = path;
+    }
+    const auto = matchModelLogo(next.name, next.modelKey, next.provider);
+    const prevAuto = matchModelLogo(current.name, current.modelKey, current.provider);
+    if (!current.logo || current.logo === prevAuto || current.logo === FALLBACK_LOGO) next.logo = auto;
+    return next;
+  };
+  const changeAdapter = (adapterKey) => setDraft((current) => applyAdapter(current, adapterKey));
+  const changeCategory = (category) => setDraft((current) => applyAdapter(current, defaultAdapterKey(category), category));
   const toggleCap = (cap) => setDraft((current) => {
-    const allowed = capsForCategory(current.category).some((item) => item.id === cap);
+    const allowed = capsForAdapter(current.category, current.adapterKey).some((item) => item.id === cap);
     if (!allowed) return current;
-    const caps = filterCapsForCategory(current.capabilities, current.category);
+    const caps = filterCapsForAdapter(current.capabilities, current.category, current.adapterKey);
     const enable = !caps.includes(cap);
     const next = { ...current, capabilities: enable ? [...caps, cap] : caps.filter((item) => item !== cap) };
-    if (enable) {
+    if (enable && current.provider === "RunningHub") {
       const field = MODE_CAP_OPTIONS.find((item) => item.id === cap);
-      if (field?.defaultPath && !pathValue(current, field.pathKey)) {
-        next[field.pathKey] = field.defaultPath;
+      const adapterPath = adapterOf(current.adapterKey)?.defaultPaths?.[field?.pathKey];
+      if ((adapterPath || field?.defaultPath) && !pathValue(current, field.pathKey)) {
+        next[field.pathKey] = adapterPath || field.defaultPath;
       }
     }
     return next;
   });
-  const visibleCapOptions = capsForCategory(draft.category);
-  const caps = filterCapsForCategory(draft.capabilities, draft.category);
+  const visibleCapOptions = capsForAdapter(draft.category, draft.adapterKey);
+  const caps = filterCapsForAdapter(draft.capabilities, draft.category, draft.adapterKey);
   const updatePrice = (side, key, value) => setDraft((current) => ({ ...current, pricing: { ...(current.pricing || emptyPricing), [side]: { ...(current.pricing?.[side] || emptyPricing[side]), [key]: value } } }));
-  const providerCopy = draft.provider === "ComfyUI" ? "配置服务地址、API Key 与 API 格式工作流。" : draft.provider === "RunningHub" ? "配置独立 API Key、云端工作流标识与并发限制。" : "配置兼容 API 的 Base URL、模型标识与可选代理。";
+  const adapter = adapterOf(draft.adapterKey);
+  const providerCopy = adapter?.provider === "ComfyUI" ? "适配协议决定字段翻译；来源 ComfyUI 与默认服务地址已自动带出。" : "适配协议决定字段翻译；来源 RunningHub 与默认 API 地址已自动带出。";
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="model-dialog model-dialog--wide" role="dialog" aria-modal="true" aria-labelledby="model-dialog-title">
       <header><div><span>模型接入</span><h2 id="model-dialog-title">{model ? "编辑模型" : "接入第三方模型"}</h2><p>{providerCopy}</p></div><button className="modal-close" aria-label="关闭配置" onClick={onClose}><X size={18} /></button></header>
@@ -353,7 +470,7 @@ function ModelDialog({ model, onClose, onSave, saving }) {
         event.preventDefault();
         onSave({
           ...draft,
-          capabilities: filterCapsForCategory(draft.capabilities, draft.category),
+          capabilities: filterCapsForAdapter(draft.capabilities, draft.category, draft.adapterKey),
           badge: categoryLabels[draft.category] ? (draft.category === "video" ? "视频" : "图像") : draft.badge,
           category: draft.category,
           enabled: draft.enabled !== false,
@@ -361,18 +478,19 @@ function ModelDialog({ model, onClose, onSave, saving }) {
         });
       }}>
         <div className="model-form-grid">
-          <label>名称<input required value={draft.name} onChange={(event) => update("name", event.target.value)} placeholder="例如：自有视频模型" /></label>
+          <label>名称<input required value={draft.name} onChange={(event) => updateIdentity({ name: event.target.value })} placeholder="例如：自有视频模型" /></label>
           <label>模型类型<select value={draft.category} onChange={(event) => changeCategory(event.target.value)}><option value="image">图像模型</option><option value="video">视频模型</option></select></label>
-          <label>接入来源<select value={draft.provider} onChange={(event) => changeProvider(event.target.value)}><option>ComfyUI</option><option>RunningHub</option><option>手动配置</option></select></label>
-          <label>{draft.provider === "RunningHub" ? "工作流 / 模型 ID" : draft.provider === "ComfyUI" ? "工作流文件 / 模型标识" : "模型标识"}<input required value={draft.modelKey} onChange={(event) => update("modelKey", event.target.value)} placeholder="model-id / workflow.json" /></label>
-          <label className="model-form-wide">{draft.provider === "ComfyUI" ? "ComfyUI 服务地址" : draft.provider === "RunningHub" ? "RunningHub API 地址" : "Base URL"}<input required value={draft.endpoint || ""} onChange={(event) => update("endpoint", event.target.value)} /></label>
+          <label>适配协议<select required value={draft.adapterKey} onChange={(event) => changeAdapter(event.target.value)}>{adaptersForCategory(draft.category).map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
+          <label>接入来源<input value={draft.provider || ""} readOnly /></label>
+          <label>模型标识<input required value={draft.modelKey} onChange={(event) => updateIdentity({ modelKey: event.target.value })} placeholder="商品标识，如 seedance-2.0" /></label>
+          <label className="model-form-wide">{draft.provider === "ComfyUI" ? "ComfyUI 服务地址" : "RunningHub API 地址"}<input required value={draft.endpoint || ""} onChange={(event) => update("endpoint", event.target.value)} /></label>
           <label className="model-form-wide">API Key<input type="password" value={draft.apiKey || ""} onChange={(event) => update("apiKey", event.target.value)} placeholder={draft.hasApiKey ? "已加密保存，留空则保持不变" : "明文仅提交一次，服务端加密落库"} /></label>
+          <div className="model-form-wide model-cap-field"><span>品牌图标</span><div className="model-logo-picker">{MODEL_LOGO_CATALOG.map((item) => <button type="button" key={item.file} className={draft.logo === item.file ? "active" : ""} title={item.label} aria-label={item.label} onClick={() => update("logo", item.file)}><img src={item.file} alt="" /></button>)}</div><small className="model-logo-hint">按名称 / 标识自动匹配，也可手动点选。未命中时使用通用图标。</small></div>
           <div className="model-form-wide model-cap-field"><span>能力勾选</span><div className="model-cap-row">{visibleCapOptions.map((cap) => <label key={cap.id} className="model-cap-chip"><input type="checkbox" checked={caps.includes(cap.id)} onChange={() => toggleCap(cap.id)} />{cap.label}</label>)}</div></div>
-          {draft.provider === "RunningHub" && visibleCapOptions.filter((cap) => caps.includes(cap.id)).map((cap) => (
-            <label key={cap.pathKey} className="model-form-wide">{cap.pathLabel}<input value={pathValue(draft, cap.pathKey)} onChange={(event) => update(cap.pathKey, event.target.value)} placeholder={cap.placeholder} /></label>
+          {visibleCapOptions.filter((cap) => caps.includes(cap.id)).map((cap) => (
+            <label key={cap.pathKey} className="model-form-wide">{cap.pathLabel}<input value={pathValue(draft, cap.pathKey)} onChange={(event) => update(cap.pathKey, event.target.value)} placeholder={pathPlaceholder(cap, draft.adapterKey)} /></label>
           ))}
           {draft.provider === "RunningHub" && <><label>实例类型<input value={draft.instanceType || ""} onChange={(event) => update("instanceType", event.target.value)} placeholder="可选，如 48G" /></label><label>并发限制<input type="number" min="1" max="10" value={draft.concurrentLimit || 1} onChange={(event) => update("concurrentLimit", Number(event.target.value))} /></label></>}
-          {draft.provider === "手动配置" && <label className="model-form-wide">代理地址<input value={draft.proxy || ""} onChange={(event) => update("proxy", event.target.value)} placeholder="可选，如 http://127.0.0.1:9090" /></label>}
           <label className="model-form-wide">能力说明<input value={draft.description || ""} onChange={(event) => update("description", event.target.value)} placeholder="简要说明适用场景" /></label>
           <label>计费单位<select value={draft.pricing?.unit || "次"} onChange={(event) => setDraft((current) => ({ ...current, pricing: { ...(current.pricing || emptyPricing), unit: event.target.value } }))}><option>次</option><option>张</option><option>秒</option><option>万字符</option></select></label>
           <div />
@@ -397,24 +515,28 @@ function PriceCell({ title, pricing, side }) {
 }
 
 function ModelCard({ model, onToggle, onEdit, onRemove }) {
-  return <article className="model-card"><header><span className="model-logo"><img src={model.logo || "/model-logos/comfyui-color.svg"} alt="" /></span><div><strong>{model.name}</strong><small>{model.modelKey}</small></div><label className="toggle-switch"><input aria-label={`${model.name} 创作端可用`} type="checkbox" checked={model.enabled !== false} onChange={(event) => onToggle(event.target.checked)} /><span /></label></header><p>{model.description}</p><div className="model-card-meta"><span>{categoryLabels[model.category]}</span><span>{model.provider}</span><span><i />{model.hasApiKey ? "密钥已配置" : "未配置密钥"}</span></div><div className="model-card-pricing"><PriceCell title="售价" pricing={model.pricing} side="sale" /><PriceCell title="成本" pricing={model.pricing} side="cost" /></div><footer><span>同步至创作端</span><div><button aria-label={`编辑模型：${model.name}`} onClick={onEdit}><Pencil size={14} /> 编辑</button><button className="danger" aria-label={`删除模型：${model.name}`} onClick={onRemove}><Trash2 size={14} /></button></div></footer></article>;
+  return <article className="model-card"><header><span className="model-logo"><img src={modelLogoSrc(model)} alt="" /></span><div><strong>{model.name}</strong><small>{model.modelKey}</small></div><label className="toggle-switch"><input aria-label={`${model.name} 创作端可用`} type="checkbox" checked={model.enabled !== false} onChange={(event) => onToggle(event.target.checked)} /><span /></label></header><p>{model.description}</p><div className="model-card-meta"><span>{categoryLabels[model.category]}</span><span>{model.provider}</span><span><i />{model.hasApiKey ? "密钥已配置" : "未配置密钥"}</span></div><div className="model-card-pricing"><PriceCell title="售价" pricing={model.pricing} side="sale" /><PriceCell title="成本" pricing={model.pricing} side="cost" /></div><footer><span>同步至创作端</span><div><button aria-label={`编辑模型：${model.name}`} onClick={onEdit}><Pencil size={14} /> 编辑</button><button className="danger" aria-label={`删除模型：${model.name}`} onClick={onRemove}><Trash2 size={14} /></button></div></footer></article>;
 }
 
 function toModelPayload(draft) {
   const category = draft.category;
-  const caps = filterCapsForCategory(draft.capabilities, category);
-  const adapterConfig = draft.provider === "RunningHub"
-    ? MODE_CAP_OPTIONS.reduce((config, field) => {
-      if (!caps.includes(field.id)) return config;
-      const value = (draft[field.pathKey] || config[field.pathKey] || field.defaultPath || "").trim();
-      if (value) config[field.pathKey] = value;
-      return config;
-    }, { ...(draft.adapterConfig || {}) })
-    : draft.adapterConfig;
+  const adapterKey = draft.adapterKey;
+  const caps = filterCapsForAdapter(draft.capabilities, category, adapterKey);
+  const adapter = adapterOf(adapterKey);
+  const adapterConfig = MODE_CAP_OPTIONS.reduce((config, field) => {
+    if (!caps.includes(field.id)) return config;
+    const fallback = adapter?.provider === "RunningHub" ? (adapter.defaultPaths?.[field.pathKey] || field.defaultPath || "") : "";
+    const value = (draft[field.pathKey] || config[field.pathKey] || fallback).trim();
+    if (value) config[field.pathKey] = value;
+    return config;
+  }, { ...(draft.adapterConfig || {}) });
+  if (adapterConfig.v2vPath && !adapterConfig.i2vPath) adapterConfig.i2vPath = adapterConfig.v2vPath;
+  delete adapterConfig.v2vPath;
   return {
     name: draft.name,
     modelKey: draft.modelKey,
-    provider: draft.provider,
+    adapterKey,
+    provider: adapter?.provider || draft.provider,
     endpoint: draft.endpoint,
     apiKey: draft.apiKey || undefined,
     category,
@@ -424,7 +546,7 @@ function toModelPayload(draft) {
     enabled: draft.enabled !== false,
     description: draft.description,
     badge: draft.badge,
-    logo: draft.logo,
+    logo: draft.logo || matchModelLogo(draft.name, draft.modelKey, adapter?.provider || draft.provider),
     concurrentLimit: draft.concurrentLimit,
     instanceType: draft.instanceType,
     proxy: draft.proxy,
@@ -476,13 +598,13 @@ function ModelsPage() {
   });
 
   return <div className="admin-page">
-    <SectionHeading title="模型管理" description="管理创作端可选模型、接入来源与销售/成本计价。" action={<button className="button button--primary" onClick={() => setEditing(null)}><Plus size={16} /> 接入模型</button>} />
+    <SectionHeading title="模型管理" description="按适配协议接入模型；来源与默认地址由协议带出。" action={<button className="button button--primary" onClick={() => setEditing(null)}><Plus size={16} /> 接入模型</button>} />
     {notice && <div className="admin-notice"><Check size={15} />{notice}<button aria-label="关闭提示" onClick={() => setNotice("")}><X size={14} /></button></div>}
     {modelsQuery.error && <div className="admin-notice">{errorMessage(modelsQuery.error, "模型列表加载失败")}</div>}
     <div className="model-category-tabs" role="tablist" aria-label="模型类型">{categoryTabs.map((tab) => <button role="tab" aria-selected={category === tab.id} className={category === tab.id ? "active" : ""} key={tab.id} onClick={() => setCategory(tab.id)}>{tab.label}<span>{tab.id === "all" ? modelItems.length : modelItems.filter((item) => item.category === tab.id).length}</span></button>)}</div>
     <div className="model-summary"><span><Server size={17} /><b>{modelItems.filter((item) => item.provider === "ComfyUI").length}</b> ComfyUI</span><span><CloudCog size={17} /><b>{modelItems.filter((item) => item.provider === "RunningHub").length}</b> RunningHub</span><span><Cpu size={17} /><b>{modelItems.filter((item) => item.provider === "手动配置").length}</b> 手动配置</span><em>已启用 {modelItems.filter((item) => item.enabled !== false).length} / {modelItems.length}</em></div>
     <div className="model-toolbar"><label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索模型名称或标识" /></label><select aria-label="筛选接入来源" value={provider} onChange={(event) => setProvider(event.target.value)}>{providerOptions.map((item) => <option key={item}>{item}</option>)}</select><div className="view-switch" role="group" aria-label="视图模式"><button className={view === "cards" ? "active" : ""} aria-label="卡片模式" onClick={() => setView("cards")}><Grid2X2 size={15} /></button><button className={view === "list" ? "active" : ""} aria-label="列表模式" onClick={() => setView("list")}><List size={15} /></button></div></div>
-    {view === "cards" ? <div className="model-card-grid">{visible.map((model) => <ModelCard key={model.id} model={model} onToggle={(enabled) => toggleMutation.mutate({ id: model.id, enabled })} onEdit={() => setEditing({ ...model, apiKey: "" })} onRemove={() => { if (window.confirm(`确定删除模型“${model.name}”吗？`)) removeMutation.mutate(model); }} />)}</div> : <div className="admin-table-card model-table"><div className="admin-table-scroll"><table><thead><tr><th>模型</th><th>类型</th><th>接入来源</th><th>售价</th><th>成本</th><th>服务状态</th><th>创作端可用</th><th>操作</th></tr></thead><tbody>{visible.map((model) => <tr key={model.id}><td><span className="table-model-logo"><img src={model.logo || "/model-logos/comfyui-color.svg"} alt="" /></span><span><strong>{model.name}</strong><small>{model.modelKey}</small></span></td><td><span className="category-chip">{categoryLabels[model.category]}</span></td><td>{model.provider}</td><td><PriceCell title="售价" pricing={model.pricing} side="sale" /></td><td><PriceCell title="成本" pricing={model.pricing} side="cost" /></td><td><span className="service-ok"><i />{model.hasApiKey ? "密钥已配置" : "未配置密钥"}</span></td><td><label className="toggle-switch"><input aria-label={`${model.name} 创作端可用`} type="checkbox" checked={model.enabled !== false} onChange={(event) => toggleMutation.mutate({ id: model.id, enabled: event.target.checked })} /><span /></label></td><td><div className="table-actions"><button aria-label={`编辑模型：${model.name}`} onClick={() => setEditing({ ...model, apiKey: "" })}><Pencil size={14} /></button><button className="danger" aria-label={`删除模型：${model.name}`} onClick={() => { if (window.confirm(`确定删除模型“${model.name}”吗？`)) removeMutation.mutate(model); }}><Trash2 size={14} /></button></div></td></tr>)}</tbody></table></div></div>}
+    {view === "cards" ? <div className="model-card-grid">{visible.map((model) => <ModelCard key={model.id} model={model} onToggle={(enabled) => toggleMutation.mutate({ id: model.id, enabled })} onEdit={() => setEditing({ ...model, apiKey: "" })} onRemove={() => { if (window.confirm(`确定删除模型“${model.name}”吗？`)) removeMutation.mutate(model); }} />)}</div> : <div className="admin-table-card model-table"><div className="admin-table-scroll"><table><thead><tr><th>模型</th><th>类型</th><th>接入来源</th><th>售价</th><th>成本</th><th>服务状态</th><th>创作端可用</th><th>操作</th></tr></thead><tbody>{visible.map((model) => <tr key={model.id}><td><span className="table-model-logo"><img src={modelLogoSrc(model)} alt="" /></span><span><strong>{model.name}</strong><small>{model.modelKey}</small></span></td><td><span className="category-chip">{categoryLabels[model.category]}</span></td><td>{model.provider}</td><td><PriceCell title="售价" pricing={model.pricing} side="sale" /></td><td><PriceCell title="成本" pricing={model.pricing} side="cost" /></td><td><span className="service-ok"><i />{model.hasApiKey ? "密钥已配置" : "未配置密钥"}</span></td><td><label className="toggle-switch"><input aria-label={`${model.name} 创作端可用`} type="checkbox" checked={model.enabled !== false} onChange={(event) => toggleMutation.mutate({ id: model.id, enabled: event.target.checked })} /><span /></label></td><td><div className="table-actions"><button aria-label={`编辑模型：${model.name}`} onClick={() => setEditing({ ...model, apiKey: "" })}><Pencil size={14} /></button><button className="danger" aria-label={`删除模型：${model.name}`} onClick={() => { if (window.confirm(`确定删除模型“${model.name}”吗？`)) removeMutation.mutate(model); }}><Trash2 size={14} /></button></div></td></tr>)}</tbody></table></div></div>}
     {!visible.length && <div className="admin-empty"><Bot size={22} /><strong>没有匹配的模型</strong><span>接入模型或调整类型、来源、关键词后重试。</span></div>}
     {editing !== undefined && <ModelDialog model={editing} saving={saveMutation.isPending} onClose={() => setEditing(undefined)} onSave={(draft) => saveMutation.mutate(draft)} />}
   </div>;

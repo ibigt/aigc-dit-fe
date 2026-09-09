@@ -28,6 +28,10 @@ export function deleteAdminUser(id) {
   return api.delete(`/admin/users/${id}`);
 }
 
+export function fetchAdapterCatalog() {
+  return api.get("/admin/models/adapters");
+}
+
 export function fetchAdminModels(params = {}) {
   return api.get("/admin/models", { params });
 }

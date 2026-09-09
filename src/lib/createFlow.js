@@ -37,6 +37,7 @@ export function taskToResultMessage(task) {
   const first = creations[0] || {};
   return {
     type: "result",
+    prompt: task.prompt || first.prompt || "",
     text: task.category === "video"
       ? `已完成 ${creations.length || task.copies || 1} 个视频副本，可继续编辑或保存`
       : `已完成 ${creations.length || task.copies || 1} 张图片，可继续编辑或保存`,
@@ -66,6 +67,7 @@ export function tasksToMessages(tasks = []) {
     if (task.status === "PENDING" || task.status === "RUNNING") {
       messages.push({
         type: "result",
+        prompt: task.prompt || "",
         pending: true,
         taskId: task.id,
         text: task.category === "video" ? "视频生成中，通常需要几分钟，请稍候或稍后刷新会话" : "图片生成中，请稍候…",
@@ -84,6 +86,7 @@ export function tasksToMessages(tasks = []) {
     if (task.status === "FAILED") {
       messages.push({
         type: "result",
+        prompt: task.prompt || "",
         text: task.errorMessage || "生成失败，积分已退还",
         error: true,
         model: task.modelName || "模型",
@@ -102,6 +105,18 @@ export function tasksToMessages(tasks = []) {
   return messages;
 }
 
+export function promptForResult(messages = [], resultMessage) {
+  if (resultMessage?.prompt) return resultMessage.prompt;
+  const fromCreation = resultMessage?.creations?.find((item) => item?.prompt)?.prompt;
+  if (fromCreation) return fromCreation;
+  const index = messages.indexOf(resultMessage);
+  if (index < 0) return "";
+  for (let i = index - 1; i >= 0; i -= 1) {
+    if (messages[i]?.type === "user" && messages[i].text) return messages[i].text;
+  }
+  return "";
+}
+
 function formatClock(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -115,5 +130,19 @@ function elapsedOf(task) {
   const end = task.finishedAt ? new Date(task.finishedAt) : new Date();
   const start = new Date(task.createdAt);
   const seconds = Math.max(0, Math.round((end.getTime() - start.getTime()) / 1000));
-  return `${seconds} 秒`;
+  return formatElapsed(seconds);
+}
+
+function formatElapsed(totalSeconds) {
+  if (totalSeconds < 60) return `${totalSeconds}秒`;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    if (minutes === 0 && seconds === 0) return `${hours}小时`;
+    if (seconds === 0) return `${hours}小时${minutes}分`;
+    return `${hours}小时${minutes}分${seconds}秒`;
+  }
+  if (seconds === 0) return `${minutes}分`;
+  return `${minutes}分${seconds}秒`;
 }

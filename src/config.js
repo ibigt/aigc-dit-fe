@@ -81,7 +81,7 @@ export const fallbackConfig = {
     enableLocalMedia: true,
   },
   models: [
-    { id: "minimax-h3", name: "Minimax-H3", description: "768P/2K · 恒定有声输出", badge: "推荐", category: "video", capabilities: ["image", "video", "workflow"], provider: "ComfyUI", modelKey: "minimax-h3", endpoint: "http://127.0.0.1:8188", enabled: true },
+    { id: "minimax-h3", name: "Minimax-H3", description: "768P/2K · 恒定有声输出", badge: "推荐", category: "video", capabilities: ["video", "t2v", "r2v", "i2v"], provider: "ComfyUI", modelKey: "minimax-h3", endpoint: "http://127.0.0.1:8188", enabled: true },
     { id: "wan-2-2", name: "Wan2.2", description: "镜头质感 · 动作流畅", badge: "工作流", category: "video", capabilities: ["image", "video", "workflow"], provider: "ComfyUI", modelKey: "wan2.2", endpoint: "http://127.0.0.1:8188", enabled: true },
     { id: "ltx-2-3", name: "LTX2.3", description: "快速生成 · 风格灵活", badge: "极速", category: "video", capabilities: ["image", "video", "workflow"], provider: "ComfyUI", modelKey: "ltx-2.3", endpoint: "http://127.0.0.1:8188", enabled: true },
     { id: "seedream-5", name: "Seedream 5.0", description: "角色一致性与商业设计增强", badge: "图像", category: "image", provider: "RunningHub", modelKey: "seedream-5.0", endpoint: "https://www.runninghub.cn/api", enabled: true },

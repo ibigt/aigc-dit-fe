@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchAssets } from "../api/assets.js";
 import { createSession, deleteSession, fetchSession, fetchSessions, saveCreationToAsset } from "../api/creations.js";
 import { IMAGE_POLL_TIMEOUT_MS, pollGenerateTask, submitGenerate, VIDEO_POLL_TIMEOUT_MS } from "../api/generate.js";
-import { materialToAsset, tasksToMessages, taskToResultMessage } from "../lib/createFlow.js";
+import { materialToAsset, promptForResult, tasksToMessages, taskToResultMessage } from "../lib/createFlow.js";
 import { formatDateTime, mediaUrl, storageKeyOf } from "../lib/media.js";
 
 const videoRatios = ["自动", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
@@ -14,10 +14,9 @@ const videoResolutions = ["480P", "720P", "1080P", "2K", "4K"];
 const videoResolutionMultipliers = { "480P": 0.5, "720P": 0.75, "1080P": 1, "2K": 1.5, "4K": 2.5 };
 const qualityLevels = ["Low", "Medium", "High"];
 const DEFAULT_SESSION_ID = "new-creation-default";
-const MODE_CAPS = ["t2i", "i2i", "t2v", "r2v", "v2v"];
+const MODE_CAPS = ["t2i", "i2i", "t2v", "r2v", "i2v"];
 function canonicalCap(cap) {
-  if (cap === "i2v") return "r2v";
-  if (cap === "frames" || cap === "frame") return "v2v";
+  if (cap === "frames" || cap === "frame" || cap === "v2v") return "i2v";
   return cap;
 }
 function modelSupports(model, mode) {
@@ -36,7 +35,7 @@ function capabilityBlockReason(model, generationType, referenceImages, firstFram
   if (generationType === "image" && hasRefs && !modelSupports(model, "i2i")) {
     return "当前模型不支持参考图，请移除参考素材后再创作";
   }
-  if (generationType === "video" && (videoMode === "frames" || hasFrames) && hasFrames && !modelSupports(model, "v2v")) {
+  if (generationType === "video" && (videoMode === "frames" || hasFrames) && hasFrames && !modelSupports(model, "i2v")) {
     return "当前模型不支持首尾帧，请移除首尾帧后再创作";
   }
   if (generationType === "video" && hasRefs && !modelSupports(model, "r2v")) {
@@ -381,16 +380,18 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const activeSessionIdRef = useRef(activeSessionId);
   const activeSession = sessions.find((item) => item.id === activeSessionId) || sessions[0];
   const selectedModel = useMemo(() => availableModels.find((item) => String(item.id) === String(model)) || availableModels[0], [availableModels, model]);
-  const supportsFrames = modelSupports(selectedModel, "v2v");
+  const supportsFrames = modelSupports(selectedModel, "i2v");
   const supportsLibrary = supportsLibraryCite(selectedModel, generationType);
   const showVideoModes = generationType === "video" && (modelSupports(selectedModel, "r2v") || supportsFrames);
-  const runningHubT2i = String(selectedModel?.provider || "").toLowerCase() === "runninghub";
+  const runningHubLimited = selectedModel?.adapterKey === "gpt-image-2"
+    || selectedModel?.adapterKey === "seedance-2"
+    || String(selectedModel?.provider || "").toLowerCase() === "runninghub";
   const unitPrice = Number.parseFloat(selectedModel?.pricing?.sale?.output) || (generationType === "video" ? 12 : 2);
   const parameterMultiplier = generationType === "video"
     ? (videoResolutionMultipliers[resolution] || 1)
     : ({ "1K": 1, "2K": 2, "4K": 4 }[resolution] || 1) * ({ Low: 1, Medium: 1.5, High: 2 }[quality] || 1);
   const quantityCost = generationType === "video" && selectedModel?.pricing?.unit === "秒" ? unitPrice * duration : unitPrice;
-  const creditCost = Math.ceil(quantityCost * parameterMultiplier * (runningHubT2i ? 1 : copies));
+  const creditCost = Math.ceil(quantityCost * parameterMultiplier * (runningHubLimited ? 1 : copies));
   useEffect(() => { activeSessionIdRef.current = activeSessionId; }, [activeSessionId]);
   useEffect(() => { if (availableModels.length && !availableModels.some((item) => String(item.id) === String(model))) setModel(String(availableModels[0].id)); }, [availableModels, model]);
   useEffect(() => {
@@ -678,7 +679,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         resolution,
         quality,
         durationSec: currentType === "video" ? duration : undefined,
-        copies: runningHubT2i ? 1 : copies,
+        copies: runningHubLimited ? 1 : copies,
         references: useFrames ? undefined : references.map((item) => ({
           type: item.type,
           storageKey: item.storageKey,
@@ -692,7 +693,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         timeout: currentType === "video" ? VIDEO_POLL_TIMEOUT_MS : IMAGE_POLL_TIMEOUT_MS,
       });
       if (finished.status === "FAILED") {
-        updateActiveMessages((items) => [...items, { type: "result", text: finished.errorMessage || "生成失败，积分已退还", error: true, model: currentModel.name, creationType: currentType === "video" ? "视频" : "图片", createdAt: formatDateTime(new Date()), elapsed: "—", credits: 0, ratio, resolution, duration: currentType === "video" ? `${duration} 秒` : "—", media: { type: currentType, src: "" }, creations: [] }]);
+        updateActiveMessages((items) => [...items, { type: "result", prompt: text, text: finished.errorMessage || "生成失败，积分已退还", error: true, model: currentModel.name, creationType: currentType === "video" ? "视频" : "图片", createdAt: formatDateTime(new Date()), elapsed: "—", credits: 0, ratio, resolution, duration: currentType === "video" ? `${duration} 秒` : "—", media: { type: currentType, src: "" }, creations: [] }]);
       } else {
         updateActiveMessages((items) => [...items, taskToResultMessage(finished)]);
       }
@@ -704,7 +705,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         return;
       }
       setSubmitError(error.message || "提交失败");
-      updateActiveMessages((items) => [...items, { type: "result", text: error.message || "提交失败", error: true, model: currentModel?.name || "模型", creationType: currentType === "video" ? "视频" : "图片", createdAt: formatDateTime(new Date()), elapsed: "—", credits: 0, ratio, resolution, duration: currentType === "video" ? `${duration} 秒` : "—", media: { type: currentType, src: "" }, creations: [] }]);
+      updateActiveMessages((items) => [...items, { type: "result", prompt: text, text: error.message || "提交失败", error: true, model: currentModel?.name || "模型", creationType: currentType === "video" ? "视频" : "图片", createdAt: formatDateTime(new Date()), elapsed: "—", credits: 0, ratio, resolution, duration: currentType === "video" ? `${duration} 秒` : "—", media: { type: currentType, src: "" }, creations: [] }]);
     } finally {
       generatingSessionRef.current = null;
       setGenerating(false);
@@ -727,9 +728,10 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   }
 
   function reuseResult(message, action) {
-    const sessionPrompt = activeSession.messages.find((item) => item.type === "user")?.text || "";
-    setPrompt(sessionPrompt);
-    if (action === "regenerate") window.setTimeout(() => document.querySelector(".composer textarea")?.focus(), 0);
+    setPrompt(promptForResult(activeSession.messages, message));
+    if (action === "regenerate" || action === "edit") {
+      window.setTimeout(() => document.querySelector(".creation-composer textarea")?.focus(), 0);
+    }
     if (message.media?.type && message.media.type !== generationType) changeType(message.media.type);
   }
 
@@ -801,7 +803,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
                 <button type="button" className="creation-icon-action" title="重置输入" aria-label="重置输入内容与参数" onClick={resetComposer}><RotateCcw size={15} /></button>
               </div>
               <div className="creation-submit-group">
-                <div className="creation-control-wrap"><button type="button" className="creation-copy-button" aria-label={`副本数 ${runningHubT2i ? 1 : copies}`} aria-expanded={openPanel === "copies"} disabled={runningHubT2i} title={runningHubT2i ? "RunningHub 验证强制 1 份" : undefined} onClick={() => { if (!runningHubT2i) setOpenPanel(openPanel === "copies" ? null : "copies"); }}><Layers3 size={15} /><span>{runningHubT2i ? 1 : copies}</span></button>{!runningHubT2i && openPanel === "copies" && <div className="creation-popover creation-copy-popover">{[1, 2, 3, 4].map((item) => <button key={item} className={copies === item ? "active" : ""} onClick={() => { setCopies(item); setOpenPanel(null); }}>{item}{copies === item && <Check size={13} />}</button>)}</div>}</div>
+                <div className="creation-control-wrap"><button type="button" className="creation-copy-button" aria-label={`副本数 ${runningHubLimited ? 1 : copies}`} aria-expanded={openPanel === "copies"} disabled={runningHubLimited} title={runningHubLimited ? "RunningHub 验证强制 1 份" : undefined} onClick={() => { if (!runningHubLimited) setOpenPanel(openPanel === "copies" ? null : "copies"); }}><Layers3 size={15} /><span>{runningHubLimited ? 1 : copies}</span></button>{!runningHubLimited && openPanel === "copies" && <div className="creation-popover creation-copy-popover">{[1, 2, 3, 4].map((item) => <button key={item} className={copies === item ? "active" : ""} onClick={() => { setCopies(item); setOpenPanel(null); }}>{item}{copies === item && <Check size={13} />}</button>)}</div>}</div>
                 <span className="creation-cost" title="根据模型售价、参数与副本数计算"><Coins size={15} /><b>{creditCost}</b></span>
                 <button className="creation-submit" aria-label="开始创作" onClick={sendPrompt} disabled={!prompt.trim() || generating}><Sparkles size={16} />{generating ? "生成中" : "创作"}</button>
               </div>
