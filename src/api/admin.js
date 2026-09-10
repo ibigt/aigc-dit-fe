@@ -51,3 +51,7 @@ export function changeAdminModelEnabled(id, enabled) {
 export function deleteAdminModel(id) {
   return api.delete(`/admin/models/${id}`);
 }
+
+export function testAdminModelConnection(payload) {
+  return api.post("/admin/models/test-connection", payload, { timeout: 20000 });
+}
