@@ -10,6 +10,8 @@ import { formatDateTime, mediaUrl, storageKeyOf } from "../lib/media.js";
 const videoRatios = ["自动", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
 const imageRatios = ["21:9", "16:9", "5:4", "4:3", "3:2", "1:1", "2:3", "3:4", "4:5", "9:16"];
 const videoDurations = Array.from({ length: 12 }, (_, index) => index + 4);
+const miniMaxDurations = Array.from({ length: 11 }, (_, index) => index + 5);
+const agnesDurations = Array.from({ length: 9 }, (_, index) => index + 4);
 const videoResolutions = ["480P", "720P", "1080P", "2K", "4K"];
 const videoResolutionMultipliers = { "480P": 0.5, "720P": 0.75, "1080P": 1, "2K": 1.5, "4K": 2.5 };
 const qualityLevels = ["Low", "Medium", "High"];
@@ -29,6 +31,26 @@ function modelSupports(model, mode) {
 function supportsLibraryCite(model, generationType) {
   return generationType === "image" ? modelSupports(model, "i2i") : modelSupports(model, "r2v");
 }
+function isMiniMaxH3(model) {
+  return model?.adapterKey === "minimax-h3" || String(model?.modelKey || "").toLowerCase().includes("minimax");
+}
+function isAgnes(model) {
+  const key = String(model?.adapterKey || model?.modelKey || "").toLowerCase();
+  return key.includes("agnes");
+}
+function durationOptionsFor(model) {
+  if (isMiniMaxH3(model)) return miniMaxDurations;
+  if (isAgnes(model)) return agnesDurations;
+  return videoDurations;
+}
+function videoResolutionsFor(model) {
+  return isAgnes(model) ? ["720P"] : videoResolutions;
+}
+function clampDurationForModel(model, duration) {
+  const options = durationOptionsFor(model);
+  if (options.includes(duration)) return duration;
+  return options.find((item) => item >= duration) || options[options.length - 1] || 5;
+}
 function capabilityBlockReason(model, generationType, referenceImages, firstFrame, lastFrame, videoMode) {
   const hasRefs = (referenceImages || []).length > 0;
   const hasFrames = Boolean(firstFrame || lastFrame);
@@ -42,6 +64,25 @@ function capabilityBlockReason(model, generationType, referenceImages, firstFram
     return "当前模型不支持参考生视频，请移除参考素材后再创作";
   }
   return "";
+}
+function sameId(a, b) {
+  return a != null && b != null && String(a) === String(b);
+}
+function sessionHasPending(session) {
+  return (session?.messages || []).some((item) => item.pending);
+}
+function isSessionGenerating(session, generatingIds) {
+  if (!session) return false;
+  if (sessionHasPending(session)) return true;
+  return (generatingIds || []).some((id) => sameId(id, session.id));
+}
+function replacePendingMessage(items, pendingKey, next) {
+  const index = items.findIndex((item) => pendingKey && item.pendingKey === pendingKey);
+  const fallback = index < 0 ? items.findIndex((item) => item.pending) : index;
+  if (fallback < 0) return [...items, next];
+  const copy = items.slice();
+  copy[fallback] = next;
+  return copy;
 }
 function sameMaterial(a, b) {
   if (!a || !b) return false;
@@ -298,11 +339,12 @@ function RatioOption({ ratio }) {
   return <span className="ratio-option"><Icon size={12} /><small>{ratio}</small></span>;
 }
 
-function ParameterPanel({ generationType, ratio, setRatio, resolution, setResolution, duration, setDuration, quality, setQuality }) {
+function ParameterPanel({ generationType, ratio, setRatio, resolution, setResolution, duration, setDuration, quality, setQuality, durationOptions = videoDurations, resolutionOptions }) {
+  const resolutions = resolutionOptions || (generationType === "video" ? videoResolutions : ["1K", "2K", "4K"]);
   return <div className={`creation-popover creation-parameter-popover is-${generationType}`}>
     <section><label>比例</label><SegmentedOptions options={generationType === "video" ? videoRatios : imageRatios} value={ratio} onChange={setRatio} formatter={(item) => <RatioOption ratio={item} />} /></section>
-    <section><label>分辨率</label><SegmentedOptions options={generationType === "video" ? videoResolutions : ["1K", "2K", "4K"]} value={resolution} onChange={setResolution} /></section>
-    {generationType === "video" ? <section><label>时长</label><SegmentedOptions options={videoDurations} value={duration} onChange={setDuration} formatter={(item) => `${item}s`} /></section> : <section><label>画质</label><SegmentedOptions options={qualityLevels} value={quality} onChange={setQuality} /></section>}
+    <section><label>分辨率</label><SegmentedOptions options={resolutions} value={resolution} onChange={setResolution} /></section>
+    {generationType === "video" ? <section><label>时长</label><SegmentedOptions options={durationOptions} value={duration} onChange={setDuration} formatter={(item) => `${item}s`} /></section> : <section><label>画质</label><SegmentedOptions options={qualityLevels} value={quality} onChange={setQuality} /></section>}
   </div>;
 }
 
@@ -352,7 +394,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const availableModels = useMemo(() => (config.models || []).filter((item) => item.enabled !== false && (item.category === generationType || item.capabilities?.includes(generationType))), [config.models, generationType]);
   const [model, setModel] = useState(() => String(config.models.find((item) => item.enabled !== false && (item.category === "video" || item.capabilities?.includes("video")))?.id || config.models[0]?.id || ""));
   const [prompt, setPrompt] = useState("");
-  const [generating, setGenerating] = useState(false);
+  const [generatingSessionIds, setGeneratingSessionIds] = useState([]);
   const [submitError, setSubmitError] = useState("");
   const [savedCreationIds, setSavedCreationIds] = useState([]);
   const [savingId, setSavingId] = useState(null);
@@ -374,26 +416,37 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const referenceInputRef = useRef(null);
   const firstFrameInputRef = useRef(null);
   const lastFrameInputRef = useRef(null);
-  const generatingSessionRef = useRef(null);
+  const generatingSessionRef = useRef(new Set());
   const sessionMenuRef = useRef(null);
   const watchingTasksRef = useRef(new Set());
   const activeSessionIdRef = useRef(activeSessionId);
   const activeSession = sessions.find((item) => item.id === activeSessionId) || sessions[0];
+  const sessionGenerating = isSessionGenerating(activeSession, generatingSessionIds);
   const selectedModel = useMemo(() => availableModels.find((item) => String(item.id) === String(model)) || availableModels[0], [availableModels, model]);
   const supportsFrames = modelSupports(selectedModel, "i2v");
   const supportsLibrary = supportsLibraryCite(selectedModel, generationType);
   const showVideoModes = generationType === "video" && (modelSupports(selectedModel, "r2v") || supportsFrames);
-  const runningHubLimited = selectedModel?.adapterKey === "gpt-image-2"
+  const copiesLimited = selectedModel?.adapterKey === "gpt-image-2"
     || selectedModel?.adapterKey === "seedance-2"
-    || String(selectedModel?.provider || "").toLowerCase() === "runninghub";
+    || String(selectedModel?.provider || "").toLowerCase() === "runninghub"
+    || isAgnes(selectedModel);
   const unitPrice = Number.parseFloat(selectedModel?.pricing?.sale?.output) || (generationType === "video" ? 12 : 2);
   const parameterMultiplier = generationType === "video"
     ? (videoResolutionMultipliers[resolution] || 1)
     : ({ "1K": 1, "2K": 2, "4K": 4 }[resolution] || 1) * ({ Low: 1, Medium: 1.5, High: 2 }[quality] || 1);
   const quantityCost = generationType === "video" && selectedModel?.pricing?.unit === "秒" ? unitPrice * duration : unitPrice;
-  const creditCost = Math.ceil(quantityCost * parameterMultiplier * (runningHubLimited ? 1 : copies));
+  const creditCost = Math.ceil(quantityCost * parameterMultiplier * (copiesLimited ? 1 : copies));
   useEffect(() => { activeSessionIdRef.current = activeSessionId; }, [activeSessionId]);
   useEffect(() => { if (availableModels.length && !availableModels.some((item) => String(item.id) === String(model))) setModel(String(availableModels[0].id)); }, [availableModels, model]);
+  useEffect(() => {
+    const next = clampDurationForModel(selectedModel, duration);
+    if (next !== duration) setDuration(next);
+  }, [selectedModel, duration]);
+  useEffect(() => {
+    if (generationType !== "video") return;
+    const options = videoResolutionsFor(selectedModel);
+    if (!options.includes(resolution)) setResolution(options[0] || "720P");
+  }, [selectedModel, generationType, resolution]);
   useEffect(() => {
     if (!supportsLibrary) {
       setReferenceImages([]);
@@ -456,40 +509,78 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     };
   }, [openPanel]);
 
-  function applySessionDetail(detail) {
-    setSessions((items) => items.map((session) => session.id === detail.id ? {
-      ...session,
-      title: detail.title || session.title,
-      generationType: detail.category || session.generationType,
-      updated: formatDateTime(detail.updatedAt) || session.updated,
-      messages: tasksToMessages(detail.tasks),
-    } : session));
-    if (detail.category) setGenerationType(detail.category);
-    watchPendingTasks(detail.tasks);
+  function beginGenerating(sessionId) {
+    if (sessionId == null) return;
+    const key = String(sessionId);
+    generatingSessionRef.current.add(key);
+    setGeneratingSessionIds((ids) => (ids.includes(key) ? ids : [...ids, key]));
   }
 
-  function watchPendingTasks(tasks) {
+  function endGenerating(sessionId) {
+    if (sessionId == null) return;
+    const key = String(sessionId);
+    generatingSessionRef.current.delete(key);
+    setGeneratingSessionIds((ids) => ids.filter((id) => id !== key));
+  }
+
+  function applySessionDetail(detail) {
+    setSessions((items) => items.map((session) => {
+      if (!sameId(session.id, detail.id)) return session;
+      const incoming = tasksToMessages(detail.tasks);
+      const localInflight = (session.messages || []).filter((item) => item.pendingKey);
+      let messages = incoming;
+      if (localInflight.length && !incoming.some((item) => item.pending)) {
+        const extras = [];
+        for (const pending of localInflight) {
+          const index = session.messages.indexOf(pending);
+          const user = index > 0 ? session.messages[index - 1] : null;
+          if (user?.type === "user" && !incoming.some((item) => item.type === "user" && item.text === user.text)) {
+            extras.push(user);
+          }
+          extras.push(pending);
+        }
+        messages = [...incoming, ...extras];
+      }
+      return {
+        ...session,
+        title: detail.title || session.title,
+        generationType: detail.category || session.generationType,
+        updated: formatDateTime(detail.updatedAt) || session.updated,
+        messages,
+      };
+    }));
+    if (detail.category && sameId(detail.id, activeSessionIdRef.current)) {
+      setGenerationType(detail.category);
+    }
+    watchPendingTasks(detail.tasks, detail.id);
+  }
+
+  function watchPendingTasks(tasks, sessionId) {
     (tasks || []).forEach((task) => {
       if (!task?.id || (task.status !== "PENDING" && task.status !== "RUNNING")) return;
       if (watchingTasksRef.current.has(task.id)) return;
       watchingTasksRef.current.add(task.id);
+      const ownerId = task.sessionId ?? sessionId ?? activeSessionIdRef.current;
+      if (ownerId != null) beginGenerating(ownerId);
       const timeout = task.category === "video" ? VIDEO_POLL_TIMEOUT_MS : IMAGE_POLL_TIMEOUT_MS;
       pollGenerateTask(task.id, { interval: 2000, timeout })
         .then(async () => {
-          const sessionId = activeSessionIdRef.current;
-          if (persistedSessionId(sessionId)) {
-            const detail = await fetchSession(sessionId);
+          watchingTasksRef.current.delete(task.id);
+          if (persistedSessionId(ownerId)) {
+            const detail = await fetchSession(ownerId);
             applySessionDetail(detail);
           }
+          endGenerating(ownerId);
         })
         .catch(async (error) => {
           watchingTasksRef.current.delete(task.id);
-          if (error?.stillGoing && persistedSessionId(activeSessionIdRef.current)) {
-            const detail = await fetchSession(activeSessionIdRef.current).catch(() => null);
+          if (error?.stillGoing && persistedSessionId(ownerId)) {
+            const detail = await fetchSession(ownerId).catch(() => null);
             if (detail) applySessionDetail(detail);
+            return;
           }
-        })
-        .finally(() => watchingTasksRef.current.delete(task.id));
+          endGenerating(ownerId);
+        });
     });
   }
 
@@ -514,7 +605,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   }
 
   async function deleteSessionLocal(session) {
-    if (String(generatingSessionRef.current) === String(session.id)) {
+    if (generatingSessionRef.current.has(String(session.id)) || sessionHasPending(session)) {
       setSubmitError("请等待当前生成完成后再删除该会话");
       return;
     }
@@ -614,7 +705,10 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
       return;
     }
     const next = Array.from(files || [])
-      .filter((file) => generationType === "video" || !file.type.startsWith("video/"))
+      .filter((file) => {
+        if (!file.type.startsWith("video/")) return true;
+        return generationType === "video" && !isAgnes(selectedModel);
+      })
       .map((file) => ({ name: file.name, url: URL.createObjectURL(file), file, type: file.type.startsWith("video/") ? "video" : "image" }));
     setReferenceImages((items) => [...items, ...next]);
   }
@@ -628,27 +722,59 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     setter({ name: file.name, url: URL.createObjectURL(file), file, type: "image" });
   }
 
-  function updateActiveMessages(updater) {
-    setSessions((items) => items.map((session) => session.id === activeSessionId ? { ...session, generationType, title: session.messages.length ? session.title : (prompt.trim().slice(0, 12) || session.title), updated: "刚刚", messages: updater(session.messages) } : session));
+  function updateSessionMessages(sessionId, updater, options = {}) {
+    if (sessionId == null) return;
+    setSessions((items) => items.map((session) => {
+      if (!sameId(session.id, sessionId)) return session;
+      return {
+        ...session,
+        generationType: options.category || session.generationType,
+        title: session.messages.length ? session.title : ((options.titleSource || "").trim().slice(0, 12) || session.title),
+        updated: "刚刚",
+        messages: updater(session.messages),
+      };
+    }));
   }
 
   async function sendPrompt() {
     const text = prompt.trim();
-    if (!text || generating) return;
+    if (!text || sessionGenerating) return;
     const blocked = capabilityBlockReason(selectedModel, generationType, referenceImages, firstFrame, lastFrame, videoMode);
     if (blocked) {
       setSubmitError(blocked);
       return;
     }
     setSubmitError("");
-    updateActiveMessages((items) => [...items, { type: "user", text }]);
     setPrompt("");
-    setGenerating(true);
     const currentType = generationType;
     const currentModel = selectedModel;
-    const currentSessionId = activeSessionId === DEFAULT_SESSION_ID ? null : activeSessionId;
-    generatingSessionRef.current = currentSessionId;
-    let sessionId = currentSessionId;
+    const pendingKey = `pending-${Date.now()}`;
+    const pendingMessage = {
+      type: "result",
+      pending: true,
+      pendingKey,
+      prompt: text,
+      text: currentType === "video" ? "视频生成中，通常需要几分钟，请稍候…" : "图片生成中，请稍候…",
+    };
+    let sessionId = activeSessionId === DEFAULT_SESSION_ID ? null : activeSessionId;
+    let keepBusy = false;
+    let submittedId = null;
+    const failResult = (message) => ({
+      type: "result",
+      prompt: text,
+      text: message,
+      error: true,
+      model: currentModel?.name || "模型",
+      creationType: currentType === "video" ? "视频" : "图片",
+      createdAt: formatDateTime(new Date()),
+      elapsed: "—",
+      credits: 0,
+      ratio,
+      resolution,
+      duration: currentType === "video" ? `${duration} 秒` : "—",
+      media: { type: currentType, src: "" },
+      creations: [],
+    });
     try {
       if (!currentModel?.id || Number.isNaN(Number(currentModel.id))) {
         throw new Error("暂无可用模型，请先在管理后台添加 Mock 或启用模型");
@@ -656,13 +782,24 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
       if (!sessionId) {
         const created = await createSession({ title: text.slice(0, 12) || "未命名创作", category: currentType });
         sessionId = created.id;
-        generatingSessionRef.current = created.id;
         setActiveSessionId(created.id);
-        setSessions((items) => [{ id: created.id, title: created.title, generationType: currentType, updated: "刚刚", messages: [{ type: "user", text }] }, ...items.filter((item) => item.id !== DEFAULT_SESSION_ID)]);
+        setSessions((items) => [{
+          id: created.id,
+          title: created.title,
+          generationType: currentType,
+          updated: "刚刚",
+          messages: [{ type: "user", text }, pendingMessage],
+        }, ...items.filter((item) => item.id !== DEFAULT_SESSION_ID)]);
+      } else {
+        updateSessionMessages(sessionId, (items) => [...items, { type: "user", text }, pendingMessage], {
+          category: currentType,
+          titleSource: text,
+        });
       }
+      beginGenerating(sessionId);
       const useFrames = currentType === "video" && videoMode === "frames" && supportsFrames;
       if (!useFrames && referenceImages.length && !supportsLibrary) {
-        throw new Error(generationType === "image" ? "当前模型不支持参考图，请移除参考素材后再创作" : "当前模型不支持参考生视频，请移除参考素材后再创作");
+        throw new Error(currentType === "image" ? "当前模型不支持参考图，请移除参考素材后再创作" : "当前模型不支持参考生视频，请移除参考素材后再创作");
       }
       const references = useFrames || !supportsLibrary ? [] : await Promise.all(referenceImages.map((item) => materialToAsset(item)));
       const frames = useFrames ? {
@@ -678,8 +815,8 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         ratio,
         resolution,
         quality,
-        durationSec: currentType === "video" ? duration : undefined,
-        copies: runningHubLimited ? 1 : copies,
+        durationSec: currentType === "video" ? clampDurationForModel(currentModel, duration) : undefined,
+        copies: copiesLimited ? 1 : copies,
         references: useFrames ? undefined : references.map((item) => ({
           type: item.type,
           storageKey: item.storageKey,
@@ -687,28 +824,38 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         })),
         frames,
       });
+      watchingTasksRef.current.add(submitted.id);
+      submittedId = submitted.id;
       onConsumeCredits(submitted.creditCost || 0, { model: currentModel.name, type: currentType });
       const finished = await pollGenerateTask(submitted.id, {
         interval: 2000,
         timeout: currentType === "video" ? VIDEO_POLL_TIMEOUT_MS : IMAGE_POLL_TIMEOUT_MS,
       });
-      if (finished.status === "FAILED") {
-        updateActiveMessages((items) => [...items, { type: "result", prompt: text, text: finished.errorMessage || "生成失败，积分已退还", error: true, model: currentModel.name, creationType: currentType === "video" ? "视频" : "图片", createdAt: formatDateTime(new Date()), elapsed: "—", credits: 0, ratio, resolution, duration: currentType === "video" ? `${duration} 秒` : "—", media: { type: currentType, src: "" }, creations: [] }]);
-      } else {
-        updateActiveMessages((items) => [...items, taskToResultMessage(finished)]);
-      }
+      watchingTasksRef.current.delete(submitted.id);
+      const result = finished.status === "FAILED"
+        ? failResult(finished.errorMessage || "生成失败，积分已退还")
+        : taskToResultMessage(finished);
+      updateSessionMessages(sessionId, (items) => replacePendingMessage(items, pendingKey, result));
       onConsumeCredits(0, { model: currentModel.name, type: currentType, refresh: true });
     } catch (error) {
       if (error?.stillGoing && sessionId) {
+        keepBusy = true;
+        if (submittedId) watchingTasksRef.current.delete(submittedId);
         const detail = await fetchSession(sessionId).catch(() => null);
         if (detail) applySessionDetail(detail);
         return;
       }
-      setSubmitError(error.message || "提交失败");
-      updateActiveMessages((items) => [...items, { type: "result", prompt: text, text: error.message || "提交失败", error: true, model: currentModel?.name || "模型", creationType: currentType === "video" ? "视频" : "图片", createdAt: formatDateTime(new Date()), elapsed: "—", credits: 0, ratio, resolution, duration: currentType === "video" ? `${duration} 秒` : "—", media: { type: currentType, src: "" }, creations: [] }]);
+      if (sameId(activeSessionIdRef.current, sessionId)) {
+        setSubmitError(error.message || "提交失败");
+      }
+      if (sessionId) {
+        updateSessionMessages(sessionId, (items) => replacePendingMessage(items, pendingKey, failResult(error.message || "提交失败")));
+      }
     } finally {
-      generatingSessionRef.current = null;
-      setGenerating(false);
+      if (!keepBusy) {
+        if (submittedId) watchingTasksRef.current.delete(submittedId);
+        endGenerating(sessionId);
+      }
     }
   }
 
@@ -744,7 +891,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
           <div className={`session-item ${session.id === activeSessionId ? "active" : ""} ${sessionMenuId === session.id ? "menu-open" : ""}`} key={session.id}>
             <button type="button" className="session-open" onClick={() => { setSessionMenuId(null); switchSession(session); }}>
               {session.generationType === "video" ? <Video size={15} /> : <Image size={15} />}
-              <span>{session.title}<small>{session.updated}</small></span>
+              <span>{session.title}<small>{isSessionGenerating(session, generatingSessionIds) ? "生成中" : session.updated}</small></span>
             </button>
             <div className="session-menu-wrap" ref={sessionMenuId === session.id ? sessionMenuRef : null}>
               <button
@@ -771,18 +918,18 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
       <section className="create-main">
         <CosmicBackdrop active={theme === "dark"} />
         <div className={`conversation ${activeSession.messages.length ? "conversation--active" : ""}`}>
-          {!activeSession.messages.length ? <><GravityDots /><div className="create-welcome"><div className="create-welcome__title"><span>使用</span><span className="create-welcome__kind">{generationType === "video" ? <Video size={15} /> : <Image size={15} />}{generationType === "video" ? "视频" : "图片"}</span><span>开启今日创作</span></div><p>选择一个灵感场景，素材与提示词将自动带入输入框</p><CreationPresetCards generationType={generationType} onSelect={applyPreset} /></div></> : <div className="message-list">{activeSession.messages.map((message, index) => message.type === "user" ? <div className="message message--user" key={`${activeSession.id}-${index}`}><span>你</span><p>{message.text}</p></div> : <ResultMessage key={`${activeSession.id}-${index}`} message={message} onReuse={reuseResult} onSave={saveResult} savedIds={savedCreationIds} savingId={savingId} />)}{generating && !activeSession.messages.some((item) => item.pending) && <div className="message message--result"><span><Sparkles size={16} /></span><div className="generating-line"><i /><i /><i /> 正在构思画面与光线…</div></div>}</div>}
+          {!activeSession.messages.length ? <><GravityDots /><div className="create-welcome"><div className="create-welcome__title"><span>使用</span><span className="create-welcome__kind">{generationType === "video" ? <Video size={15} /> : <Image size={15} />}{generationType === "video" ? "视频" : "图片"}</span><span>开启今日创作</span></div><p>选择一个灵感场景，素材与提示词将自动带入输入框</p><CreationPresetCards generationType={generationType} onSelect={applyPreset} /></div></> : <div className="message-list">{activeSession.messages.map((message, index) => message.type === "user" ? <div className="message message--user" key={`${activeSession.id}-${index}`}><span>你</span><p>{message.text}</p></div> : <ResultMessage key={`${activeSession.id}-${index}`} message={message} onReuse={reuseResult} onSave={saveResult} savedIds={savedCreationIds} savingId={savingId} />)}{sessionGenerating && !activeSession.messages.some((item) => item.pending) && <div className="message message--result"><span><Sparkles size={16} /></span><div className="generating-line"><i /><i /><i /> 正在构思画面与光线…</div></div>}</div>}
         </div>
         <div className="composer-shell composer-shell--expanded">
           <div className={`composer creation-composer ${referenceImages.length || firstFrame || lastFrame ? "has-material" : ""}`}>
-            <input ref={referenceInputRef} aria-label="上传参考素材" className="visually-hidden" type="file" accept={generationType === "video" ? "image/*,video/*" : "image/*"} multiple disabled={!supportsLibrary} onChange={(event) => { addReferenceImages(event.target.files); event.target.value = ""; }} />
+            <input ref={referenceInputRef} aria-label="上传参考素材" className="visually-hidden" type="file" accept={generationType === "video" && !isAgnes(selectedModel) ? "image/*,video/*" : "image/*"} multiple disabled={!supportsLibrary} onChange={(event) => { addReferenceImages(event.target.files); event.target.value = ""; }} />
             <input ref={firstFrameInputRef} aria-label="上传视频首帧" className="visually-hidden" type="file" accept="image/*" disabled={!supportsFrames} onChange={(event) => { setFrame(event.target.files?.[0], setFirstFrame); event.target.value = ""; }} />
             <input ref={lastFrameInputRef} aria-label="上传视频尾帧" className="visually-hidden" type="file" accept="image/*" disabled={!supportsFrames} onChange={(event) => { setFrame(event.target.files?.[0], setLastFrame); event.target.value = ""; }} />
             <div className="composer-kind-tabs" role="tablist" aria-label="创作类型"><button role="tab" aria-selected={generationType === "video"} className={generationType === "video" ? "active" : ""} onClick={() => changeType("video")}><Video size={14} />视频</button><button role="tab" aria-selected={generationType === "image"} className={generationType === "image" ? "active" : ""} onClick={() => changeType("image")}><Image size={14} />图片</button></div>
             {submitError && <p className="create-submit-error">{submitError}</p>}
             <div className="creation-composer__body">
               <div className={`creation-reference-slots ${videoMode === "frames" && generationType === "video" ? "is-frames" : ""}`}>
-                {generationType === "video" && videoMode === "frames" ? <><UploadTile label="首帧" detail="起始画面" material={firstFrame} onClick={() => firstFrameInputRef.current?.click()} onRemove={() => setFirstFrame(null)} /><ArrowLeftRight className="frame-bridge" size={15} /><UploadTile label="尾帧" detail="结束画面" material={lastFrame} onClick={() => lastFrameInputRef.current?.click()} onRemove={() => setLastFrame(null)} /></> : supportsLibrary ? <>{referenceImages.map((item, index) => <UploadTile key={item.storageKey || item.id || `${item.url}-${index}`} label={item.name || `参考 ${index + 1}`} material={item} onRemove={() => setReferenceImages((items) => items.filter((_, itemIndex) => itemIndex !== index))} />)}<UploadTile label="参考" detail={generationType === "video" ? "图片/视频" : "支持多选"} onClick={() => referenceInputRef.current?.click()} /></> : null}
+                {generationType === "video" && videoMode === "frames" ? <><UploadTile label="首帧" detail="起始画面" material={firstFrame} onClick={() => firstFrameInputRef.current?.click()} onRemove={() => setFirstFrame(null)} /><ArrowLeftRight className="frame-bridge" size={15} /><UploadTile label="尾帧" detail="结束画面" material={lastFrame} onClick={() => lastFrameInputRef.current?.click()} onRemove={() => setLastFrame(null)} /></> : supportsLibrary ? <>{referenceImages.map((item, index) => <UploadTile key={item.storageKey || item.id || `${item.url}-${index}`} label={item.name || `参考 ${index + 1}`} material={item} onRemove={() => setReferenceImages((items) => items.filter((_, itemIndex) => itemIndex !== index))} />)}<UploadTile label="参考" detail={generationType === "video" ? (isAgnes(selectedModel) ? "图片" : "图片/视频") : "支持多选"} onClick={() => referenceInputRef.current?.click()} /></> : null}
               </div>
               <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendPrompt(); } }} placeholder={generationType === "video" ? "描述您想要生成的视频内容，例如，“一个孩子在公园里放风筝，金色阳光，镜头上移。”" : "描述您想生成的图片，例如，“夕阳映照在海面上，鲜艳的色彩与汹涌的波涛交相辉映。”"} />
             </div>
@@ -797,15 +944,15 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
                     return <button type="button" role="option" aria-selected={selected} className={selected ? "active" : ""} key={item.id} onClick={() => { setModel(String(item.id)); setOpenPanel(null); setAssetPickerOpen(false); }}><span><strong>{item.name}</strong><small>{item.description || item.badge || item.provider}</small></span>{selected && <Check size={14} />}</button>;
                   })}</div>}
                 </div>
-                {showVideoModes && <div className="creation-control-wrap"><button type="button" className="creation-pill" aria-expanded={openPanel === "mode"} onClick={() => setOpenPanel(openPanel === "mode" ? null : "mode")}><Film size={14} />{videoMode === "reference" ? "参考生成" : "首/尾帧"}<ChevronDown size={13} /></button>{openPanel === "mode" && <div className="creation-popover creation-mode-popover"><button className={videoMode === "reference" ? "active" : ""} onClick={() => { setVideoMode("reference"); setOpenPanel(null); }}><Images size={14} /><span><strong>参考生成</strong><small>可用图片或视频作为参考</small></span>{videoMode === "reference" && <Check size={14} />}</button><button className={videoMode === "frames" ? "active" : ""} disabled={!supportsFrames} onClick={() => { if (!supportsFrames) return; setVideoMode("frames"); setOpenPanel(null); }}><Film size={14} /><span><strong>首/尾帧</strong><small>{supportsFrames ? "控制视频起始与结束画面" : "当前模型不支持首尾帧"}</small></span>{videoMode === "frames" && <Check size={14} />}</button></div>}</div>}
-                <div className="creation-control-wrap"><button type="button" className="creation-pill creation-spec-pill" aria-expanded={openPanel === "params"} onClick={() => setOpenPanel(openPanel === "params" ? null : "params")}><Maximize2 size={14} />{generationType === "video" ? `${resolution} · ${duration}s · ${ratio}` : `${resolution} · ${quality} · ${ratio}`}<ChevronDown size={13} /></button>{openPanel === "params" && <ParameterPanel generationType={generationType} ratio={ratio} setRatio={setRatio} resolution={resolution} setResolution={setResolution} duration={duration} setDuration={setDuration} quality={quality} setQuality={setQuality} />}</div>
+                {showVideoModes && <div className="creation-control-wrap"><button type="button" className="creation-pill" aria-expanded={openPanel === "mode"} onClick={() => setOpenPanel(openPanel === "mode" ? null : "mode")}><Film size={14} />{videoMode === "reference" ? "参考生成" : "首/尾帧"}<ChevronDown size={13} /></button>{openPanel === "mode" && <div className="creation-popover creation-mode-popover"><button className={videoMode === "reference" ? "active" : ""} onClick={() => { setVideoMode("reference"); setOpenPanel(null); }}><Images size={14} /><span><strong>参考生成</strong><small>{isAgnes(selectedModel) ? "可用图片作为参考（Flash 不支持参考视频）" : "可用图片或视频作为参考"}</small></span>{videoMode === "reference" && <Check size={14} />}</button><button className={videoMode === "frames" ? "active" : ""} disabled={!supportsFrames} onClick={() => { if (!supportsFrames) return; setVideoMode("frames"); setOpenPanel(null); }}><Film size={14} /><span><strong>首/尾帧</strong><small>{supportsFrames ? "控制视频起始与结束画面" : "当前模型不支持首尾帧"}</small></span>{videoMode === "frames" && <Check size={14} />}</button></div>}</div>}
+                <div className="creation-control-wrap"><button type="button" className="creation-pill creation-spec-pill" aria-expanded={openPanel === "params"} onClick={() => setOpenPanel(openPanel === "params" ? null : "params")}><Maximize2 size={14} />{generationType === "video" ? `${resolution} · ${duration}s · ${ratio}` : `${resolution} · ${quality} · ${ratio}`}<ChevronDown size={13} /></button>{openPanel === "params" && <ParameterPanel generationType={generationType} ratio={ratio} setRatio={setRatio} resolution={resolution} setResolution={setResolution} duration={duration} setDuration={setDuration} quality={quality} setQuality={setQuality} durationOptions={durationOptionsFor(selectedModel)} resolutionOptions={generationType === "video" ? videoResolutionsFor(selectedModel) : ["1K", "2K", "4K"]} />}</div>
                 <button type="button" className="creation-icon-action" title={supportsLibrary ? (generationType === "video" ? "从素材库引用图片或视频" : "从素材库引用") : "当前模型不支持参考素材"} aria-label="从素材库引用素材" disabled={!supportsLibrary} onClick={() => { if (supportsLibrary) openAssetPicker(); }}><AtSign size={16} /></button>
                 <button type="button" className="creation-icon-action" title="重置输入" aria-label="重置输入内容与参数" onClick={resetComposer}><RotateCcw size={15} /></button>
               </div>
               <div className="creation-submit-group">
-                <div className="creation-control-wrap"><button type="button" className="creation-copy-button" aria-label={`副本数 ${runningHubLimited ? 1 : copies}`} aria-expanded={openPanel === "copies"} disabled={runningHubLimited} title={runningHubLimited ? "RunningHub 验证强制 1 份" : undefined} onClick={() => { if (!runningHubLimited) setOpenPanel(openPanel === "copies" ? null : "copies"); }}><Layers3 size={15} /><span>{runningHubLimited ? 1 : copies}</span></button>{!runningHubLimited && openPanel === "copies" && <div className="creation-popover creation-copy-popover">{[1, 2, 3, 4].map((item) => <button key={item} className={copies === item ? "active" : ""} onClick={() => { setCopies(item); setOpenPanel(null); }}>{item}{copies === item && <Check size={13} />}</button>)}</div>}</div>
+                <div className="creation-control-wrap"><button type="button" className="creation-copy-button" aria-label={`副本数 ${copiesLimited ? 1 : copies}`} aria-expanded={openPanel === "copies"} disabled={copiesLimited} title={copiesLimited ? "当前模型仅支持 1 份" : undefined} onClick={() => { if (!copiesLimited) setOpenPanel(openPanel === "copies" ? null : "copies"); }}><Layers3 size={15} /><span>{copiesLimited ? 1 : copies}</span></button>{!copiesLimited && openPanel === "copies" && <div className="creation-popover creation-copy-popover">{[1, 2, 3, 4].map((item) => <button key={item} className={copies === item ? "active" : ""} onClick={() => { setCopies(item); setOpenPanel(null); }}>{item}{copies === item && <Check size={13} />}</button>)}</div>}</div>
                 <span className="creation-cost" title="根据模型售价、参数与副本数计算"><Coins size={15} /><b>{creditCost}</b></span>
-                <button className="creation-submit" aria-label="开始创作" onClick={sendPrompt} disabled={!prompt.trim() || generating}><Sparkles size={16} />{generating ? "生成中" : "创作"}</button>
+                <button className="creation-submit" aria-label="开始创作" onClick={sendPrompt} disabled={!prompt.trim() || sessionGenerating}><Sparkles size={16} />{sessionGenerating ? "生成中" : "创作"}</button>
               </div>
             </footer>
           </div>
