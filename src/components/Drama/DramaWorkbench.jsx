@@ -2,7 +2,9 @@ import { ArrowLeft, BookOpen, Clapperboard, Images, LayoutTemplate, Lock } from 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { fetchDramaSeriesDetail, fetchDramaTextModels, updateDramaEpisode, updateDramaSeries } from "../../api/drama.js";
+import { fetchDramaAssets, fetchDramaSeriesDetail, fetchDramaStoryboard, fetchDramaTextModels, updateDramaEpisode, updateDramaSeries } from "../../api/drama.js";
+import { DramaAssetBoard, dramaAssetsStatus } from "./DramaAssetBoard.jsx";
+import { DramaStoryboard, dramaStoryboardStatus } from "./DramaStoryboard.jsx";
 import { DramaStylePicker } from "./DramaStylePicker.jsx";
 import { DEFAULT_DRAMA_STYLE_KEY } from "./dramaStyles.js";
 
@@ -33,9 +35,29 @@ export function DramaWorkbench({ seriesId }) {
   const textModels = textModelsQuery.data || [];
   const series = seriesQuery.data;
   const episode = series?.episodes?.[0];
+  const [step, setStep] = useState("script");
   const [form, setForm] = useState(null);
   const [episodeName, setEpisodeName] = useState("");
   const [saved, setSaved] = useState(false);
+  const assetsQuery = useQuery({
+    queryKey: ["drama-assets", episode?.id],
+    queryFn: () => fetchDramaAssets(episode.id),
+    enabled: Boolean(episode?.id),
+  });
+  const storyboardQuery = useQuery({
+    queryKey: ["drama-storyboard", episode?.id],
+    queryFn: () => fetchDramaStoryboard(episode.id),
+    enabled: Boolean(episode?.id),
+  });
+  const assetsStatus = dramaAssetsStatus(assetsQuery.data);
+  const boardStatus = dramaStoryboardStatus(storyboardQuery.data);
+
+  function stepStatus(stepId) {
+    if (stepId === "script") return episode?.status || "未开始";
+    if (stepId === "assets") return assetsStatus;
+    if (stepId === "board") return boardStatus;
+    return "未开始";
+  }
 
   useEffect(() => {
     if (!series) return;
@@ -106,18 +128,30 @@ export function DramaWorkbench({ seriesId }) {
         <span className="drama-status-chip">{episode?.status || "未开始"}</span>
       </header>
       <nav className="drama-steps" aria-label="四步工作台">
-        {STEPS.map((step, index) => {
-          const Icon = step.icon;
+        {STEPS.map((item, index) => {
+          const Icon = item.icon;
+          const status = stepStatus(item.id);
           return (
-            <div className="drama-step" key={step.id}>
-              <span><Icon size={14} /> {index + 1}. {step.label}</span>
-              <small>{step.hint}</small>
-              <em><Lock size={11} /> 未开始</em>
-            </div>
+            <button
+              className={`drama-step ${step === item.id ? "is-active" : ""}`}
+              type="button"
+              key={item.id}
+              onClick={() => setStep(item.id)}
+            >
+              <span><Icon size={14} /> {index + 1}. {item.label}</span>
+              <small>{item.hint}</small>
+              <em><Lock size={11} /> {status}</em>
+            </button>
           );
         })}
       </nav>
-      <div className="drama-workbench__body">
+      <div className={`drama-workbench__body ${step === "assets" || step === "board" ? "drama-workbench__body--stage" : ""}`}>
+        {step === "assets" ? (
+          <DramaAssetBoard series={series} episode={episode} />
+        ) : step === "board" ? (
+          <DramaStoryboard series={series} episode={episode} />
+        ) : (
+          <>
         <section className="drama-info-card">
           <header>
             <h2>基础信息</h2>
@@ -172,20 +206,22 @@ export function DramaWorkbench({ seriesId }) {
           </form>
         </section>
         <section className="drama-empty-stages">
-          {STEPS.map((step) => {
-            const Icon = step.icon;
+          {STEPS.filter((item) => item.id !== "assets" && item.id !== "board").map((item) => {
+            const Icon = item.icon;
             return (
-              <article key={step.id}>
+              <article key={item.id}>
                 <Icon size={18} />
                 <div>
-                  <strong>{step.label}</strong>
-                  <p>{step.hint}。本阶段只提供空壳，后续按阶段门解锁。</p>
+                  <strong>{item.label}</strong>
+                  <p>{item.id === "script" ? "导入或锁定分场剧本后，即可到资产页提取角色场景道具。" : `${item.hint}。本阶段只提供空壳，后续按阶段门解锁。`}</p>
                 </div>
-                <span>未开始</span>
+                <span>{stepStatus(item.id)}</span>
               </article>
             );
           })}
         </section>
+          </>
+        )}
       </div>
     </div>
   );

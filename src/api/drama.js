@@ -31,3 +31,101 @@ export function updateDramaEpisode(id, payload) {
 export function fetchDramaTextModels() {
   return api.get("/drama/text-models");
 }
+
+export function fetchDramaImageModels() {
+  return api.get("/drama/image-models");
+}
+
+export function bindDramaImageModel(seriesId, imageModelId) {
+  return api.put(`/drama/series/${seriesId}/image-model`, { imageModelId });
+}
+
+export function lockDramaScript(episodeId) {
+  return api.post(`/drama/episodes/${episodeId}/script/lock`);
+}
+
+export function fetchDramaAssets(episodeId) {
+  return api.get(`/drama/episodes/${episodeId}/assets`);
+}
+
+export function extractDramaAssets(episodeId) {
+  return api.post(`/drama/episodes/${episodeId}/assets/extract`);
+}
+
+export function createDramaAsset(episodeId, payload) {
+  return api.post(`/drama/episodes/${episodeId}/assets`, payload);
+}
+
+export function updateDramaAsset(assetId, payload) {
+  return api.put(`/drama/assets/${assetId}`, payload);
+}
+
+export function deleteDramaAsset(assetId) {
+  return api.delete(`/drama/assets/${assetId}`);
+}
+
+export function uploadDramaAssetImage(assetId, file) {
+  const data = new FormData();
+  data.append("file", file);
+  return api.post(`/drama/assets/${assetId}/upload`, data);
+}
+
+export function generateDramaAssetImage(assetId, payload = {}) {
+  return api.post(`/drama/assets/${assetId}/generate`, payload);
+}
+
+export function fetchDramaAssetGenerateTask(assetId, taskId) {
+  return api.get(`/drama/assets/${assetId}/generate/tasks/${taskId}`);
+}
+
+export function lockDramaAsset(assetId) {
+  return api.post(`/drama/assets/${assetId}/lock`);
+}
+
+export function fetchDramaStoryboard(episodeId) {
+  return api.get(`/drama/episodes/${episodeId}/storyboard`);
+}
+
+export function draftDramaStoryboard(episodeId) {
+  return api.post(`/drama/episodes/${episodeId}/storyboard/draft`);
+}
+
+export function compileDramaStoryboard(episodeId) {
+  return api.post(`/drama/episodes/${episodeId}/storyboard/compile`);
+}
+
+export function updateDramaShot(shotId, payload) {
+  return api.put(`/drama/shots/${shotId}`, payload);
+}
+
+export function compileDramaShot(shotId) {
+  return api.post(`/drama/shots/${shotId}/compile`);
+}
+
+export function confirmDramaShot(shotId) {
+  return api.post(`/drama/shots/${shotId}/confirm`);
+}
+
+export function pollDramaAssetGenerate(assetId, taskId, { interval = 2000, timeout = 8 * 60 * 1000 } = {}) {
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const tick = async () => {
+      try {
+        const result = await fetchDramaAssetGenerateTask(assetId, taskId);
+        const status = result?.task?.status;
+        if (status === "SUCCEEDED" || status === "FAILED" || status === "CANCELLED") {
+          resolve(result);
+          return;
+        }
+        if (Date.now() - started > timeout) {
+          reject(Object.assign(new Error("生图仍在进行"), { result, stillGoing: true }));
+          return;
+        }
+        window.setTimeout(tick, interval);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    tick();
+  });
+}
