@@ -40,6 +40,18 @@ export function bindDramaImageModel(seriesId, imageModelId) {
   return api.put(`/drama/series/${seriesId}/image-model`, { imageModelId });
 }
 
+export function importDramaScript(episodeId, sourceText) {
+  return api.post(`/drama/episodes/${episodeId}/script/import`, { sourceText });
+}
+
+export function generateDramaScript(episodeId, sourceText) {
+  return api.post(`/drama/episodes/${episodeId}/script/generate`, { sourceText });
+}
+
+export function saveDramaScript(episodeId, payload) {
+  return api.put(`/drama/episodes/${episodeId}/script`, payload);
+}
+
 export function lockDramaScript(episodeId) {
   return api.post(`/drama/episodes/${episodeId}/script/lock`);
 }

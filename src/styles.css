@@ -1104,3 +1104,32 @@ button.asset-card__preview {
   .fast-cosmic-backdrop video { display: none; }
   .fast-cosmic-backdrop__beam { animation: none; }
 }
+
+.drama-script { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.drama-script__head { display: flex; align-items: center; gap: 10px; }
+.drama-script__head h2 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 15px; }
+.drama-script__meta { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.drama-script__meta .drama-status-chip { margin-left: 0; }
+.drama-script__raw { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }
+.drama-script__raw textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); color: var(--ink); font: inherit; line-height: 1.7; resize: vertical; }
+.drama-script__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.drama-script__actions .button { display: inline-flex; align-items: center; gap: 6px; }
+.drama-script__hint, .drama-script__empty { margin: 0; color: var(--muted); font-size: 12px; }
+.drama-engine { border-radius: 999px; padding: 5px 10px; font-size: 11px; font-weight: 650; color: #5d6671; background: color-mix(in srgb, var(--muted) 14%, transparent); }
+.drama-engine--rules { color: #2f6fb3; background: #e8f0f9; }
+.drama-engine--llm { color: #1f8a5b; background: #e8f6ee; }
+.drama-engine--pending { color: #9a6b12; background: #f8efd8; }
+
+.drama-scenes { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.drama-scene { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); }
+.drama-scene header { display: flex; align-items: baseline; gap: 8px; }
+.drama-scene header strong { font-size: 13px; }
+.drama-scene header small { color: var(--muted); font-size: 11px; }
+.drama-scene__action { margin: 0; color: var(--ink); font-size: 12px; line-height: 1.75; }
+.drama-scene__tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.drama-tag { border-radius: 999px; padding: 3px 9px; color: #5d6671; background: color-mix(in srgb, var(--muted) 12%, transparent); font-size: 11px; }
+.drama-tag--person { color: #2f6fb3; background: #e8f0f9; }
+.drama-scene__dialogue { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.drama-scene__dialogue li { display: flex; gap: 8px; font-size: 12px; line-height: 1.7; }
+.drama-scene__dialogue b { flex: 0 0 auto; min-width: 3.5em; color: var(--primary); font-weight: 650; }
+.drama-scene__sound { margin: 0; color: var(--muted); font-size: 11px; }

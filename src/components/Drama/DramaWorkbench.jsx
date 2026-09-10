@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { fetchDramaAssets, fetchDramaSeriesDetail, fetchDramaStoryboard, fetchDramaTextModels, updateDramaEpisode, updateDramaSeries } from "../../api/drama.js";
 import { DramaAssetBoard, dramaAssetsStatus } from "./DramaAssetBoard.jsx";
+import { DramaScriptPanel } from "./DramaScriptPanel.jsx";
 import { DramaStoryboard, dramaStoryboardStatus } from "./DramaStoryboard.jsx";
 import { DramaStylePicker } from "./DramaStylePicker.jsx";
 import { DEFAULT_DRAMA_STYLE_KEY } from "./dramaStyles.js";
@@ -152,6 +153,7 @@ export function DramaWorkbench({ seriesId }) {
           <DramaStoryboard series={series} episode={episode} />
         ) : (
           <>
+        {step === "script" && <DramaScriptPanel episode={episode} />}
         <section className="drama-info-card">
           <header>
             <h2>基础信息</h2>
@@ -206,7 +208,7 @@ export function DramaWorkbench({ seriesId }) {
           </form>
         </section>
         <section className="drama-empty-stages">
-          {STEPS.filter((item) => item.id !== "assets" && item.id !== "board").map((item) => {
+          {STEPS.filter((item) => item.id !== "assets" && item.id !== "board" && item.id !== step).map((item) => {
             const Icon = item.icon;
             return (
               <article key={item.id}>
