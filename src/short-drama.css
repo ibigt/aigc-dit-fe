@@ -1022,3 +1022,202 @@
   .drama-script-layout { grid-template-columns: 1fr; }
   .drama-script-settings { position: static; }
 }
+
+/* Wave B: storyboard = episodes + player + filmstrip + right inspector */
+.youxi-workspace .drama-step.drama-step--shots { overflow: hidden; }
+.youxi-workspace .drama-step--shots > .youxi-storyboard-layout { height: 100%; min-height: 0; }
+.youxi-storyboard-layout.youxi-storyboard-layout--board {
+  grid-template-columns: 190px minmax(0, 1fr) minmax(320px, 380px);
+}
+.youxi-storyboard-layout--board .youxi-shots-center {
+  box-shadow: inset 1px 0 #e7eaf0, inset -1px 0 #e7eaf0;
+  display: grid;
+  grid-template-rows: 54px minmax(0, 1fr);
+}
+.youxi-storyboard-layout--board > .youxi-inspector {
+  min-height: 0;
+}
+.youxi-shots-center__body {
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.youxi-storyboard-layout--board .youxi-shots-center > .youxi-storyboard-main,
+.youxi-storyboard-layout--board .youxi-shots-center__body > .youxi-storyboard-main,
+.youxi-storyboard-layout--board .youxi-shots-center__body > .drama-asset-empty {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+.youxi-shot-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #536070;
+  font-size: 12px;
+}
+.youxi-shot-model select {
+  min-width: 148px;
+  height: 34px;
+  padding: 0 8px;
+  color: #303a49;
+  border: 1px solid #dfe4eb;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 12px;
+}
+.youxi-chapters > div > button span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.youxi-chapters > div > button span strong {
+  display: block;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.youxi-story-side-empty {
+  margin: 16px 8px;
+  color: #8b94a0;
+  font-size: 12px;
+}
+.youxi-story-gate { margin: 10px 16px 0; }
+.youxi-story-error { margin: 8px 16px 0; }
+.youxi-storyboard-layout--board .youxi-story-preview {
+  grid-template-rows: minmax(0, 1fr);
+  align-content: stretch;
+  overflow: hidden;
+  padding-bottom: 10px;
+}
+.youxi-storyboard-layout--board .youxi-story-preview video {
+  width: min(720px, 100%);
+  height: auto;
+  max-height: 100%;
+  object-fit: contain;
+  background: #111;
+}
+.youxi-storyboard-layout--board .youxi-story-preview video[data-ratio="9:16"] {
+  width: auto;
+  height: min(100%, 48vh);
+  max-width: min(280px, 100%);
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+}
+.youxi-storyboard-layout--board .youxi-story-preview video[data-ratio="1:1"] {
+  width: min(420px, 70%);
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+}
+.youxi-story-empty-preview[data-ratio="9:16"] {
+  width: min(280px, calc(100% - 28px));
+  aspect-ratio: 9 / 16;
+  height: auto;
+  min-height: 0;
+}
+.youxi-story-empty-preview[data-ratio="1:1"] {
+  width: min(360px, calc(100% - 28px));
+  aspect-ratio: 1 / 1;
+  height: auto;
+  min-height: 0;
+}
+.youxi-story-inspector .youxi-story-cast {
+  margin: 16px 0 14px;
+}
+.youxi-story-inspector .youxi-story-cast > header {
+  margin-bottom: 8px;
+}
+.youxi-story-inspector .youxi-story-cast > header strong {
+  font-size: 13px;
+}
+.youxi-story-inspector .youxi-story-goal {
+  margin: 0 0 12px;
+  color: #626d7b;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.youxi-story-inspector .youxi-story-meta {
+  width: 100%;
+  justify-content: flex-start;
+}
+.youxi-story-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.youxi-story-meta em {
+  padding: 3px 8px;
+  color: #4c5bc8;
+  border-radius: 99px;
+  background: #eef0ff;
+  font-size: 11px;
+  font-style: normal;
+}
+.youxi-story-inspector .youxi-story-refs {
+  width: 100%;
+  margin: 14px 0 18px;
+}
+.youxi-story-refs {
+  display: grid;
+  gap: 8px;
+}
+.youxi-story-refs > span {
+  color: #626d7b;
+  font-size: 11px;
+  font-weight: 700;
+}
+.youxi-story-refs > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.youxi-story-refs label,
+.youxi-story-refs figure {
+  min-width: 92px;
+  margin: 0;
+  padding: 6px;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  color: #4f5968;
+  border: 1px solid var(--drama-line);
+  border-radius: 9px;
+  background: #fff;
+  font-size: 11px;
+}
+.youxi-story-refs label { cursor: pointer; }
+.youxi-story-refs label.is-on,
+.youxi-story-refs figure.is-on { border-color: #6572ed; box-shadow: 0 0 0 2px rgba(101, 114, 237, .12); }
+.youxi-story-refs label input { position: absolute; opacity: 0; }
+.youxi-story-refs img, .youxi-story-refs i {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 7px;
+  background: #e8ebf0;
+}
+.youxi-story-refs b { font-size: 10px; font-weight: 700; color: #6572ed; }
+.youxi-story-refs small { color: #8b94a0; font-size: 10px; }
+.youxi-story-refs em { color: #8b94a0; font-size: 12px; font-style: normal; }
+.youxi-storyboard-layout--board .youxi-shot-thumb { cursor: pointer; }
+.youxi-storyboard-layout--board .youxi-shot-thumb:active { cursor: pointer; }
+
+.console-shell[data-theme="dark"] .youxi-shot-model,
+.console-shell[data-theme="dark"] .youxi-shot-model select { color: #e1e7ef; }
+.console-shell[data-theme="dark"] .youxi-shot-model select { border-color: #3a4553; background: #202832; }
+.console-shell[data-theme="dark"] .youxi-story-meta em { color: #c5cbff; background: #252c45; }
+.console-shell[data-theme="dark"] .youxi-story-refs label,
+.console-shell[data-theme="dark"] .youxi-story-refs figure { color: #e5eaf2; background: #171d26; border-color: #303a47; }
+.console-shell[data-theme="dark"] .youxi-story-inspector .youxi-story-goal { color: #aeb9c6; }
+
+@media (max-width: 1120px) {
+  .youxi-storyboard-layout.youxi-storyboard-layout--board { grid-template-columns: 158px minmax(0, 1fr) 300px; }
+}
+@media (max-width: 720px) {
+  .youxi-storyboard-layout.youxi-storyboard-layout--board { display: block; overflow-y: auto; }
+  .youxi-workspace .drama-step.drama-step--shots { overflow-y: auto; }
+  .youxi-storyboard-layout--board .youxi-shots-center { height: auto; }
+  .youxi-storyboard-layout--board > .youxi-inspector { min-height: 480px; border-left: 0; border-top: 1px solid var(--drama-line); }
+}

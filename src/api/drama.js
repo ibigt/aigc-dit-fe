@@ -125,6 +125,22 @@ export function confirmDramaShot(shotId) {
   return api.post(`/drama/shots/${shotId}/confirm`);
 }
 
+export function fetchDramaVideoModels() {
+  return api.get("/drama/video-models");
+}
+
+export function bindDramaVideoModel(seriesId, videoModelId) {
+  return api.put(`/drama/series/${seriesId}/video-model`, { videoModelId });
+}
+
+export function generateDramaShot(shotId) {
+  return api.post(`/drama/shots/${shotId}/generate`);
+}
+
+export function fetchDramaShotGenerateTask(shotId, taskId) {
+  return api.get(`/drama/shots/${shotId}/generate/tasks/${taskId}`);
+}
+
 export function pollDramaAssetGenerate(assetId, taskId, { interval = 2000, timeout = 8 * 60 * 1000 } = {}) {
   const started = Date.now();
   return new Promise((resolve, reject) => {
@@ -138,6 +154,30 @@ export function pollDramaAssetGenerate(assetId, taskId, { interval = 2000, timeo
         }
         if (Date.now() - started > timeout) {
           reject(Object.assign(new Error("生图仍在进行"), { result, stillGoing: true }));
+          return;
+        }
+        window.setTimeout(tick, interval);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    tick();
+  });
+}
+
+export function pollDramaShotGenerate(shotId, taskId, { interval = 3000, timeout = 15 * 60 * 1000 } = {}) {
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const tick = async () => {
+      try {
+        const result = await fetchDramaShotGenerateTask(shotId, taskId);
+        const status = result?.task?.status;
+        if (status === "SUCCEEDED" || status === "FAILED" || status === "CANCELLED") {
+          resolve(result);
+          return;
+        }
+        if (Date.now() - started > timeout) {
+          reject(Object.assign(new Error("出片仍在进行"), { result, stillGoing: true }));
           return;
         }
         window.setTimeout(tick, interval);

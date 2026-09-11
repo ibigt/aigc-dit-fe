@@ -183,7 +183,7 @@ export function DramaWorkbench({ seriesId }) {
         </div>
       )}
       {step === "shots" && (
-        <div className="drama-step drama-step--slot">
+        <div className="drama-step drama-step--slot drama-step--shots">
           <DramaStoryboard series={series} episode={episode} />
         </div>
       )}
