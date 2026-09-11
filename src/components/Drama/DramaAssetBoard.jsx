@@ -1,4 +1,15 @@
-import { ImagePlus, Lock, MoreHorizontal, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
+import {
+  Clapperboard,
+  Image as ImageIcon,
+  ImagePlus,
+  Lock,
+  Plus,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+  Upload,
+  UsersRound,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -17,9 +28,15 @@ import {
 } from "../../api/drama.js";
 import { mediaUrl } from "../../lib/media.js";
 
-const TYPES = ["角色", "场景", "道具"];
+const TYPES = [
+  { id: "角色", label: "角色", Icon: UsersRound },
+  { id: "场景", label: "场景", Icon: ImageIcon },
+  { id: "道具", label: "道具", Icon: Clapperboard },
+];
 const RESOLUTIONS = ["1K", "2K"];
-const emptyCreate = { name: "", type: "角色" };
+const PROMPT_MAX = 4000;
+const BATCH_LIMIT = 4;
+const emptyCreate = { name: "", meta: "", prompt: "" };
 
 function promptOf(asset) {
   return asset?.imagePrompt || asset?.description || "";
@@ -30,19 +47,258 @@ function statusLabel(status) {
   return status || "未开始";
 }
 
+function stateLabel(tag) {
+  if (tag === "dream") return "入梦";
+  if (tag === "costume") return "换装";
+  return "";
+}
+
+function identityOf(asset) {
+  if (!asset) return "";
+  const invariants = asset.identityInvariants?.trim();
+  if (invariants) return invariants;
+  const description = asset.description?.trim();
+  const prompt = promptOf(asset);
+  if (description && description !== prompt) return description;
+  const tag = stateLabel(asset.stateTag);
+  return [asset.type, tag, statusLabel(asset.status)].filter(Boolean).join(" · ");
+}
+
+function cardMeta(asset) {
+  const tag = stateLabel(asset.stateTag);
+  return [tag, statusLabel(asset.status)].filter(Boolean).join(" · ");
+}
+
+function SubjectCreateDialog({ type, pending, error, onClose, onCreate }) {
+  const [form, setForm] = useState(emptyCreate);
+  return (
+    <div className="drama-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !pending) onClose(); }}>
+      <section className="drama-dialog" role="dialog" aria-modal="true">
+        <header>
+          <div>
+            <span>统一主体设定</span>
+            <h2>新增{type}</h2>
+          </div>
+        </header>
+        <form
+          className="drama-create-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onCreate(form);
+          }}
+        >
+          <label>
+            {type}名称
+            <input
+              autoFocus
+              required
+              maxLength={128}
+              value={form.name}
+              onChange={(event) => setForm({ ...form, name: event.target.value })}
+              placeholder={`输入${type}名称`}
+            />
+          </label>
+          <label>
+            设定摘要
+            <input
+              maxLength={256}
+              value={form.meta}
+              onChange={(event) => setForm({ ...form, meta: event.target.value })}
+              placeholder={`补充${type}身份、环境或用途`}
+            />
+          </label>
+          <label>
+            图片提示词
+            <textarea
+              rows={5}
+              maxLength={PROMPT_MAX}
+              value={form.prompt}
+              onChange={(event) => setForm({ ...form, prompt: event.target.value })}
+              placeholder="可留空，创建后会按风格自动生成可改的设定图提示词。入梦、换装请另建一条。"
+            />
+          </label>
+          {error && <p className="drama-form-error">{error}</p>}
+          <footer>
+            <button type="button" disabled={pending} onClick={onClose}>取消</button>
+            <button className="button button--primary" type="submit" disabled={pending || !form.name.trim()}>
+              {pending ? "创建中…" : `创建${type}`}
+            </button>
+          </footer>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function SubjectInspector({
+  asset,
+  type,
+  imageModels,
+  imageModelId,
+  seriesImageModelId,
+  seriesImageModelName,
+  resolution,
+  prompt,
+  nameDraft,
+  summaryDraft,
+  generating,
+  modelBound,
+  busy,
+  actionError,
+  onNameChange,
+  onNameBlur,
+  onSummaryChange,
+  onSummaryBlur,
+  onPromptChange,
+  onPromptBlur,
+  onBindModel,
+  onResolution,
+  onGenerate,
+  onUploadClick,
+  onLock,
+}) {
+  const src = mediaUrl(asset?.imageStorageKey || asset?.imageUrl);
+  const generateLabel = asset?.imageStorageKey ? "重新生成" : "图片生成";
+  return (
+    <aside className="youxi-inspector youxi-subject-inspector">
+      <div className="youxi-inspector-tabs">
+        <button type="button" className="active">主体图</button>
+      </div>
+      <div className="youxi-inspector-scroll">
+        {asset ? (
+          <>
+            <label className="youxi-field">
+              <span>{type}名称</span>
+              <input value={nameDraft} maxLength={128} onChange={onNameChange} onBlur={onNameBlur} />
+            </label>
+            <label className="youxi-field youxi-field--summary">
+              <span>设定摘要</span>
+              <textarea
+                rows={3}
+                maxLength={512}
+                value={summaryDraft}
+                onChange={onSummaryChange}
+                onBlur={onSummaryBlur}
+                placeholder={`${type}身份、外形或用途，入梦/换装须独立成条`}
+              />
+            </label>
+            <label className="youxi-field">
+              <span>图片提示词</span>
+              <textarea
+                value={prompt}
+                maxLength={PROMPT_MAX}
+                onChange={onPromptChange}
+                onBlur={onPromptBlur}
+                placeholder="提取后会自动带出设定图提示词，可按角色/场景/道具继续改"
+              />
+            </label>
+            <div className="field-count">{(prompt || "").length} / {PROMPT_MAX}</div>
+            <label className="youxi-field youxi-field--compact">
+              <span>出图分辨率</span>
+              <select aria-label="出图分辨率" value={resolution} onChange={(event) => onResolution(event.target.value)}>
+                {RESOLUTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
+            <div className="youxi-model-row">
+              <select
+                aria-label="图片生成模型"
+                value={imageModelId}
+                onChange={(event) => onBindModel(event.target.value)}
+              >
+                <option value="">{imageModels.length ? "请选择图像模型" : "暂无已启用图像模型"}</option>
+                {seriesImageModelId && !imageModels.some((item) => String(item.id) === String(seriesImageModelId)) && (
+                  <option value={seriesImageModelId}>{seriesImageModelName || "已绑定（当前已停用）"}</option>
+                )}
+                {imageModels.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}{item.provider ? ` · ${item.provider}` : ""}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="button button--primary"
+                type="button"
+                disabled={!modelBound || generating || !prompt.trim() || busy}
+                onClick={onGenerate}
+              >
+                <Sparkles size={15} /> {generating ? "生成中…" : modelBound ? generateLabel : "先选模型"}
+              </button>
+            </div>
+            {asset.genErrorMessage && <p className="drama-form-error">{asset.genErrorMessage}</p>}
+            <section className="youxi-material-block">
+              <header>
+                <strong>主体图</strong>
+                <div className="material-actions">
+                  <button type="button" onClick={onUploadClick} disabled={generating || busy}>
+                    <Upload size={14} /> 本地上传
+                  </button>
+                </div>
+              </header>
+              <div>
+                {src ? (
+                  <img className="youxi-subject-media-preview" src={src} alt={`${asset.name}主体图`} />
+                ) : (
+                  <button className="youxi-empty-subject-media" type="button" onClick={onUploadClick}>
+                    <ImagePlus size={22} />
+                    <span>上传图片</span>
+                  </button>
+                )}
+              </div>
+            </section>
+            <div className="youxi-inspector-actions">
+              <button
+                className="button button--primary"
+                type="button"
+                disabled={busy || generating || !asset.imageStorageKey || asset.status === "已锁定"}
+                onClick={onLock}
+              >
+                {asset.status === "已锁定" ? "已锁定" : busy ? "锁定中…" : "锁定主体"}
+              </button>
+              <p>锁定且有图后，才能作为分镜参考。改提示词或重生成会重新待确认。</p>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="youxi-story-side-empty">选中{type}后，可在此改提示词、选全局图像模型并生图。</p>
+            <div className="youxi-model-row">
+              <select
+                aria-label="图片生成模型"
+                value={imageModelId}
+                onChange={(event) => onBindModel(event.target.value)}
+              >
+                <option value="">{imageModels.length ? "请选择图像模型" : "暂无已启用图像模型"}</option>
+                {seriesImageModelId && !imageModels.some((item) => String(item.id) === String(seriesImageModelId)) && (
+                  <option value={seriesImageModelId}>{seriesImageModelName || "已绑定（当前已停用）"}</option>
+                )}
+                {imageModels.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}{item.provider ? ` · ${item.provider}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
+        {actionError && <p className="drama-form-error">{actionError}</p>}
+      </div>
+    </aside>
+  );
+}
+
 export function DramaAssetBoard({ series, episode }) {
   const queryClient = useQueryClient();
   const episodeId = episode?.id;
   const seriesId = series?.id;
   const fileRef = useRef(null);
-  const [typeFilter, setTypeFilter] = useState("全部");
+  const [type, setType] = useState("角色");
+  const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
-  const [createForm, setCreateForm] = useState(emptyCreate);
   const [imageModelId, setImageModelId] = useState(series?.imageModelId || "");
   const [resolution, setResolution] = useState("1K");
-  const [prompts, setPrompts] = useState({});
-  const [menuId, setMenuId] = useState(null);
-  const [uploadId, setUploadId] = useState(null);
+  const [nameDraft, setNameDraft] = useState("");
+  const [summaryDraft, setSummaryDraft] = useState("");
+  const [promptDraft, setPromptDraft] = useState("");
+  const [promptDirty, setPromptDirty] = useState(false);
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
 
@@ -64,31 +320,37 @@ export function DramaAssetBoard({ series, episode }) {
     setImageModelId(series?.imageModelId || "");
   }, [series?.imageModelId]);
 
-  useEffect(() => {
-    setPrompts((current) => {
-      const next = { ...current };
-      for (const item of assets) {
-        if (next[item.id] === undefined) next[item.id] = promptOf(item);
-      }
-      return next;
-    });
-  }, [assets]);
-
-  const filtered = useMemo(() => {
-    if (typeFilter === "全部") return assets;
-    return assets.filter((item) => item.type === typeFilter);
-  }, [assets, typeFilter]);
-
+  const filtered = useMemo(
+    () => assets.filter((item) => item.type === type),
+    [assets, type],
+  );
   const counts = useMemo(() => {
     const byType = { 角色: 0, 场景: 0, 道具: 0 };
     for (const item of assets) {
       if (byType[item.type] != null) byType[item.type] += 1;
     }
-    return { 全部: assets.length, ...byType };
+    return byType;
   }, [assets]);
 
-  const generatedCount = assets.filter((item) => item.imageStorageKey).length;
-  const confirmedCount = assets.filter((item) => item.status === "已锁定").length;
+  const selected = filtered.find((item) => item.id === selectedId) || filtered[0] || null;
+
+  useEffect(() => {
+    if (selected && selected.id !== selectedId) setSelectedId(selected.id);
+    if (!filtered.length && selectedId != null) setSelectedId(null);
+  }, [filtered, selected, selectedId]);
+
+  useEffect(() => {
+    setPromptDirty(false);
+    setNameDraft(selected?.name || "");
+    setSummaryDraft(identityOf(selected));
+    setPromptDraft(promptOf(selected));
+  }, [selected?.id]);
+
+  useEffect(() => {
+    if (!selected || promptDirty) return;
+    setPromptDraft(promptOf(selected));
+    setSummaryDraft(identityOf(selected));
+  }, [selected?.imagePrompt, selected?.identityInvariants, selected?.description, promptDirty]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["drama-assets", episodeId] });
@@ -104,7 +366,7 @@ export function DramaAssetBoard({ series, episode }) {
       return next;
     });
   };
-  const isBusy = (id, action) => Boolean(busy[`${id}:${action}`]);
+  const isBusy = (id, action) => Boolean(id && busy[`${id}:${action}`]);
 
   const bindMutation = useMutation({
     mutationFn: (id) => bindDramaImageModel(seriesId, Number(id)),
@@ -112,41 +374,48 @@ export function DramaAssetBoard({ series, episode }) {
   });
   const extractMutation = useMutation({
     mutationFn: () => extractDramaAssets(episodeId),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      setPromptDirty(false);
+      invalidate();
+    },
   });
   const lockScriptMutation = useMutation({
     mutationFn: () => lockDramaScript(episodeId),
     onSuccess: invalidate,
   });
   const createMutation = useMutation({
-    mutationFn: () => createDramaAsset(episodeId, {
-      name: createForm.name.trim(),
-      type: createForm.type,
+    mutationFn: (form) => createDramaAsset(episodeId, {
+      name: form.name.trim(),
+      type,
+      description: form.meta.trim() || undefined,
+      identityInvariants: form.meta.trim() || undefined,
+      imagePrompt: form.prompt.trim() || undefined,
     }),
-    onSuccess: () => {
+    onSuccess: (created) => {
       setCreating(false);
-      setCreateForm(emptyCreate);
+      if (created?.id) setSelectedId(created.id);
       invalidate();
     },
   });
 
-  async function savePrompt(asset) {
-    const imagePrompt = (prompts[asset.id] ?? promptOf(asset)).trim();
-    markBusy(asset.id, "save", true);
-    try {
-      await updateDramaAsset(asset.id, { imagePrompt });
-      invalidate();
-    } finally {
-      markBusy(asset.id, "save", false);
-    }
+  async function saveFields(asset, extra = {}) {
+    const imagePrompt = (extra.imagePrompt ?? (asset.id === selected?.id ? promptDraft : promptOf(asset))).trim();
+    const name = (extra.name ?? (asset.id === selected?.id ? nameDraft : asset.name)).trim();
+    const identity = (extra.identityInvariants ?? (asset.id === selected?.id ? summaryDraft : identityOf(asset))).trim();
+    await updateDramaAsset(asset.id, {
+      name,
+      imagePrompt,
+      identityInvariants: identity,
+    });
+    setPromptDirty(false);
   }
 
   async function generate(asset) {
-    const imagePrompt = (prompts[asset.id] ?? promptOf(asset)).trim();
+    const imagePrompt = (asset.id === selected?.id ? promptDraft : promptOf(asset)).trim();
     if (!imagePrompt) return;
     markBusy(asset.id, "generate", true);
     try {
-      await updateDramaAsset(asset.id, { imagePrompt });
+      await saveFields(asset, { imagePrompt });
       const result = await generateDramaAssetImage(asset.id, { resolution });
       await pollDramaAssetGenerate(asset.id, result.task.id);
       invalidate();
@@ -155,11 +424,23 @@ export function DramaAssetBoard({ series, episode }) {
     }
   }
 
+  async function generateBatch() {
+    const pending = filtered.filter((item) => {
+      const imagePrompt = (item.id === selected?.id ? promptDraft : promptOf(item)).trim();
+      return imagePrompt && !item.imageStorageKey && !item.generating && !isBusy(item.id, "generate");
+    }).slice(0, BATCH_LIMIT);
+    if (!pending.length) {
+      setActionError("当前分类没有待生成的主体图");
+      return;
+    }
+    setActionError("");
+    await Promise.all(pending.map((item) => generate(item)));
+  }
+
   async function confirm(asset) {
-    const imagePrompt = (prompts[asset.id] ?? promptOf(asset)).trim();
     markBusy(asset.id, "lock", true);
     try {
-      await updateDramaAsset(asset.id, { imagePrompt });
+      await saveFields(asset);
       await lockDramaAsset(asset.id);
       invalidate();
     } finally {
@@ -171,7 +452,7 @@ export function DramaAssetBoard({ series, episode }) {
     markBusy(asset.id, "delete", true);
     try {
       await deleteDramaAsset(asset.id);
-      setMenuId(null);
+      if (selectedId === asset.id) setSelectedId(null);
       invalidate();
     } finally {
       markBusy(asset.id, "delete", false);
@@ -179,180 +460,199 @@ export function DramaAssetBoard({ series, episode }) {
   }
 
   async function onUpload(file) {
-    if (!file || !uploadId) return;
-    markBusy(uploadId, "upload", true);
+    if (!file || !selected?.id) return;
+    markBusy(selected.id, "upload", true);
     try {
-      await uploadDramaAssetImage(uploadId, file);
+      await uploadDramaAssetImage(selected.id, file);
       invalidate();
     } finally {
-      markBusy(uploadId, "upload", false);
-      setUploadId(null);
+      markBusy(selected.id, "upload", false);
     }
   }
 
   const modelBound = Boolean(imageModelId);
   const error = bindMutation.error || extractMutation.error || lockScriptMutation.error || createMutation.error;
+  const selectedBusy = isBusy(selected?.id, "lock") || isBusy(selected?.id, "save") || isBusy(selected?.id, "upload");
+  const selectedGenerating = Boolean(selected?.generating) || isBusy(selected?.id, "generate");
 
   return (
-    <section className="drama-asset-board">
-      <header className="drama-asset-board__bar">
-        <div>
-          <h2>角色与场景清单</h2>
-          <p>页顶选一次图像模型和分辨率。卡片上改提示词即可生图、上传或确认。</p>
-        </div>
-        <div className="drama-asset-board__controls">
-          <label className="drama-asset-model">
-            图像模型
-            <select
-              value={imageModelId}
-              onChange={(event) => {
-                const value = event.target.value;
-                setImageModelId(value);
-                if (value) bindMutation.mutate(value);
+    <div className="drama-asset-board youxi-subject-layout">
+      <aside className="youxi-subject-nav">
+        <header>
+          <strong>主体分类</strong>
+          <span>共{assets.length}个</span>
+        </header>
+        <div className="youxi-subject-tabs" role="tablist" aria-label="主体类型">
+          {TYPES.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={type === item.id}
+              className={type === item.id ? "active" : ""}
+              onClick={() => {
+                setType(item.id);
+                const first = assets.find((asset) => asset.type === item.id);
+                setSelectedId(first?.id || null);
+                setPromptDirty(false);
               }}
             >
-              <option value="">{imageModels.length ? "请选择图像模型" : "暂无已启用图像模型"}</option>
-              {series?.imageModelId && !imageModels.some((item) => String(item.id) === String(series.imageModelId)) && (
-                <option value={series.imageModelId}>{series.imageModelName || "已绑定（当前已停用）"}</option>
-              )}
-              {imageModels.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}{item.provider ? ` · ${item.provider}` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="drama-asset-model">
-            分辨率
-            <select value={resolution} onChange={(event) => setResolution(event.target.value)}>
-              {RESOLUTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-          </label>
-        </div>
-      </header>
-
-      {!scriptLocked && (
-        <div className="drama-asset-gate">
-          <Lock size={16} />
-          <div>
-            <strong>请先锁定分场剧本</strong>
-            <p>锁定后可从剧本当中提取角色、场景、道具。未确认的资产不能进分镜。</p>
-          </div>
-          <button
-            className="button button--primary"
-            type="button"
-            disabled={lockScriptMutation.isPending || !(episode?.sourceText || (episode?.script && Object.keys(episode.script).length))}
-            onClick={() => lockScriptMutation.mutate()}
-          >
-            {lockScriptMutation.isPending ? "锁定中…" : "锁定剧本"}
-          </button>
-        </div>
-      )}
-
-      <div className="drama-asset-toolbar">
-        <div className="filter-tabs">
-          {["全部", ...TYPES].map((item) => (
-            <button key={item} type="button" className={typeFilter === item ? "active" : ""} onClick={() => setTypeFilter(item)}>
-              {item} {counts[item] || 0}
+              <item.Icon size={16} />
+              {item.label}
+              <span>{counts[item.id] || 0}</span>
             </button>
           ))}
         </div>
-        <div className="drama-asset-toolbar__actions">
-          <button className="button button--ghost" type="button" disabled={!scriptLocked || extractMutation.isPending} onClick={() => extractMutation.mutate()}>
-            <RefreshCw size={14} /> {extractMutation.isPending ? "提取中…" : "从剧本提取"}
-          </button>
-          <button className="button button--primary" type="button" onClick={() => setCreating(true)}>
-            <Plus size={14} /> 新增资产
-          </button>
+        <p>在三个标签页中管理全剧统一使用的角色、场景与道具。提取后会带出可改的图片提示词。</p>
+      </aside>
+
+      <section className="youxi-subject-main">
+        <div className="youxi-subject-narration">
+          {scriptLocked ? (
+            <button type="button" disabled={!episodeId || extractMutation.isPending} onClick={() => extractMutation.mutate()}>
+              <RefreshCw size={16} />
+              <span>从剧本提取</span>
+              <strong>{extractMutation.isPending ? "提取中" : `${assets.length}个`}</strong>
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={lockScriptMutation.isPending || !(episode?.sourceText || (episode?.script && Object.keys(episode.script).length))}
+              onClick={() => lockScriptMutation.mutate()}
+            >
+              <Lock size={16} />
+              <span>锁定剧本后才能提取</span>
+              <strong>{lockScriptMutation.isPending ? "锁定中" : "未锁定"}</strong>
+            </button>
+          )}
+          <div>
+            <button
+              type="button"
+              disabled={!modelBound || extractMutation.isPending}
+              onClick={() => generateBatch().catch((err) => setActionError(err.message))}
+            >
+              <Sparkles size={15} /> 批量生图
+            </button>
+            <button type="button" onClick={() => setCreating(true)}>
+              <Plus size={15} /> 新增{type}
+            </button>
+          </div>
         </div>
-      </div>
 
-      {(error || actionError) && <p className="drama-form-error">{error?.message || actionError}</p>}
+        <div className="youxi-subject-body">
+          {!scriptLocked && (
+            <div className="drama-asset-gate youxi-subject-gate">
+              <Lock size={16} />
+              <div>
+                <strong>请先锁定分场剧本</strong>
+                <p>锁定后可从剧本当中提取角色、场景、道具。未锁定主体不能进分镜。</p>
+              </div>
+            </div>
+          )}
 
-      {filtered.length === 0 ? (
-        <p className="drama-asset-empty">还没有资产。锁定剧本后提取，或点右上角新增。入梦、换装请另建一条。</p>
-      ) : (
-        <div className="drama-asset-grid drama-asset-grid--cards">
-          {filtered.map((item) => {
-            const src = mediaUrl(item.imageStorageKey || item.imageUrl);
-            const generating = Boolean(item.generating) || isBusy(item.id, "generate");
-            const prompt = prompts[item.id] ?? promptOf(item);
-            return (
-              <article className="drama-asset-tile" key={item.id}>
-                <header>
-                  <div>
-                    <small>{item.type}</small>
-                    <strong>{item.name}</strong>
-                  </div>
-                  <div className="drama-asset-tile__meta">
-                    <em className={`drama-status-chip drama-status-chip--${item.status}`}>{statusLabel(item.status)}</em>
-                    <button type="button" className="drama-asset-tile__more" aria-label="更多" onClick={() => setMenuId(menuId === item.id ? null : item.id)}>
-                      <MoreHorizontal size={16} />
-                    </button>
-                    {menuId === item.id && (
-                      <div className="drama-asset-menu">
-                        <button type="button" onClick={() => { setUploadId(item.id); setMenuId(null); fileRef.current?.click(); }}>
-                          <Upload size={14} /> 上传图片
-                        </button>
-                        <button type="button" disabled={generating || isBusy(item.id, "delete")} onClick={() => remove(item).catch((err) => setActionError(err.message))}>
-                          <Trash2 size={14} /> 删除
-                        </button>
+          {(error || actionError) && (
+            <p className="drama-form-error youxi-subject-error">{error?.message || actionError}</p>
+          )}
+
+          {filtered.length === 0 ? (
+            <div className="youxi-subject-grid">
+              <button className="youxi-add-subject" type="button" onClick={() => setCreating(true)}>
+                <Plus size={22} />
+                <strong>新增{type}</strong>
+              </button>
+            </div>
+          ) : (
+            <div className="youxi-subject-grid">
+              {filtered.map((item) => {
+                const src = mediaUrl(item.imageStorageKey || item.imageUrl);
+                const generating = Boolean(item.generating) || isBusy(item.id, "generate");
+                return (
+                  <article className={`youxi-subject-card ${selected?.id === item.id ? "active" : ""}`} key={item.id}>
+                    <header>
+                      <strong>{item.name}</strong>
+                      <button
+                        type="button"
+                        aria-label={`删除${item.name}`}
+                        disabled={generating || isBusy(item.id, "delete")}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          remove(item).catch((err) => setActionError(err.message));
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </header>
+                    <button className="youxi-subject-card__select" type="button" onClick={() => setSelectedId(item.id)}>
+                      <div className={`${!src ? "is-empty" : ""} ${generating ? "is-generating" : ""}`}>
+                        {src ? (
+                          <>
+                            <img src={src} alt={item.name} />
+                            <span>{generating ? "生成中" : statusLabel(item.status)}</span>
+                          </>
+                        ) : (
+                          <div className="youxi-subject-empty">
+                            <ImageIcon size={31} />
+                            <b>{generating ? "生成中" : "上传图片"}</b>
+                            <small>也可在右侧生成主体图</small>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                </header>
-                <div className={`drama-asset-tile__cover ${generating ? "is-generating" : ""}`}>
-                  {src ? <img src={src} alt="" /> : <span><ImagePlus size={22} />等待生成</span>}
-                  {generating && <em>生成中</em>}
-                </div>
-                {item.genErrorMessage && <p className="drama-form-error">{item.genErrorMessage}</p>}
-                <label>
-                  中文提示词
-                  <textarea
-                    rows={4}
-                    value={prompt}
-                    onChange={(event) => setPrompts((current) => ({ ...current, [item.id]: event.target.value }))}
-                    placeholder="中性背景参考图，写清外形与服装即可"
-                  />
-                </label>
-                <footer>
-                  <button
-                    className="button button--ghost"
-                    type="button"
-                    disabled={!modelBound || generating || !prompt.trim()}
-                    onClick={() => generate(item).catch((err) => setActionError(err.message))}
-                  >
-                    {generating ? "生成中…" : modelBound ? "生成图片" : "先选模型"}
-                  </button>
-                  <button
-                    className="button button--ghost"
-                    type="button"
-                    disabled={isBusy(item.id, "save") || !prompt.trim()}
-                    onClick={() => savePrompt(item).catch((err) => setActionError(err.message))}
-                  >
-                    {isBusy(item.id, "save") ? "保存中…" : "保存提示词"}
-                  </button>
-                  <button
-                    className="button button--primary"
-                    type="button"
-                    disabled={isBusy(item.id, "lock") || !item.imageStorageKey || item.status === "已锁定"}
-                    onClick={() => confirm(item).catch((err) => setActionError(err.message))}
-                  >
-                    {item.status === "已锁定" ? "已确认" : isBusy(item.id, "lock") ? "确认中…" : "确认资产"}
-                  </button>
-                </footer>
-              </article>
-            );
-          })}
+                    </button>
+                    <p className="youxi-subject-card__meta">{cardMeta(item)}</p>
+                  </article>
+                );
+              })}
+              <button className="youxi-add-subject" type="button" onClick={() => setCreating(true)}>
+                <Plus size={22} />
+                <strong>新增{type}</strong>
+              </button>
+            </div>
+          )}
         </div>
-      )}
+      </section>
 
-      {assets.length > 0 && (
-        <p className="drama-asset-summary">
-          {generatedCount}/{assets.length} 已生成 · {confirmedCount}/{assets.length} 已确认
-          {confirmedCount < assets.length ? "。确认后才能进入分镜。" : ""}
-        </p>
-      )}
+      <SubjectInspector
+        asset={selected}
+        type={type}
+        imageModels={imageModels}
+        imageModelId={imageModelId}
+        seriesImageModelId={series?.imageModelId}
+        seriesImageModelName={series?.imageModelName}
+        resolution={resolution}
+        prompt={promptDraft}
+        nameDraft={nameDraft}
+        summaryDraft={summaryDraft}
+        generating={selectedGenerating}
+        modelBound={modelBound}
+        busy={selectedBusy}
+        actionError=""
+        onNameChange={(event) => setNameDraft(event.target.value)}
+        onNameBlur={() => {
+          if (!selected || nameDraft.trim() === selected.name) return;
+          saveFields(selected, { name: nameDraft }).then(invalidate).catch((err) => setActionError(err.message));
+        }}
+        onSummaryChange={(event) => setSummaryDraft(event.target.value)}
+        onSummaryBlur={() => {
+          if (!selected || summaryDraft.trim() === identityOf(selected)) return;
+          saveFields(selected).then(invalidate).catch((err) => setActionError(err.message));
+        }}
+        onPromptChange={(event) => {
+          setPromptDirty(true);
+          setPromptDraft(event.target.value);
+        }}
+        onPromptBlur={() => {
+          if (!selected || promptDraft.trim() === promptOf(selected).trim()) return;
+          saveFields(selected).then(invalidate).catch((err) => setActionError(err.message));
+        }}
+        onBindModel={(value) => {
+          setImageModelId(value);
+          if (value) bindMutation.mutate(value);
+        }}
+        onResolution={setResolution}
+        onGenerate={() => selected && generate(selected).catch((err) => setActionError(err.message))}
+        onUploadClick={() => fileRef.current?.click()}
+        onLock={() => selected && confirm(selected).catch((err) => setActionError(err.message))}
+      />
 
       <input
         ref={fileRef}
@@ -367,36 +667,15 @@ export function DramaAssetBoard({ series, episode }) {
       />
 
       {creating && (
-        <div className="modal-backdrop" onClick={() => setCreating(false)}>
-          <section className="model-dialog drama-dialog" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
-            <header>
-              <div>
-                <h2>新增资产</h2>
-                <p>入梦、换装请另建一条，不要写进同一条提示词。</p>
-              </div>
-            </header>
-            <form onSubmit={(event) => { event.preventDefault(); createMutation.mutate(); }}>
-              <label>名称<input value={createForm.name} onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })} required maxLength={128} /></label>
-              <label>类型
-                <select value={createForm.type} onChange={(e) => setCreateForm({ ...createForm, type: e.target.value })}>
-                  {TYPES.map((item) => <option key={item} value={item}>{item}</option>)}
-                </select>
-              </label>
-              {createMutation.isError && <p className="drama-form-error">{createMutation.error.message}</p>}
-              <footer>
-                <span />
-                <div>
-                  <button className="button button--ghost" type="button" onClick={() => setCreating(false)}>取消</button>
-                  <button className="button button--primary" type="submit" disabled={createMutation.isPending || !createForm.name.trim()}>
-                    {createMutation.isPending ? "创建中…" : "创建"}
-                  </button>
-                </div>
-              </footer>
-            </form>
-          </section>
-        </div>
+        <SubjectCreateDialog
+          type={type}
+          pending={createMutation.isPending}
+          error={createMutation.error?.message}
+          onClose={() => { if (!createMutation.isPending) setCreating(false); }}
+          onCreate={(form) => createMutation.mutate(form)}
+        />
       )}
-    </section>
+    </div>
   );
 }
 

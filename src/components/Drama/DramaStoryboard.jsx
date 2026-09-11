@@ -24,13 +24,37 @@ function shotLine(shot) {
   return shot?.dialogue || shot?.narrativeGoal || shot?.scene || "";
 }
 
-function posterOf(shot) {
-  const ref = (shot?.references || []).find((item) => item.imageUrl);
-  return ref?.imageUrl || "";
-}
-
 function pictureRefs(shot) {
   return (shot?.references || []).filter((item) => item?.assetId);
+}
+
+function isShotGenerating(shot, busy) {
+  return Boolean(shot?.generating || (shot?.id && busy?.[shot.id] === "generate"));
+}
+
+function ShotThumbPreview({ shot, busy }) {
+  const generating = isShotGenerating(shot, busy);
+  const ready = Boolean(shot?.videoKey) && !generating;
+  const poster = mediaUrl(shot?.videoPosterUrl || shot?.videoPosterKey);
+  const video = mediaUrl(shot?.videoUrl || shot?.videoKey);
+  if (!ready) {
+    return (
+      <div className="youxi-shot-thumb__empty">
+        <b>{generating ? "生成中" : "未生成"}</b>
+      </div>
+    );
+  }
+  if (poster) {
+    return <img src={poster} alt="" />;
+  }
+  if (video) {
+    return <video src={video} muted playsInline preload="metadata" tabIndex={-1} />;
+  }
+  return (
+    <div className="youxi-shot-thumb__empty">
+      <b>已出片</b>
+    </div>
+  );
 }
 
 export function dramaStoryboardStatus(board) {
@@ -451,7 +475,7 @@ export function DramaStoryboard({ series, episode }) {
                   preload="metadata"
                   data-ratio={ratio}
                   src={videoSrc}
-                  poster={mediaUrl(posterOf(selected)) || undefined}
+                  poster={mediaUrl(selected?.videoPosterUrl || selected?.videoPosterKey) || undefined}
                 >
                   <track kind="captions" />
                 </video>
@@ -486,8 +510,8 @@ export function DramaStoryboard({ series, episode }) {
             <div className="youxi-filmstrip" role="list">
               {shots.map((shot) => {
                 const active = selected?.id === shot.id;
-                const ready = Boolean(shot.videoKey);
-                const thumb = mediaUrl(posterOf(shot));
+                const generatingShot = isShotGenerating(shot, busy);
+                const ready = Boolean(shot.videoKey) && !generatingShot;
                 return (
                   <div className="youxi-filmstrip-unit" key={shot.id}>
                     <button
@@ -497,15 +521,9 @@ export function DramaStoryboard({ series, episode }) {
                     >
                       <span className="youxi-shot-thumb__preview">
                         <span>镜 {shot.shotIndex}</span>
-                        {thumb ? (
-                          <img src={thumb} alt="" />
-                        ) : (
-                          <div className="youxi-shot-thumb__empty">
-                            {ready ? <b>已出片</b> : <b>未生成</b>}
-                          </div>
-                        )}
+                        <ShotThumbPreview shot={shot} busy={busy} />
                         <small className={ready ? "is-ready" : ""}>
-                          {shot.generating || busy[shot.id] === "generate"
+                          {generatingShot
                             ? "生成中"
                             : ready
                               ? `${shot.durationSec || 5}s · 已生成`
