@@ -1036,6 +1036,27 @@ button.asset-card__preview {
 
 .drama-script { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
 .drama-script__head { display: flex; align-items: center; gap: 10px; }
+.drama-analysis-summary { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--soft); }
+.drama-analysis-progress { border: 1px solid rgba(111, 94, 255, .28); border-radius: 12px; padding: 13px; background: linear-gradient(135deg, rgba(111, 94, 255, .09), var(--soft)); }
+.drama-analysis-progress__topline { display: flex; justify-content: space-between; gap: 12px; }
+.drama-analysis-progress__topline div { display: flex; flex-direction: column; gap: 4px; }
+.drama-analysis-progress__topline strong { color: var(--ink); font-size: 13px; }
+.drama-analysis-progress__topline span, .drama-analysis-progress__topline b, .drama-analysis-progress p { color: var(--muted); font-size: 12px; }
+.drama-analysis-progress__topline b { white-space: nowrap; font-weight: 500; }
+.drama-progress-track { height: 6px; margin: 12px 0 9px; border-radius: 99px; overflow: hidden; background: rgba(127, 127, 160, .2); }
+.drama-progress-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #7567ff, #b083ff); transition: width .6s ease; }
+.drama-analysis-progress__steps { display: flex; justify-content: space-between; gap: 5px; }
+.drama-analysis-progress__steps span { color: var(--muted); font-size: 10px; }
+.drama-analysis-progress__steps span.done { color: #7567ff; }
+.drama-analysis-progress p { margin: 10px 0 0; }
+.drama-analysis-summary header { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; }
+.drama-analysis-summary header strong { color: var(--ink); font-size: 13px; }
+.drama-analysis-stats { display: flex; gap: 18px; margin-top: 10px; color: var(--muted); font-size: 12px; }
+.drama-analysis-stats b { color: var(--ink); font-size: 20px; margin-right: 3px; }
+.drama-analysis-fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.drama-analysis-fields label, .drama-analysis-requirements { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 12px; }
+.drama-analysis-fields input, .drama-analysis-requirements textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px; background: var(--soft); color: var(--ink); font: inherit; }
+.drama-analysis-requirements { margin-top: 10px; }
 .drama-script__head h2 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 15px; }
 .drama-script__meta { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
 .drama-script__meta .drama-status-chip { margin-left: 0; }

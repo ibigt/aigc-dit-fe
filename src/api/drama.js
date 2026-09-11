@@ -44,8 +44,8 @@ export function bindDramaImageModel(seriesId, imageModelId) {
   return api.put(`/drama/series/${seriesId}/image-model`, { imageModelId });
 }
 
-/** 文本模型单次最多 60s，失败还会回落规则；须长于 axios 默认 30s。 */
-const SCRIPT_LLM_TIMEOUT_MS = 180000;
+/** 文本模型结构化输出较慢，单阶段最多 180s；须覆盖后端模型请求超时。 */
+const SCRIPT_LLM_TIMEOUT_MS = 360000;
 
 export function importDramaScript(episodeId, sourceText) {
   return api.post(`/drama/episodes/${episodeId}/script/import`, { sourceText }, { timeout: SCRIPT_LLM_TIMEOUT_MS });
@@ -53,6 +53,10 @@ export function importDramaScript(episodeId, sourceText) {
 
 export function generateDramaScript(episodeId, sourceText) {
   return api.post(`/drama/episodes/${episodeId}/script/generate`, { sourceText }, { timeout: SCRIPT_LLM_TIMEOUT_MS });
+}
+
+export function analyzeDramaScript(episodeId, payload) {
+  return api.post(`/drama/episodes/${episodeId}/script/analyze`, payload, { timeout: 600000 });
 }
 
 export function saveDramaScript(episodeId, payload) {

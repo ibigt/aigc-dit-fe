@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { FileText, Lock, RectangleHorizontal, RectangleVertical, RefreshCw, Square, Wand2 } from "lucide-react";
-import { generateDramaScript, importDramaScript, lockDramaScript, updateDramaSeries } from "../../api/drama.js";
+import { FileText, Lock, RectangleHorizontal, RectangleVertical, RefreshCw, Square, Wand2, Sparkles } from "lucide-react";
+import { analyzeDramaScript, generateDramaScript, importDramaScript, lockDramaScript, updateDramaSeries } from "../../api/drama.js";
 import { DramaStylePicker } from "./DramaStylePicker.jsx";
 import { DEFAULT_DRAMA_STYLE_KEY } from "./dramaStyles.js";
 
@@ -17,6 +17,22 @@ const ASPECT_RATIOS = [
   { id: "1:1", label: "1:1", Icon: Square },
 ];
 
+const ANALYSIS_STAGES = [
+  { label: "读取剧本", detail: "正在识别人物、场景和剧情结构…", progress: 12 },
+  { label: "生成分场", detail: "正在把原文整理为可编辑的分场剧本…", progress: 30 },
+  { label: "抽取资产", detail: "正在整理角色、场景和道具…", progress: 55 },
+  { label: "生成分镜", detail: "正在为每个场景生成分镜草稿…", progress: 78 },
+  { label: "质量检查", detail: "正在检查分镜与资产的关联关系…", progress: 92 },
+];
+
+function analysisStage(elapsed) {
+  if (elapsed < 8) return ANALYSIS_STAGES[0];
+  if (elapsed < 22) return ANALYSIS_STAGES[1];
+  if (elapsed < 48) return ANALYSIS_STAGES[2];
+  if (elapsed < 90) return ANALYSIS_STAGES[3];
+  return ANALYSIS_STAGES[4];
+}
+
 function sceneTitle(scene, index) {
   return scene.heading || `第${scene.index ?? index + 1}场`;
 }
@@ -28,6 +44,11 @@ function sceneTitle(scene, index) {
 export function DramaScriptPanel({ episode, series }) {
   const queryClient = useQueryClient();
   const [raw, setRaw] = useState("");
+  const [analysis, setAnalysis] = useState(null);
+  const [analysisStartedAt, setAnalysisStartedAt] = useState(null);
+  const [runStartedAt, setRunStartedAt] = useState(null);
+  const [analysisNow, setAnalysisNow] = useState(Date.now());
+  const [config, setConfig] = useState({ episodeCount: 1, episodeDurationSec: 15, shotsPerEpisode: 8, requirements: "" });
 
   useEffect(() => {
     if (episode) setRaw(episode.sourceText || "");
@@ -45,9 +66,31 @@ export function DramaScriptPanel({ episode, series }) {
       if (mode === "generate") return generateDramaScript(episode.id, raw);
       return lockDramaScript(episode.id);
     },
-    onSuccess: refreshSeries,
-    onError: refreshSeries,
+    onSuccess: () => { setRunStartedAt(null); refreshSeries(); },
+    onError: () => { setRunStartedAt(null); refreshSeries(); },
   });
+
+  const analyze = useMutation({
+    mutationFn: () => {
+      if (!episode) throw new Error("请先创建剧集");
+      return analyzeDramaScript(episode.id, { ...config, sourceText: raw });
+    },
+    onSuccess: (result) => {
+      setAnalysis(result);
+      setAnalysisStartedAt(null);
+      refreshSeries();
+    },
+    onError: () => {
+      setAnalysisStartedAt(null);
+      refreshSeries();
+    },
+  });
+
+  useEffect(() => {
+    if (!analysisStartedAt && !runStartedAt) return undefined;
+    const timer = window.setInterval(() => setAnalysisNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [analysisStartedAt, runStartedAt]);
 
   const settings = useMutation({
     mutationFn: (payload) => {
@@ -61,6 +104,11 @@ export function DramaScriptPanel({ episode, series }) {
   const locked = episode?.status === "已锁定";
   const styleKey = series?.styleKey || DEFAULT_DRAMA_STYLE_KEY;
   const aspectRatio = series?.aspectRatio || "16:9";
+  const analyzing = analyze.isPending || run.isPending;
+  const progressStartedAt = analysisStartedAt || runStartedAt;
+  const elapsed = progressStartedAt ? Math.max(0, Math.floor((analysisNow - progressStartedAt) / 1000)) : 0;
+  const currentStage = analysisStage(elapsed);
+  const elapsedLabel = `${Math.floor(elapsed / 60)}分${String(elapsed % 60).padStart(2, "0")}秒`;
 
   return (
     <div className="drama-script-layout">
@@ -98,22 +146,68 @@ export function DramaScriptPanel({ episode, series }) {
         {locked && <p className="drama-script__hint">已锁定。再改原文会回到待确认，下游资产与分镜标为已过期。</p>}
 
         <div className="drama-script__actions">
-          <button className="button" type="button" disabled={!raw.trim() || run.isPending || locked} onClick={() => run.mutate("import")}>
+          <button
+            className="button button--primary"
+            type="button"
+            disabled={!raw.trim() || analyzing}
+            onClick={() => { setAnalysis(null); setAnalysisStartedAt(Date.now()); setAnalysisNow(Date.now()); analyze.mutate(); }}
+          >
+            <Sparkles size={15} /> {analyzing ? "分析中…" : "一键分析剧本"}
+          </button>
+          <button className="button" type="button" disabled={!raw.trim() || analyzing || locked} onClick={() => { setAnalysis(null); setRunStartedAt(Date.now()); setAnalysisNow(Date.now()); run.mutate("import"); }}>
             <RefreshCw size={15} /> {run.isPending && run.variables === "import" ? "解析中…" : "导入并分场"}
           </button>
           <button
             className="button"
             type="button"
-            disabled={!raw.trim() || run.isPending || !episode?.canGenerate || locked}
+            disabled={!raw.trim() || analyzing || !episode?.canGenerate || locked}
             title={episode?.canGenerate ? "" : "项目需绑定已启用的文本模型"}
-            onClick={() => run.mutate("generate")}
+            onClick={() => { setAnalysis(null); setRunStartedAt(Date.now()); setAnalysisNow(Date.now()); run.mutate("generate"); }}
           >
             <Wand2 size={15} /> {run.isPending && run.variables === "generate" ? "生成中…" : "文本模型生成"}
           </button>
-          <button className="button" type="button" disabled={scenes.length === 0 || run.isPending || locked} onClick={() => run.mutate("lock")}>
+          <button className="button" type="button" disabled={scenes.length === 0 || analyzing || locked} onClick={() => run.mutate("lock")}>
             <Lock size={15} /> {locked ? "已锁定" : "锁定剧本"}
           </button>
         </div>
+
+        {analyzing && (
+          <section className="drama-analysis-progress" aria-live="polite">
+            <div className="drama-analysis-progress__topline">
+              <div>
+                <strong>{currentStage.label}</strong>
+                <span>{currentStage.detail}</span>
+              </div>
+              <b>{elapsedLabel}</b>
+            </div>
+            <div className="drama-progress-track"><i style={{ width: `${currentStage.progress}%` }} /></div>
+            <div className="drama-analysis-progress__steps">
+              {ANALYSIS_STAGES.slice(0, 4).map((stage) => (
+                <span key={stage.label} className={currentStage.progress >= stage.progress ? "done" : ""}>{stage.label}</span>
+              ))}
+            </div>
+            <p>
+              {elapsed >= 90
+                ? "模型响应时间较长，请耐心等待。关闭页面不会取消服务器任务。"
+                : run.isPending && run.variables === "generate"
+                  ? "正在调用文本模型生成剧本，通常需要几十秒。"
+                  : "系统会依次完成分场、资产抽取和分镜生成，通常需要几十秒。"}
+            </p>
+          </section>
+        )}
+
+        {analyze.isError && <p className="drama-form-error">{analyze.error.message || "剧本分析失败"}</p>}
+        {analysis && (
+          <section className="drama-analysis-summary">
+            <header><strong>分析结果</strong><span>{analysis.engine === "llm" ? "文本模型" : "规则引擎"}</span></header>
+            <div className="drama-analysis-stats">
+              <span><b>{analysis.actualSceneCount ?? 0}</b> 场景</span>
+              <span><b>{analysis.actualShotCount ?? 0}</b> 分镜</span>
+              <span><b>{analysis.assets?.length ?? 0}</b> 个资产</span>
+            </div>
+            {(analysis.warnings || []).map((warning) => <p key={warning} className="drama-script__hint">提示：{warning}</p>)}
+          </section>
+        )}
 
         {scenes.length > 0 ? (
           <ol className="drama-scenes">
@@ -153,6 +247,18 @@ export function DramaScriptPanel({ episode, series }) {
       </section>
 
       <aside className="drama-script-settings">
+        <section className="settings-block drama-analysis-settings">
+          <header>
+            <strong>剧本分析配置</strong>
+            <span>用于本次分析</span>
+          </header>
+          <div className="drama-analysis-fields">
+            <label>集数<input type="number" min="1" max="100" value={config.episodeCount} onChange={(e) => setConfig({ ...config, episodeCount: Number(e.target.value) })} /></label>
+            <label>单集时长（秒）<input type="number" min="5" max="60" value={config.episodeDurationSec} onChange={(e) => setConfig({ ...config, episodeDurationSec: Number(e.target.value) })} /></label>
+            <label>目标分镜数<input type="number" min="1" max="100" value={config.shotsPerEpisode} onChange={(e) => setConfig({ ...config, shotsPerEpisode: Number(e.target.value) })} /></label>
+          </div>
+          <label className="drama-analysis-requirements">补充要求<textarea rows="3" value={config.requirements} onChange={(e) => setConfig({ ...config, requirements: e.target.value })} placeholder="例如：节奏紧凑，结尾保留悬念" /></label>
+        </section>
         <section className="settings-block">
           <header>
             <strong>视频比例</strong>
