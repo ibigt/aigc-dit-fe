@@ -28,7 +28,11 @@ api.interceptors.response.use(
   },
   (error) => {
     const body = error.response?.data;
-    throw makeApiError(body?.message || error.message || "网络错误", body?.code || error.response?.status);
+    const timedOut = error.code === "ECONNABORTED" || /timeout/i.test(error.message || "");
+    throw makeApiError(
+      body?.message || (timedOut ? "请求超时。文本模型较慢时请再点一次或刷新页面，规则分场可能已经入库。" : (error.message || "网络错误")),
+      body?.code || error.response?.status,
+    );
   },
 );
 

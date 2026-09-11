@@ -17,7 +17,7 @@ function sceneTitle(scene, index) {
  * 剧本步骤：导入原文 → 分场渲染 → 锁定。
  * 分场结果由后端 DramaTextService 产出，这里只渲染与触发，不组装字段。
  */
-export function DramaScriptPanel({ episode }) {
+export function DramaScriptPanel({ episode, series }) {
   const queryClient = useQueryClient();
   const [raw, setRaw] = useState("");
 
@@ -38,6 +38,7 @@ export function DramaScriptPanel({ episode }) {
       return lockDramaScript(episode.id);
     },
     onSuccess: refresh,
+    onError: refresh,
   });
 
   const scenes = episode?.script?.scenes || [];
@@ -68,12 +69,12 @@ export function DramaScriptPanel({ episode }) {
       <div className="drama-script__actions">
         <button className="button button--primary" type="button" disabled={!raw.trim() || run.isPending || locked}
           onClick={() => run.mutate("import")}>
-          <RefreshCw size={14} /> {run.isPending && run.variables === "import" ? "解析中…" : "导入并分场"}
+          <RefreshCw size={14} /> {run.isPending && run.variables === "import" ? "解析中，文本模型较慢请稍候…" : "导入并分场"}
         </button>
         <button className="button button--ghost" type="button" disabled={!raw.trim() || run.isPending || !episode?.canGenerate || locked}
           title={episode?.canGenerate ? "" : "项目需绑定已启用的文本模型"}
           onClick={() => run.mutate("generate")}>
-          <Wand2 size={14} /> 用文本模型生成
+          <Wand2 size={14} /> {run.isPending && run.variables === "generate" ? "生成中，请稍候…" : "用文本模型生成"}
         </button>
         <button className="button button--ghost" type="button" disabled={scenes.length === 0 || run.isPending || locked}
           onClick={() => run.mutate("lock")}>
@@ -82,7 +83,11 @@ export function DramaScriptPanel({ episode }) {
       </div>
 
       {episode?.canGenerate === false && episode?.textServiceAvailable && !locked && (
-        <p className="drama-script__hint">该项目未绑定可用文本模型，只会走规则分场；绑定后可用模型生成。</p>
+        <p className="drama-script__hint">
+          {series?.textModelId
+            ? "已绑定文本模型，但通道不可用（请到管理端检查 Base URL / 适配协议，或重新保存基础信息）。未修好前导入只走规则分场。"
+            : "该项目未绑定可用文本模型，只会走规则分场。请在右侧选择模型后点「保存基础信息」。"}
+        </p>
       )}
       {run.isError && <p className="drama-form-error">{run.error.message}</p>}
       {locked && <p className="drama-script__hint">已锁定。再改原文会回到待确认，下游资产与分镜标为已过期。</p>}

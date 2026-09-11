@@ -20,6 +20,10 @@ export function updateDramaSeries(id, payload) {
   return api.put(`/drama/series/${id}`, payload);
 }
 
+export function deleteDramaSeries(id) {
+  return api.delete(`/drama/series/${id}`);
+}
+
 export function fetchDramaEpisode(id) {
   return api.get(`/drama/episodes/${id}`);
 }
@@ -40,12 +44,15 @@ export function bindDramaImageModel(seriesId, imageModelId) {
   return api.put(`/drama/series/${seriesId}/image-model`, { imageModelId });
 }
 
+/** 文本模型单次最多 60s，失败还会回落规则；须长于 axios 默认 30s。 */
+const SCRIPT_LLM_TIMEOUT_MS = 180000;
+
 export function importDramaScript(episodeId, sourceText) {
-  return api.post(`/drama/episodes/${episodeId}/script/import`, { sourceText });
+  return api.post(`/drama/episodes/${episodeId}/script/import`, { sourceText }, { timeout: SCRIPT_LLM_TIMEOUT_MS });
 }
 
 export function generateDramaScript(episodeId, sourceText) {
-  return api.post(`/drama/episodes/${episodeId}/script/generate`, { sourceText });
+  return api.post(`/drama/episodes/${episodeId}/script/generate`, { sourceText }, { timeout: SCRIPT_LLM_TIMEOUT_MS });
 }
 
 export function saveDramaScript(episodeId, payload) {
@@ -61,7 +68,7 @@ export function fetchDramaAssets(episodeId) {
 }
 
 export function extractDramaAssets(episodeId) {
-  return api.post(`/drama/episodes/${episodeId}/assets/extract`);
+  return api.post(`/drama/episodes/${episodeId}/assets/extract`, null, { timeout: SCRIPT_LLM_TIMEOUT_MS });
 }
 
 export function createDramaAsset(episodeId, payload) {
@@ -99,7 +106,7 @@ export function fetchDramaStoryboard(episodeId) {
 }
 
 export function draftDramaStoryboard(episodeId) {
-  return api.post(`/drama/episodes/${episodeId}/storyboard/draft`);
+  return api.post(`/drama/episodes/${episodeId}/storyboard/draft`, null, { timeout: SCRIPT_LLM_TIMEOUT_MS });
 }
 
 export function compileDramaStoryboard(episodeId) {

@@ -1,8 +1,8 @@
-import { Plus, Search, Sparkles } from "lucide-react";
+import { Plus, Search, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { createDramaSeries, fetchDramaSeries, fetchDramaTextModels } from "../../api/drama.js";
+import { createDramaSeries, deleteDramaSeries, fetchDramaSeries, fetchDramaTextModels } from "../../api/drama.js";
 import { formatDateTime } from "../../lib/media.js";
 import { DramaStylePicker } from "./DramaStylePicker.jsx";
 import { DEFAULT_DRAMA_STYLE_KEY, dramaStyleOf } from "./dramaStyles.js";
@@ -37,6 +37,11 @@ export function DramaHome() {
     queryFn: fetchDramaTextModels,
   });
   const textModels = textModelsQuery.data || [];
+  const deleteMutation = useMutation({
+    mutationFn: deleteDramaSeries,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["drama-series"] }),
+    onError: (error) => window.alert(error.message || "删除失败"),
+  });
   const createMutation = useMutation({
     mutationFn: createDramaSeries,
     onSuccess: (series) => {
@@ -126,7 +131,23 @@ export function DramaHome() {
                 </div>
                 <footer>
                   <span>{episode ? `${episode.name} · ${episode.status}` : "未开始"}</span>
-                  <b>{formatDateTime(item.updatedAt)}</b>
+                  <div className="drama-card__footer-actions">
+                    <b>{formatDateTime(item.updatedAt)}</b>
+                    <button
+                      type="button"
+                      className="button button--danger drama-card__delete"
+                      disabled={deleteMutation.isPending}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (window.confirm(`确定删除「${item.name}」？剧集、剧本、资产和分镜会一并删除，且不可恢复。`)) {
+                          deleteMutation.mutate(item.id);
+                        }
+                      }}
+                    >
+                      <Trash2 size={13} /> 删除
+                    </button>
+                  </div>
                 </footer>
               </div>
             </article>

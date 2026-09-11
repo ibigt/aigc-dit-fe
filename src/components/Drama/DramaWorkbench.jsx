@@ -1,8 +1,8 @@
-import { ArrowLeft, BookOpen, Clapperboard, Images, LayoutTemplate, Lock } from "lucide-react";
+import { ArrowLeft, BookOpen, Clapperboard, Images, LayoutTemplate, Lock, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { fetchDramaAssets, fetchDramaSeriesDetail, fetchDramaStoryboard, fetchDramaTextModels, updateDramaEpisode, updateDramaSeries } from "../../api/drama.js";
+import { deleteDramaSeries, fetchDramaAssets, fetchDramaSeriesDetail, fetchDramaStoryboard, fetchDramaTextModels, updateDramaEpisode, updateDramaSeries } from "../../api/drama.js";
 import { DramaAssetBoard, dramaAssetsStatus } from "./DramaAssetBoard.jsx";
 import { DramaScriptPanel } from "./DramaScriptPanel.jsx";
 import { DramaStoryboard, dramaStoryboardStatus } from "./DramaStoryboard.jsx";
@@ -69,13 +69,16 @@ export function DramaWorkbench({ seriesId }) {
       defaultResolution: series.defaultResolution || "720P",
       defaultDurationSec: series.defaultDurationSec || 5,
       plannedEpisodeCount: series.plannedEpisodeCount || 1,
-      textModelId: series.textModelId || "",
+      textModelId: series.textModelId || textModels[0]?.id || "",
     });
     setEpisodeName(episode?.name || "第 1 集");
-  }, [series, episode?.name]);
+  }, [series, episode?.name, textModels]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      if (textModels.length > 0 && !form.textModelId) {
+        throw new Error("请选择文本模型");
+      }
       const next = await updateDramaSeries(id, {
         name: form.name.trim(),
         styleKey: form.styleKey,
@@ -103,6 +106,15 @@ export function DramaWorkbench({ seriesId }) {
     return () => window.clearTimeout(timer);
   }, [saved]);
 
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteDramaSeries(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["drama-series"] });
+      navigate("/console", { state: { tab: "drama" } });
+    },
+    onError: (error) => window.alert(error.message || "删除失败"),
+  });
+
   if (seriesQuery.isError) {
     return (
       <div className="drama-workbench drama-workbench--empty">
@@ -127,6 +139,18 @@ export function DramaWorkbench({ seriesId }) {
           <small>{episodeName || "第 1 集"} · {episode?.status || "未开始"} · {form.defaultResolution} · {form.defaultDurationSec}秒 · {form.aspectRatio}</small>
         </div>
         <span className="drama-status-chip">{episode?.status || "未开始"}</span>
+        <button
+          className="button button--danger"
+          type="button"
+          disabled={deleteMutation.isPending}
+          onClick={() => {
+            if (window.confirm(`确定删除「${series.name}」？剧集、剧本、资产和分镜会一并删除，且不可恢复。`)) {
+              deleteMutation.mutate();
+            }
+          }}
+        >
+          <Trash2 size={14} /> {deleteMutation.isPending ? "删除中…" : "删除项目"}
+        </button>
       </header>
       <nav className="drama-steps" aria-label="四步工作台">
         {STEPS.map((item, index) => {
@@ -153,7 +177,7 @@ export function DramaWorkbench({ seriesId }) {
           <DramaStoryboard series={series} episode={episode} />
         ) : (
           <>
-        {step === "script" && <DramaScriptPanel episode={episode} />}
+        {step === "script" && <DramaScriptPanel episode={episode} series={series} />}
         <section className="drama-info-card">
           <header>
             <h2>基础信息</h2>
@@ -184,19 +208,29 @@ export function DramaWorkbench({ seriesId }) {
             </div>
             <label>文本模型
               <select
-                value={form.textModelId}
+                value={form.textModelId === "" || form.textModelId == null ? "" : String(form.textModelId)}
                 onChange={(e) => setForm({ ...form, textModelId: e.target.value })}
                 required={textModels.length > 0 || Boolean(series.textModelId)}
               >
                 {textModels.length === 0 && !series.textModelId && <option value="">未绑定（管理端启用文本模型后可更换）</option>}
+                {textModels.length > 0 && !form.textModelId && <option value="">请选择文本模型</option>}
                 {series.textModelId && !textModels.some((item) => String(item.id) === String(series.textModelId)) && (
-                  <option value={series.textModelId}>{series.textModelName || "已绑定（当前已停用）"}</option>
+                  <option value={String(series.textModelId)}>{series.textModelName || "已绑定（当前已停用）"}</option>
                 )}
                 {textModels.map((item) => (
-                  <option key={item.id} value={item.id}>{item.name}{item.provider ? ` · ${item.provider}` : ""}</option>
+                  <option key={item.id} value={String(item.id)}>{item.name}{item.provider ? ` · ${item.provider}` : ""}</option>
                 ))}
               </select>
             </label>
+            {series.textModelId ? (
+              <p className={series.textModelUsable || episode?.canGenerate ? "drama-script__hint" : "drama-form-error"}>
+                {series.textModelUsable || episode?.canGenerate
+                  ? `已绑定：${series.textModelName || "文本模型"}，导入/生成可走该通道。`
+                  : `库中已绑定 ${series.textModelName || "文本模型"}，但通道仍不可用。请到管理端确认该模型的 Base URL 与「自定义配置 / 官方API」。`}
+              </p>
+            ) : (
+              <p className="drama-form-error">尚未写入项目绑定。选出模型后必须点「保存基础信息」。看着下拉有值但没保存，导入仍会走规则分场。</p>
+            )}
             <DramaStylePicker value={form.styleKey} onChange={(styleKey) => setForm({ ...form, styleKey })} />
             {saveMutation.isError && <p className="drama-form-error">{saveMutation.error.message}</p>}
             <footer>
