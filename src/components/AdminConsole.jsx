@@ -642,6 +642,7 @@ function ModelsPage() {
   const [view, setView] = useState("cards");
   const [editing, setEditing] = useState(undefined);
   const [notice, setNotice] = useState("");
+  const [noticeError, setNoticeError] = useState(false);
   const modelsQuery = useQuery({ queryKey: ["admin-models"], queryFn: fetchAdminModels });
   const models = modelsQuery.data || [];
   const modelItems = models.filter((model) => model.category !== "tool");
@@ -658,30 +659,41 @@ function ModelsPage() {
     onSuccess: () => {
       invalidate();
       setEditing(undefined);
+      setNoticeError(false);
       setNotice("模型配置已保存");
     },
-    onError: (error) => setNotice(errorMessage(error, "保存模型失败")),
+    onError: (error) => {
+      setNoticeError(true);
+      setNotice(errorMessage(error, "保存模型失败"));
+    },
   });
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }) => changeAdminModelEnabled(id, enabled),
     onSuccess: invalidate,
-    onError: (error) => setNotice(errorMessage(error, "更新模型状态失败")),
+    onError: (error) => {
+      setNoticeError(true);
+      setNotice(errorMessage(error, "更新模型状态失败"));
+    },
   });
 
   const removeMutation = useMutation({
     mutationFn: (model) => deleteAdminModel(model.id),
     onSuccess: () => {
       invalidate();
+      setNoticeError(false);
       setNotice("已删除模型");
     },
-    onError: (error) => setNotice(errorMessage(error, "删除模型失败")),
+    onError: (error) => {
+      setNoticeError(true);
+      setNotice(errorMessage(error, "删除模型失败"));
+    },
   });
 
   return <div className="admin-page">
     <SectionHeading title="模型管理" description="按适配协议接入模型；来源与默认地址由协议带出。" action={<button className="button button--primary" onClick={() => setEditing(null)}><Plus size={16} /> 接入模型</button>} />
-    {notice && <div className="admin-notice"><Check size={15} />{notice}<button aria-label="关闭提示" onClick={() => setNotice("")}><X size={14} /></button></div>}
-    {modelsQuery.error && <div className="admin-notice">{errorMessage(modelsQuery.error, "模型列表加载失败")}</div>}
+    {notice && <div className={`admin-notice${noticeError ? " admin-notice--error" : ""}`}>{noticeError ? null : <Check size={15} />}{notice}<button aria-label="关闭提示" onClick={() => setNotice("")}><X size={14} /></button></div>}
+    {modelsQuery.error && <div className="admin-notice admin-notice--error">{errorMessage(modelsQuery.error, "模型列表加载失败")}</div>}
     <div className="model-category-tabs" role="tablist" aria-label="模型类型">{categoryTabs.map((tab) => <button role="tab" aria-selected={category === tab.id} className={category === tab.id ? "active" : ""} key={tab.id} onClick={() => setCategory(tab.id)}>{tab.label}<span>{tab.id === "all" ? modelItems.length : modelItems.filter((item) => item.category === tab.id).length}</span></button>)}</div>
     <div className="model-summary"><span><Server size={17} /><b>{modelItems.filter((item) => item.provider === "ComfyUI").length}</b> ComfyUI</span><span><CloudCog size={17} /><b>{modelItems.filter((item) => item.provider === "RunningHub").length}</b> RunningHub</span><span><Globe size={17} /><b>{modelItems.filter((item) => item.provider === "官方API").length}</b> 官方API</span><span><Cpu size={17} /><b>{modelItems.filter((item) => item.provider === "自定义配置" || item.provider === "手动配置").length}</b> 自定义配置</span><em>已启用 {modelItems.filter((item) => item.enabled !== false).length} / {modelItems.length}</em></div>
     <div className="model-toolbar"><label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索模型名称或标识" /></label><select aria-label="筛选接入来源" value={provider} onChange={(event) => setProvider(event.target.value)}>{providerOptions.map((item) => <option key={item}>{item}</option>)}</select><div className="view-switch" role="group" aria-label="视图模式"><button className={view === "cards" ? "active" : ""} aria-label="卡片模式" onClick={() => setView("cards")}><Grid2X2 size={15} /></button><button className={view === "list" ? "active" : ""} aria-label="列表模式" onClick={() => setView("list")}><List size={15} /></button></div></div>
