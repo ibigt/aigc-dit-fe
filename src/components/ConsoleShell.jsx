@@ -16,7 +16,7 @@ import { AdminConsole } from "./AdminConsole.jsx";
 
 const tabs = [
   { id: "create", label: "快速创作", icon: Sparkles },
-  { id: "drama", label: "漫剧", icon: Film },
+  { id: "drama", label: "短剧创作", icon: Film },
   { id: "creations", label: "我的创作", icon: Clapperboard },
   { id: "assets", label: "素材库", icon: Images },
 ];

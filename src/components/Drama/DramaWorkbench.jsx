@@ -1,24 +1,54 @@
-import { ArrowLeft, BookOpen, Clapperboard, Images, LayoutTemplate, Lock, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronRight, CircleCheck, Download, Film, Pencil, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { deleteDramaSeries, fetchDramaAssets, fetchDramaSeriesDetail, fetchDramaStoryboard, fetchDramaTextModels, updateDramaEpisode, updateDramaSeries } from "../../api/drama.js";
-import { DramaAssetBoard, dramaAssetsStatus } from "./DramaAssetBoard.jsx";
+import { fetchDramaSeriesDetail, updateDramaSeries } from "../../api/drama.js";
+import { DramaAssetBoard } from "./DramaAssetBoard.jsx";
 import { DramaScriptPanel } from "./DramaScriptPanel.jsx";
-import { DramaStoryboard, dramaStoryboardStatus } from "./DramaStoryboard.jsx";
-import { DramaStylePicker } from "./DramaStylePicker.jsx";
-import { DEFAULT_DRAMA_STYLE_KEY } from "./dramaStyles.js";
-
-const ASPECT_RATIOS = ["16:9", "9:16", "1:1"];
-const RESOLUTIONS = ["720P", "480P"];
-const DURATIONS = [5, 10, 15];
+import { DramaStoryboard } from "./DramaStoryboard.jsx";
+import { dramaStyleOf } from "./dramaStyles.js";
 
 const STEPS = [
-  { id: "script", label: "剧本", hint: "导入或生成分场剧本", icon: BookOpen },
-  { id: "assets", label: "角色场景道具", hint: "锁定描述符与参考图", icon: Images },
-  { id: "board", label: "章节与分镜", hint: "编译自包含镜头合同", icon: LayoutTemplate },
-  { id: "video", label: "成片", hint: "批量 r2v 后拼接", icon: Clapperboard },
+  { id: "script", label: "剧本", action: "主体提取" },
+  { id: "subjects", label: "主体", action: "智能分镜" },
+  { id: "shots", label: "分镜", action: "剪辑成片" },
+  { id: "film", label: "成片", action: "导出" },
 ];
+
+function DramaDialog({ title, eyebrow, onClose, children }) {
+  return (
+    <div className="drama-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="drama-dialog" role="dialog" aria-modal="true" aria-labelledby="drama-workspace-dialog-title">
+        <header>
+          <div>
+            {eyebrow && <span>{eyebrow}</span>}
+            <h2 id="drama-workspace-dialog-title">{title}</h2>
+          </div>
+          <button type="button" aria-label="关闭" onClick={onClose}><X size={18} /></button>
+        </header>
+        {children}
+      </section>
+    </div>
+  );
+}
+
+function FilmSlot() {
+  return (
+    <div className="drama-step youxi-film-layout">
+      <section className="youxi-film-main">
+        <div className="youxi-final-player">
+          <div className="youxi-story-empty-preview">
+            <div className="youxi-story-empty-state">
+              <Film size={24} />
+              <strong>尚未生成成片</strong>
+              <span>本集分镜出片后可在此拼接并导出 MP4</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
 
 export function DramaWorkbench({ seriesId }) {
   const id = seriesId;
@@ -29,236 +59,180 @@ export function DramaWorkbench({ seriesId }) {
     queryFn: () => fetchDramaSeriesDetail(id),
     enabled: Boolean(id),
   });
-  const textModelsQuery = useQuery({
-    queryKey: ["drama-text-models"],
-    queryFn: fetchDramaTextModels,
-  });
-  const textModels = textModelsQuery.data || [];
   const series = seriesQuery.data;
   const episode = series?.episodes?.[0];
   const [step, setStep] = useState("script");
-  const [form, setForm] = useState(null);
-  const [episodeName, setEpisodeName] = useState("");
-  const [saved, setSaved] = useState(false);
-  const assetsQuery = useQuery({
-    queryKey: ["drama-assets", episode?.id],
-    queryFn: () => fetchDramaAssets(episode.id),
-    enabled: Boolean(episode?.id),
-  });
-  const storyboardQuery = useQuery({
-    queryKey: ["drama-storyboard", episode?.id],
-    queryFn: () => fetchDramaStoryboard(episode.id),
-    enabled: Boolean(episode?.id),
-  });
-  const assetsStatus = dramaAssetsStatus(assetsQuery.data);
-  const boardStatus = dramaStoryboardStatus(storyboardQuery.data);
+  const [notice, setNotice] = useState("");
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
 
-  function stepStatus(stepId) {
-    if (stepId === "script") return episode?.status || "未开始";
-    if (stepId === "assets") return assetsStatus;
-    if (stepId === "board") return boardStatus;
-    return "未开始";
+  const goLibrary = () => navigate("/console", { state: { tab: "drama" } });
+  const style = dramaStyleOf(series?.styleKey);
+  const cover = series?.styleCover || style.cover;
+  const activeIndex = STEPS.findIndex((item) => item.id === step);
+
+  function showNotice(message) {
+    setNotice(message);
+    window.setTimeout(() => setNotice(""), 2400);
   }
 
-  useEffect(() => {
-    if (!series) return;
-    setForm({
-      name: series.name || "",
-      styleKey: series.styleKey || DEFAULT_DRAMA_STYLE_KEY,
-      aspectRatio: series.aspectRatio || "16:9",
-      defaultResolution: series.defaultResolution || "720P",
-      defaultDurationSec: series.defaultDurationSec || 5,
-      plannedEpisodeCount: series.plannedEpisodeCount || 1,
-      textModelId: series.textModelId || textModels[0]?.id || "",
-    });
-    setEpisodeName(episode?.name || "第 1 集");
-  }, [series, episode?.name, textModels]);
-
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      if (textModels.length > 0 && !form.textModelId) {
-        throw new Error("请选择文本模型");
-      }
-      const next = await updateDramaSeries(id, {
-        name: form.name.trim(),
-        styleKey: form.styleKey,
-        aspectRatio: form.aspectRatio,
-        defaultResolution: form.defaultResolution,
-        defaultDurationSec: form.defaultDurationSec,
-        plannedEpisodeCount: Number(form.plannedEpisodeCount) || 1,
-        ...(form.textModelId ? { textModelId: Number(form.textModelId) } : {}),
-      });
-      if (episode && episodeName.trim() && episodeName.trim() !== episode.name) {
-        await updateDramaEpisode(episode.id, { name: episodeName.trim() });
-      }
-      return next;
-    },
+  const renameMutation = useMutation({
+    mutationFn: (name) => updateDramaSeries(id, { name }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["drama-series"] });
       queryClient.invalidateQueries({ queryKey: ["drama-series", id] });
-      setSaved(true);
+      setRenameOpen(false);
+      showNotice("项目名称已修改");
     },
   });
 
   useEffect(() => {
-    if (!saved) return undefined;
-    const timer = window.setTimeout(() => setSaved(false), 1600);
-    return () => window.clearTimeout(timer);
-  }, [saved]);
+    if (series?.name) setRenameDraft(series.name);
+  }, [series?.name]);
 
-  const deleteMutation = useMutation({
-    mutationFn: () => deleteDramaSeries(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["drama-series"] });
-      navigate("/console", { state: { tab: "drama" } });
-    },
-    onError: (error) => window.alert(error.message || "删除失败"),
-  });
+  function goNext() {
+    if (step === "film") {
+      setExportOpen(true);
+      return;
+    }
+    const index = STEPS.findIndex((item) => item.id === step);
+    setStep(STEPS[Math.min(STEPS.length - 1, index + 1)].id);
+  }
 
   if (seriesQuery.isError) {
     return (
-      <div className="drama-workbench drama-workbench--empty">
-        <p>{seriesQuery.error.message || "项目不存在"}</p>
-        <button className="button button--ghost" type="button" onClick={() => navigate("/console", { state: { tab: "drama" } })}>返回列表</button>
-      </div>
+      <section className="drama-workspace youxi-workspace">
+        <div className="drama-empty">
+          <p>{seriesQuery.error.message || "项目不存在"}</p>
+          <button className="button button--ghost" type="button" onClick={goLibrary}>返回列表</button>
+        </div>
+      </section>
     );
   }
 
-  if (!series || !form) {
-    return <div className="drama-workbench drama-workbench--empty"><p>正在打开工作台…</p></div>;
+  if (!series) {
+    return (
+      <section className="drama-workspace youxi-workspace">
+        <div className="drama-empty"><p>正在打开工作台…</p></div>
+      </section>
+    );
   }
 
+  const actionLabel = STEPS[activeIndex]?.action;
+
   return (
-    <div className="drama-workbench">
-      <header className="drama-workbench__bar">
-        <button type="button" className="drama-back" onClick={() => navigate("/console", { state: { tab: "drama" } })}>
-          <ArrowLeft size={16} /> 项目列表
-        </button>
-        <div className="drama-workbench__title">
-          <strong>{series.name}</strong>
-          <small>{episodeName || "第 1 集"} · {episode?.status || "未开始"} · {form.defaultResolution} · {form.defaultDurationSec}秒 · {form.aspectRatio}</small>
+    <section className="drama-workspace youxi-workspace youxi-creative-workspace">
+      <h1 className="visually-hidden">{series.name}短剧创作空间</h1>
+      <header className="drama-workspace-header">
+        <div className="drama-workspace-start">
+          <button className="drama-back" type="button" onClick={goLibrary}>
+            <ArrowLeft size={18} /> 返回
+          </button>
+          <button className="drama-project-title" type="button" onClick={() => { setRenameDraft(series.name); setRenameOpen(true); }} aria-label="修改项目名称">
+            <img
+              src={cover}
+              alt=""
+              onError={(event) => {
+                if (event.currentTarget.dataset.fallback === "1") return;
+                event.currentTarget.dataset.fallback = "1";
+                event.currentTarget.src = style.fallback;
+              }}
+            />
+            <strong>{series.name}</strong>
+            <Pencil size={13} />
+          </button>
         </div>
-        <span className="drama-status-chip">{episode?.status || "未开始"}</span>
-        <button
-          className="button button--danger"
-          type="button"
-          disabled={deleteMutation.isPending}
-          onClick={() => {
-            if (window.confirm(`确定删除「${series.name}」？剧集、剧本、资产和分镜会一并删除，且不可恢复。`)) {
-              deleteMutation.mutate();
-            }
-          }}
-        >
-          <Trash2 size={14} /> {deleteMutation.isPending ? "删除中…" : "删除项目"}
-        </button>
-      </header>
-      <nav className="drama-steps" aria-label="四步工作台">
-        {STEPS.map((item, index) => {
-          const Icon = item.icon;
-          const status = stepStatus(item.id);
-          return (
-            <button
-              className={`drama-step ${step === item.id ? "is-active" : ""}`}
-              type="button"
-              key={item.id}
-              onClick={() => setStep(item.id)}
-            >
-              <span><Icon size={14} /> {index + 1}. {item.label}</span>
-              <small>{item.hint}</small>
-              <em><Lock size={11} /> {status}</em>
-            </button>
-          );
-        })}
-      </nav>
-      <div className={`drama-workbench__body ${step === "assets" || step === "board" ? "drama-workbench__body--stage" : ""}`}>
-        {step === "assets" ? (
-          <DramaAssetBoard series={series} episode={episode} />
-        ) : step === "board" ? (
-          <DramaStoryboard series={series} episode={episode} />
-        ) : (
-          <>
-        {step === "script" && <DramaScriptPanel episode={episode} series={series} />}
-        <section className="drama-info-card">
-          <header>
-            <h2>基础信息</h2>
-            <p>系列级默认规格会在后续分镜编译时注入。风格只选图例，前缀不出现在表单里。</p>
-          </header>
-          <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(); }}>
-            <label>系列名称<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required maxLength={128} /></label>
-            <label>第 1 集名称<input value={episodeName} onChange={(e) => setEpisodeName(e.target.value)} maxLength={128} /></label>
-            <div className="drama-info-grid">
-              <label>画幅
-                <select value={form.aspectRatio} onChange={(e) => setForm({ ...form, aspectRatio: e.target.value })}>
-                  {ASPECT_RATIOS.map((item) => <option key={item} value={item}>{item}</option>)}
-                </select>
-              </label>
-              <label>默认清晰度
-                <select value={form.defaultResolution} onChange={(e) => setForm({ ...form, defaultResolution: e.target.value })}>
-                  {RESOLUTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
-                </select>
-              </label>
-              <label>默认时长
-                <select value={form.defaultDurationSec} onChange={(e) => setForm({ ...form, defaultDurationSec: Number(e.target.value) })}>
-                  {DURATIONS.map((item) => <option key={item} value={item}>{item} 秒</option>)}
-                </select>
-              </label>
-              <label>规划集数
-                <input type="number" min={1} max={99} value={form.plannedEpisodeCount} onChange={(e) => setForm({ ...form, plannedEpisodeCount: e.target.value })} />
-              </label>
-            </div>
-            <label>文本模型
-              <select
-                value={form.textModelId === "" || form.textModelId == null ? "" : String(form.textModelId)}
-                onChange={(e) => setForm({ ...form, textModelId: e.target.value })}
-                required={textModels.length > 0 || Boolean(series.textModelId)}
+        <nav aria-label="短剧创作流程">
+          {STEPS.map((item, index) => (
+            <div className="drama-flow-item" key={item.id}>
+              <button
+                type="button"
+                className={`${step === item.id ? "active" : ""} ${activeIndex > index ? "done" : ""}`}
+                onClick={() => setStep(item.id)}
               >
-                {textModels.length === 0 && !series.textModelId && <option value="">未绑定（管理端启用文本模型后可更换）</option>}
-                {textModels.length > 0 && !form.textModelId && <option value="">请选择文本模型</option>}
-                {series.textModelId && !textModels.some((item) => String(item.id) === String(series.textModelId)) && (
-                  <option value={String(series.textModelId)}>{series.textModelName || "已绑定（当前已停用）"}</option>
-                )}
-                {textModels.map((item) => (
-                  <option key={item.id} value={String(item.id)}>{item.name}{item.provider ? ` · ${item.provider}` : ""}</option>
-                ))}
-              </select>
+                <i>{activeIndex > index ? <CircleCheck size={15} /> : index + 1}</i>
+                <span>{item.label}</span>
+              </button>
+              {index < STEPS.length - 1 && <ChevronRight className="drama-flow-arrow" size={18} aria-hidden="true" />}
+            </div>
+          ))}
+        </nav>
+        <div className="drama-workspace-actions">
+          {step !== "film" && (
+            <button className="button button--primary drama-next-button" type="button" onClick={goNext}>
+              {actionLabel} <ChevronRight size={17} />
+            </button>
+          )}
+          {step === "film" && (
+            <button className="button button--primary" type="button" onClick={() => setExportOpen(true)}>
+              <Download size={16} /> 导出
+            </button>
+          )}
+        </div>
+      </header>
+      {notice && <div className="drama-toast"><CircleCheck size={16} />{notice}</div>}
+      {step === "script" && (
+        <div className="drama-step drama-step--slot">
+          <DramaScriptPanel episode={episode} series={series} />
+        </div>
+      )}
+      {step === "subjects" && (
+        <div className="drama-step drama-step--slot">
+          <DramaAssetBoard series={series} episode={episode} />
+        </div>
+      )}
+      {step === "shots" && (
+        <div className="drama-step drama-step--slot">
+          <DramaStoryboard series={series} episode={episode} />
+        </div>
+      )}
+      {step === "film" && <FilmSlot />}
+      {renameOpen && (
+        <DramaDialog title="修改项目名称" eyebrow="项目基础信息" onClose={() => { if (!renameMutation.isPending) setRenameOpen(false); }}>
+          <form
+            className="drama-create-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const name = renameDraft.trim();
+              if (!name) return;
+              renameMutation.mutate(name);
+            }}
+          >
+            <label>
+              项目名称
+              <input autoFocus required maxLength={128} value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} />
             </label>
-            {series.textModelId ? (
-              <p className={series.textModelUsable || episode?.canGenerate ? "drama-script__hint" : "drama-form-error"}>
-                {series.textModelUsable || episode?.canGenerate
-                  ? `已绑定：${series.textModelName || "文本模型"}，导入/生成可走该通道。`
-                  : `库中已绑定 ${series.textModelName || "文本模型"}，但通道仍不可用。请到管理端确认该模型的 Base URL 与「自定义配置 / 官方API」。`}
-              </p>
-            ) : (
-              <p className="drama-form-error">尚未写入项目绑定。选出模型后必须点「保存基础信息」。看着下拉有值但没保存，导入仍会走规则分场。</p>
-            )}
-            <DramaStylePicker value={form.styleKey} onChange={(styleKey) => setForm({ ...form, styleKey })} />
-            {saveMutation.isError && <p className="drama-form-error">{saveMutation.error.message}</p>}
+            {renameMutation.isError && <p className="drama-form-error">{renameMutation.error.message}</p>}
             <footer>
-              <small>状态机用词：未开始 / 待确认 / 已锁定 / 已过期</small>
-              <button className="button button--primary" type="submit" disabled={saveMutation.isPending || !form.name.trim()}>
-                {saveMutation.isPending ? "保存中…" : saved ? "已保存" : "保存基础信息"}
+              <button type="button" onClick={() => setRenameOpen(false)}>取消</button>
+              <button className="button button--primary" type="submit" disabled={renameMutation.isPending || !renameDraft.trim()}>
+                {renameMutation.isPending ? "保存中…" : "保存"}
               </button>
             </footer>
           </form>
-        </section>
-        <section className="drama-empty-stages">
-          {STEPS.filter((item) => item.id !== "assets" && item.id !== "board" && item.id !== step).map((item) => {
-            const Icon = item.icon;
-            return (
-              <article key={item.id}>
-                <Icon size={18} />
-                <div>
-                  <strong>{item.label}</strong>
-                  <p>{item.id === "script" ? "导入或锁定分场剧本后，即可到资产页提取角色场景道具。" : `${item.hint}。本阶段只提供空壳，后续按阶段门解锁。`}</p>
-                </div>
-                <span>{stepStatus(item.id)}</span>
-              </article>
-            );
-          })}
-        </section>
-          </>
-        )}
-      </div>
-    </div>
+        </DramaDialog>
+      )}
+      {exportOpen && (
+        <DramaDialog title="导出成片" eyebrow={episode?.name || series.name} onClose={() => setExportOpen(false)}>
+          <div className="export-options">
+            <button
+              type="button"
+              onClick={() => {
+                setExportOpen(false);
+                showNotice("成片拼接将在后续波次接入，本步仅保留导出入口");
+              }}
+            >
+              <Film size={20} />
+              <span>
+                <strong>导出成片</strong>
+                <small>MP4 · 不导出剪映草稿</small>
+              </span>
+              <ChevronRight size={17} />
+            </button>
+          </div>
+        </DramaDialog>
+      )}
+    </section>
   );
 }
