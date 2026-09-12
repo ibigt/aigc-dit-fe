@@ -87,7 +87,11 @@ export function tasksToMessages(tasks = []) {
       messages.push({
         type: "result",
         prompt: task.prompt || "",
-        text: task.errorMessage || "生成失败，积分已退还",
+        text: friendlyGenerateError(task.errorMessage, {
+          adapterKey: task.params?.adapterKey,
+          modelKey: task.params?.modelKey,
+          name: task.modelName,
+        }),
         error: true,
         model: task.modelName || "模型",
         creationType: task.category === "video" ? "视频" : "图片",
@@ -103,6 +107,23 @@ export function tasksToMessages(tasks = []) {
     }
   }
   return messages;
+}
+
+export function friendlyGenerateError(message, model) {
+  const text = String(message || "").trim();
+  if (!text) return "生成失败，积分已退还";
+  const lower = text.toLowerCase();
+  if (lower.includes("real person") || text.includes("真人")) {
+    return "参考图可能包含真人，官方 Seedance 已拒绝。请更换不含真人脸的参考图，或改用 MiniMax 等本地模型。";
+  }
+  const adapter = String(model?.adapterKey || "").toLowerCase();
+  const key = String(model?.modelKey || model?.name || "").toLowerCase();
+  const official = adapter === "seedance-2.0" || adapter === "seedance-2.5"
+    || key.includes("doubao-seedance-2");
+  if (official && /agnes/i.test(text)) {
+    return "官方 Seedance 仍在生成中，请稍后刷新会话。若参考图含真人脸会被接口拒绝。";
+  }
+  return text;
 }
 
 export function promptForResult(messages = [], resultMessage) {

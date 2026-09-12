@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Lock, RectangleHorizontal, RectangleVertical, RefreshCw, Square, Wand2, Sparkles } from "lucide-react";
+import { FileText, Lock, RectangleHorizontal, RectangleVertical, RefreshCw, Save, Square, Wand2, Sparkles } from "lucide-react";
 import { analyzeDramaScript, fetchDramaVideoModels, generateDramaScript, importDramaScript, lockDramaScript, updateDramaSeries } from "../../api/drama.js";
 import { DramaStylePicker } from "./DramaStylePicker.jsx";
 import { DEFAULT_DRAMA_STYLE_KEY } from "./dramaStyles.js";
@@ -24,6 +24,59 @@ function resolutionOptionsFor(model) {
     ? model.resolutions.map((item) => String(item).toUpperCase()).filter((item) => RESOLUTIONS.includes(item))
     : [];
   return listed.length ? listed : RESOLUTIONS;
+}
+
+const ANALYSIS_STORE_PREFIX = "drama-analysis-config:";
+
+function readAnalysisStore(seriesId) {
+  if (!seriesId) return {};
+  try {
+    const raw = window.localStorage.getItem(ANALYSIS_STORE_PREFIX + seriesId);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeAnalysisStore(seriesId, config) {
+  if (!seriesId) return;
+  window.localStorage.setItem(ANALYSIS_STORE_PREFIX + seriesId, JSON.stringify({
+    episodeDurationSec: config.episodeDurationSec,
+    shotsPerEpisode: config.shotsPerEpisode,
+    requirements: config.requirements || "",
+  }));
+}
+
+function settingsDraftFrom(series) {
+  const stored = readAnalysisStore(series?.id);
+  return {
+    styleKey: series?.styleKey || DEFAULT_DRAMA_STYLE_KEY,
+    aspectRatio: series?.aspectRatio || "16:9",
+    defaultResolution: series?.defaultResolution || "720P",
+    episodeCount: series?.plannedEpisodeCount || 1,
+    episodeDurationSec: stored.episodeDurationSec ?? 15,
+    shotsPerEpisode: stored.shotsPerEpisode ?? 8,
+    requirements: stored.requirements || "",
+  };
+}
+
+function seriesPayload(draft) {
+  return {
+    styleKey: draft.styleKey,
+    aspectRatio: draft.aspectRatio,
+    defaultResolution: draft.defaultResolution,
+    plannedEpisodeCount: Math.min(99, Math.max(1, Number(draft.episodeCount) || 1)),
+  };
+}
+
+function sameSettings(left, right) {
+  return left.styleKey === right.styleKey
+    && left.aspectRatio === right.aspectRatio
+    && left.defaultResolution === right.defaultResolution
+    && Number(left.episodeCount) === Number(right.episodeCount)
+    && Number(left.episodeDurationSec) === Number(right.episodeDurationSec)
+    && Number(left.shotsPerEpisode) === Number(right.shotsPerEpisode)
+    && (left.requirements || "") === (right.requirements || "");
 }
 
 const ANALYSIS_STAGES = [
@@ -57,15 +110,33 @@ export function DramaScriptPanel({ episode, series }) {
   const [analysisStartedAt, setAnalysisStartedAt] = useState(null);
   const [runStartedAt, setRunStartedAt] = useState(null);
   const [analysisNow, setAnalysisNow] = useState(Date.now());
-  const [config, setConfig] = useState({ episodeCount: 1, episodeDurationSec: 15, shotsPerEpisode: 8, requirements: "" });
+  const [draft, setDraft] = useState(() => settingsDraftFrom(series));
+  const [savedDraft, setSavedDraft] = useState(() => settingsDraftFrom(series));
+  const [justSaved, setJustSaved] = useState(false);
 
   useEffect(() => {
     if (episode) setRaw(episode.sourceText || "");
   }, [episode?.id, episode?.sourceText]);
 
+  useEffect(() => {
+    const next = settingsDraftFrom(series);
+    setDraft(next);
+    setSavedDraft(next);
+  }, [series?.id]);
+
   function refreshSeries() {
     queryClient.invalidateQueries({ queryKey: ["drama-series"] });
     queryClient.invalidateQueries({ queryKey: ["drama-series", series?.id || episode?.seriesId] });
+    if (episode?.id) {
+      queryClient.invalidateQueries({ queryKey: ["drama-assets", episode.id] });
+      queryClient.invalidateQueries({ queryKey: ["drama-storyboard", episode.id] });
+    }
+  }
+
+  function persistSettings(next = draft) {
+    if (!series?.id) throw new Error("请先打开短剧项目");
+    writeAnalysisStore(series.id, next);
+    return updateDramaSeries(series.id, seriesPayload(next));
   }
 
   const run = useMutation({
@@ -80,9 +151,19 @@ export function DramaScriptPanel({ episode, series }) {
   });
 
   const analyze = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!episode) throw new Error("请先创建剧集");
-      return analyzeDramaScript(episode.id, { ...config, sourceText: raw });
+      if (series?.id) {
+        await persistSettings(draft);
+        setSavedDraft(draft);
+      }
+      return analyzeDramaScript(episode.id, {
+        episodeCount: draft.episodeCount,
+        episodeDurationSec: draft.episodeDurationSec,
+        shotsPerEpisode: draft.shotsPerEpisode,
+        requirements: draft.requirements,
+        sourceText: raw,
+      });
     },
     onSuccess: (result) => {
       setAnalysis(result);
@@ -102,11 +183,13 @@ export function DramaScriptPanel({ episode, series }) {
   }, [analysisStartedAt, runStartedAt]);
 
   const settings = useMutation({
-    mutationFn: (payload) => {
-      if (!series?.id) throw new Error("请先打开短剧项目");
-      return updateDramaSeries(series.id, payload);
+    mutationFn: persistSettings,
+    onSuccess: (_, next) => {
+      setSavedDraft(next || draft);
+      setJustSaved(true);
+      window.setTimeout(() => setJustSaved(false), 2000);
+      refreshSeries();
     },
-    onSuccess: refreshSeries,
   });
 
   const videoModelsQuery = useQuery({
@@ -116,18 +199,19 @@ export function DramaScriptPanel({ episode, series }) {
 
   const scenes = episode?.script?.scenes || [];
   const locked = episode?.status === "已锁定";
-  const styleKey = series?.styleKey || DEFAULT_DRAMA_STYLE_KEY;
-  const aspectRatio = series?.aspectRatio || "16:9";
-  const resolution = series?.defaultResolution || "720P";
+  const dirty = !sameSettings(draft, savedDraft);
   const resolutionOptions = useMemo(
     () => resolutionOptionsFor((videoModelsQuery.data || []).find((item) => String(item.id) === String(series?.videoModelId))),
     [videoModelsQuery.data, series?.videoModelId]
   );
 
   useEffect(() => {
-    if (!series?.id || !resolutionOptions.length || resolutionOptions.includes(resolution)) return;
-    settings.mutate({ defaultResolution: resolutionOptions[resolutionOptions.length - 1] });
-  }, [series?.id, resolution, resolutionOptions]);
+    if (!series?.id || !resolutionOptions.length || resolutionOptions.includes(draft.defaultResolution)) return;
+    setDraft((current) => ({
+      ...current,
+      defaultResolution: resolutionOptions[resolutionOptions.length - 1],
+    }));
+  }, [series?.id, draft.defaultResolution, resolutionOptions]);
   const analyzing = analyze.isPending || run.isPending;
   const progressStartedAt = analysisStartedAt || runStartedAt;
   const elapsed = progressStartedAt ? Math.max(0, Math.floor((analysisNow - progressStartedAt) / 1000)) : 0;
@@ -274,14 +358,14 @@ export function DramaScriptPanel({ episode, series }) {
         <section className="settings-block drama-analysis-settings">
           <header>
             <strong>剧本分析配置</strong>
-            <span>用于本次分析</span>
+            <span>保存后用于后续分析</span>
           </header>
           <div className="drama-analysis-fields">
-            <label>集数<input type="number" min="1" max="100" value={config.episodeCount} onChange={(e) => setConfig({ ...config, episodeCount: Number(e.target.value) })} /></label>
-            <label>单集时长（秒）<input type="number" min="5" max="60" value={config.episodeDurationSec} onChange={(e) => setConfig({ ...config, episodeDurationSec: Number(e.target.value) })} /></label>
-            <label>目标分镜数<input type="number" min="1" max="100" value={config.shotsPerEpisode} onChange={(e) => setConfig({ ...config, shotsPerEpisode: Number(e.target.value) })} /></label>
+            <label>集数<input type="number" min="1" max="100" value={draft.episodeCount} onChange={(e) => setDraft((current) => ({ ...current, episodeCount: Number(e.target.value) }))} /></label>
+            <label>单集时长（秒）<input type="number" min="5" max="60" value={draft.episodeDurationSec} onChange={(e) => setDraft((current) => ({ ...current, episodeDurationSec: Number(e.target.value) }))} /></label>
+            <label>目标分镜数<input type="number" min="1" max="100" value={draft.shotsPerEpisode} onChange={(e) => setDraft((current) => ({ ...current, shotsPerEpisode: Number(e.target.value) }))} /></label>
           </div>
-          <label className="drama-analysis-requirements">补充要求<textarea rows="3" value={config.requirements} onChange={(e) => setConfig({ ...config, requirements: e.target.value })} placeholder="例如：节奏紧凑，结尾保留悬念" /></label>
+          <label className="drama-analysis-requirements">补充要求<textarea rows="3" value={draft.requirements} onChange={(e) => setDraft((current) => ({ ...current, requirements: e.target.value }))} placeholder="例如：节奏紧凑，结尾保留悬念" /></label>
         </section>
         <section className="settings-block">
           <header>
@@ -296,9 +380,9 @@ export function DramaScriptPanel({ episode, series }) {
                 <button
                   key={item.id}
                   type="button"
-                  className={aspectRatio === item.id ? "active" : ""}
-                  disabled={settings.isPending || !series?.id}
-                  onClick={() => { if (aspectRatio !== item.id) settings.mutate({ aspectRatio: item.id }); }}
+                  className={draft.aspectRatio === item.id ? "active" : ""}
+                  disabled={!series?.id || analyzing}
+                  onClick={() => setDraft((current) => ({ ...current, aspectRatio: item.id }))}
                 >
                   <Icon size={26} strokeWidth={1.6} aria-hidden="true" />
                   <span>{item.label}</span>
@@ -312,9 +396,9 @@ export function DramaScriptPanel({ episode, series }) {
               <button
                 key={item}
                 type="button"
-                className={resolution === item ? "active" : ""}
-                disabled={settings.isPending || !series?.id}
-                onClick={() => { if (resolution !== item) settings.mutate({ defaultResolution: item }); }}
+                className={draft.defaultResolution === item ? "active" : ""}
+                disabled={!series?.id || analyzing}
+                onClick={() => setDraft((current) => ({ ...current, defaultResolution: item }))}
               >
                 <span>{item}</span>
               </button>
@@ -328,13 +412,27 @@ export function DramaScriptPanel({ episode, series }) {
             <span>统一全局画面视觉</span>
           </header>
           <DramaStylePicker
-            value={styleKey}
-            disabled={settings.isPending || !series?.id}
-            onChange={(next) => { if (next !== styleKey) settings.mutate({ styleKey: next }); }}
+            value={draft.styleKey}
+            disabled={!series?.id || analyzing}
+            onChange={(next) => setDraft((current) => ({ ...current, styleKey: next }))}
           />
-          <p className="drama-script__hint">当前仅开放二次元漫画风。改风格或比例后，已编译分镜会标为已过期。</p>
         </section>
-        {settings.isError && <p className="drama-form-error">{settings.error.message}</p>}
+        <footer className="drama-script-settings__save">
+          <button
+            className="button button--primary"
+            type="button"
+            disabled={!series?.id || settings.isPending || analyzing}
+            onClick={() => settings.mutate(draft)}
+          >
+            <Save size={15} /> {settings.isPending ? "保存中…" : justSaved && !dirty ? "已保存" : "保存配置"}
+          </button>
+          <p className="drama-script__hint">
+            {dirty
+              ? "有未保存的分析配置、风格或比例，点保存后才会生效。"
+              : "分析配置、风格和比例需点保存。改风格或比例后，已编译分镜会标为已过期。"}
+          </p>
+          {settings.isError && <p className="drama-form-error">{settings.error.message}</p>}
+        </footer>
       </aside>
     </div>
   );

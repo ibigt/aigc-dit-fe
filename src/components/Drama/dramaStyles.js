@@ -5,6 +5,18 @@ export const DRAMA_STYLES = [
     cover: "/drama/styles/anime-comic.jpg",
     fallback: "/drama/styles/anime-comic.svg",
   },
+  {
+    key: "live-realism",
+    name: "真人写实风",
+    cover: "/drama/styles/live-realism.jpg",
+    fallback: "/drama/styles/live-realism.svg",
+  },
+  {
+    key: "live-wuxia",
+    name: "真人武侠风",
+    cover: "/drama/styles/live-wuxia.jpg",
+    fallback: "/drama/styles/live-wuxia.svg",
+  },
 ];
 
 export const DEFAULT_DRAMA_STYLE_KEY = DRAMA_STYLES[0].key;

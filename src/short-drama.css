@@ -1109,6 +1109,9 @@
 .console-shell[data-theme="dark"] .drama-spec-label { color: #aeb9c6; }
 .drama-script-settings .style-card-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
 .drama-script-settings .drama-script__hint { margin: 10px 0 0; }
+.drama-script-settings__save { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--drama-line, #e5e8ee); }
+.drama-script-settings__save .button { width: 100%; justify-content: center; }
+.console-shell[data-theme="dark"] .drama-script-settings__save { border-top-color: #303a47; }
 .console-shell[data-theme="dark"] .drama-script-settings { background: #171d26; border-color: #303a47; }
 @media (max-width: 980px) {
   .drama-script-layout { grid-template-columns: 1fr; }

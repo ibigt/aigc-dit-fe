@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchAssets } from "../api/assets.js";
 import { createSession, deleteSession, fetchSession, fetchSessions, saveCreationToAsset } from "../api/creations.js";
 import { IMAGE_POLL_TIMEOUT_MS, pollGenerateTask, submitGenerate, VIDEO_POLL_TIMEOUT_MS } from "../api/generate.js";
-import { materialToAsset, promptForResult, tasksToMessages, taskToResultMessage } from "../lib/createFlow.js";
+import { friendlyGenerateError, materialToAsset, promptForResult, tasksToMessages, taskToResultMessage } from "../lib/createFlow.js";
 import { formatDateTime, mediaUrl, storageKeyOf } from "../lib/media.js";
 
 const videoRatios = ["自动", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
@@ -857,7 +857,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
       });
       watchingTasksRef.current.delete(submitted.id);
       const result = finished.status === "FAILED"
-        ? failResult(finished.errorMessage || "生成失败，积分已退还")
+        ? failResult(friendlyGenerateError(finished.errorMessage, currentModel))
         : taskToResultMessage(finished);
       updateSessionMessages(sessionId, (items) => replacePendingMessage(items, pendingKey, result));
       onConsumeCredits(0, { model: currentModel.name, type: currentType, refresh: true });

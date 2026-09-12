@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="ºf Î">
+  <defs>
+    <linearGradient id="wuxia-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a2433"/>
+      <stop offset="42%" stop-color="#3d4a5c"/>
+      <stop offset="100%" stop-color="#c9b48a"/>
+    </linearGradient>
+    <linearGradient id="wuxia-robe" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ece6d6"/>
+      <stop offset="100%" stop-color="#8d7a55"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#wuxia-sky)"/>
+  <path d="M0 220 L110 150 L190 210 L280 120 L390 200 L480 90 L640 210 V360 H0z" fill="#2c3644"/>
+  <path d="M0 250 L160 180 L260 240 L360 150 L520 230 L640 170 V360 H0z" fill="#4a5564" opacity=".85"/>
+  <ellipse cx="500" cy="96" rx="70" ry="28" fill="#f0d9a0" opacity=".28"/>
+  <circle cx="248" cy="168" r="28" fill="#e8c4a8"/>
+  <path d="M214 196c10-18 22-28 34-28s24 10 34 28l18 92H196z" fill="url(#wuxia-robe)"/>
+  <path d="M196 228c40 8 80 8 120 0" fill="none" stroke="#d4c49a" stroke-width="6"/>
+  <path d="M318 188 L470 92" fill="none" stroke="#e8d7a8" stroke-width="3"/>
+  <path d="M470 92 L484 86 L476 104z" fill="#e8d7a8"/>
+  <path d="M232 148c16-22 40-22 52-4" fill="#1b2430"/>
+  <text x="40" y="328" fill="#f4efe8" font-family="Georgia, serif" font-size="18" font-weight="700">LIVE / WUXIA</text>
+</svg>

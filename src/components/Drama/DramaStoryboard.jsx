@@ -49,6 +49,25 @@ function statusLabel(status) {
   return status || "未开始";
 }
 
+function isOfficialSeedance(model) {
+  const adapter = String(model?.adapterKey || "").toLowerCase();
+  const key = String(model?.modelKey || "").toLowerCase();
+  return adapter === "seedance-2.0" || adapter === "seedance-2.5"
+    || key.includes("doubao-seedance-2.0") || key.includes("doubao-seedance-2-0")
+    || key.includes("doubao-seedance-2.5") || key.includes("doubao-seedance-2-5");
+}
+
+function friendlyShotError(message, model) {
+  const text = message || "出片失败";
+  if (/real person/i.test(text) || text.includes("真人")) {
+    return "参考图可能包含真人，官方 Seedance 已拒绝。请更换不含真人脸的参考图，或改用 MiniMax。";
+  }
+  if (isOfficialSeedance(model) && /agnes/i.test(text)) {
+    return "官方 Seedance 仍在生成中，请稍后刷新。若确认失败，请换参考图后再点「生成当前镜头」";
+  }
+  return text;
+}
+
 function shotLine(shot) {
   return shot?.dialogue || shot?.narrativeGoal || shot?.scene || "";
 }
@@ -466,7 +485,7 @@ export function DramaStoryboard({ series, episode }) {
         const done = await pollDramaShotGenerate(shot.id, result.task.id);
         patchShot(done?.shot || done);
         if (done?.task?.status === "FAILED") {
-          setActionError(done.task.errorMessage || "出片失败");
+          setActionError(friendlyShotError(done.task.errorMessage, videoModels.find((item) => String(item.id) === String(videoModelId))));
         }
       }
       queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
@@ -497,7 +516,7 @@ export function DramaStoryboard({ series, episode }) {
           if (cancelled) return;
           patchShot(done?.shot || done);
           if (done?.task?.status === "FAILED" && selected?.id === shot.id) {
-            setActionError(done.task.errorMessage || "出片失败");
+            setActionError(friendlyShotError(done.task.errorMessage, videoModels.find((item) => String(item.id) === String(videoModelId))));
           }
           queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
           queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
