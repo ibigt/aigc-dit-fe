@@ -286,9 +286,35 @@ function ShotInspector({ selected, generating, lockedAssets, onSave }) {
           </div>
         </div>
         <label className="youxi-field">
-          <span>视频提示词</span>
-          <small>由编译器生成，不可手写</small>
-          <textarea readOnly rows={8} value={selected.compiledPrompt || "尚未编译"} />
+          <span>
+            视频提示词
+            {selected.promptOverride ? <em className="drama-engine">手动</em> : <em className="drama-engine drama-engine--auto">自动</em>}
+          </span>
+          <small>
+            {selected.promptOverride
+              ? "当前为手动编辑，出片直接用此内容"
+              : "自动编译（风格 + 身份 + 镜头内容），可直接改写进入手动模式"}
+          </small>
+          <textarea
+            rows={8}
+            value={selected.promptOverride ?? selected.compiledPrompt ?? ""}
+            placeholder={selected.compiledPrompt ? "" : "尚未编译"}
+            onChange={(e) => {
+              const value = e.target.value;
+              onSave(selected, { promptOverride: value }).catch(() => {});
+            }}
+          />
+          {selected.promptOverride && (
+            <button
+              type="button"
+              className="drama-tool-button drama-tool-button--ghost"
+              onClick={() => {
+                onSave(selected, { promptOverride: "" }).catch(() => {});
+              }}
+            >
+              恢复自动编译
+            </button>
+          )}
         </label>
       </div>
     </aside>
@@ -459,6 +485,9 @@ export function DramaStoryboard({ series, episode }) {
       propNames: patch.propNames ?? shot.propNames ?? [],
       locationName: patch.locationName ?? shot.locationName ?? "",
     };
+    if (Object.prototype.hasOwnProperty.call(patch, "promptOverride")) {
+      payload.promptOverride = patch.promptOverride;
+    }
     const result = await runShot(shot.id, "save", () => updateDramaShot(shot.id, payload));
     queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
     queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
