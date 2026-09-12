@@ -17,9 +17,9 @@ RUN if [ -f package.json ]; then \
         '<!DOCTYPE html>' \
         '<html lang="zh-CN">' \
         '<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>' \
-        '<title>致启·光驭</title></head>' \
+        '<title>同道</title></head>' \
         '<body style="margin:0;font-family:system-ui,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;background:#0b0f19;color:#e8eefc">' \
-        '<div style="text-align:center"><h1>致启·光驭</h1>' \
+        '<div style="text-align:center"><h1>同道</h1>' \
         '<p>前端静态资源尚未接入，请完成原型迁移后重新构建此镜像。</p>' \
         '<p><a href="/api/health" style="color:#8ab4ff">/api/health</a></p></div></body></html>' \
         > dist/index.html; \

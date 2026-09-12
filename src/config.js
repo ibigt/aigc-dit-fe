@@ -71,7 +71,7 @@ function decorateModel(model) {
 }
 
 export const fallbackConfig = {
-  appName: "致启·光驭",
+  appName: "同道",
   shortName: "光驭",
   tagline: "把想象，编排成光影",
   description: "面向创作者的 AI 影像生成平台",
