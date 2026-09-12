@@ -1065,10 +1065,19 @@ button.asset-card__preview {
 .drama-script__actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .drama-script__actions .button { display: inline-flex; align-items: center; gap: 6px; }
 .drama-script__hint, .drama-script__empty { margin: 0; color: var(--muted); font-size: 12px; }
-.drama-engine { border-radius: 999px; padding: 5px 10px; font-size: 11px; font-weight: 650; color: #5d6671; background: color-mix(in srgb, var(--muted) 14%, transparent); }
+.drama-engine { border-radius: 999px; padding: 5px 10px; font-size: 11px; font-weight: 650; color: #5d6671; background: color-mix(in srgb, var(--muted) 14%, transparent); font-style: normal; line-height: 1; }
 .drama-engine--rules { color: #2f6fb3; background: #e8f0f9; }
 .drama-engine--llm { color: #1f8a5b; background: #e8f6ee; }
 .drama-engine--pending { color: #9a6b12; background: #f8efd8; }
+.drama-engine--auto { color: #6c4ab3; background: #efe9fa; }
+
+.drama-prompt-field { gap: 8px; margin-top: 12px; }
+.drama-prompt-field__head { display: flex; align-items: center; gap: 8px; color: #4e5868; font-size: 13px; font-weight: 700; }
+.drama-prompt-field__head strong { font-weight: 700; }
+.drama-prompt-field__head .drama-engine { margin-left: auto; flex: 0 0 auto; }
+.drama-prompt-field__hint { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; align-self: stretch; }
+.drama-prompt-field textarea { min-height: 180px; font: 12px/1.75 inherit; }
+.drama-prompt-field__actions { display: flex; justify-content: flex-end; }
 
 .drama-scenes { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
 .drama-scene { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); }

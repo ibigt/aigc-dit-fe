@@ -285,18 +285,20 @@ function ShotInspector({ selected, generating, lockedAssets, onSave }) {
             )}
           </div>
         </div>
-        <label className="youxi-field">
-          <span>
-            视频提示词
-            {selected.promptOverride ? <em className="drama-engine">手动</em> : <em className="drama-engine drama-engine--auto">自动</em>}
+        <label className="youxi-field drama-prompt-field">
+          <span className="drama-prompt-field__head">
+            <strong>视频提示词</strong>
+            {selected.promptOverride
+              ? <em className="drama-engine">手动</em>
+              : <em className="drama-engine drama-engine--auto">自动</em>}
           </span>
-          <small>
+          <small className="drama-prompt-field__hint">
             {selected.promptOverride
               ? "当前为手动编辑，出片直接用此内容"
               : "自动编译（风格 + 身份 + 镜头内容），可直接改写进入手动模式"}
           </small>
           <textarea
-            rows={8}
+            rows={10}
             value={selected.promptOverride ?? selected.compiledPrompt ?? ""}
             placeholder={selected.compiledPrompt ? "" : "尚未编译"}
             onChange={(e) => {
@@ -305,15 +307,17 @@ function ShotInspector({ selected, generating, lockedAssets, onSave }) {
             }}
           />
           {selected.promptOverride && (
-            <button
-              type="button"
-              className="drama-tool-button drama-tool-button--ghost"
-              onClick={() => {
-                onSave(selected, { promptOverride: "" }).catch(() => {});
-              }}
-            >
-              恢复自动编译
-            </button>
+            <div className="drama-prompt-field__actions">
+              <button
+                type="button"
+                className="drama-tool-button drama-tool-button--ghost"
+                onClick={() => {
+                  onSave(selected, { promptOverride: "" }).catch(() => {});
+                }}
+              >
+                恢复自动编译
+              </button>
+            </div>
           )}
         </label>
       </div>
