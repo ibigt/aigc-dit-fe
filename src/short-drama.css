@@ -1144,7 +1144,27 @@
 }
 .youxi-story-inspector .youxi-story-cast > header {
   margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
+.youxi-story-cast-toggle {
+  height: 24px;
+  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #4f5dda;
+  border: 1px dashed #aeb6ee;
+  border-radius: 99px;
+  background: #f7f8ff;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.youxi-story-cast-toggle:hover { border-style: solid; background: #eef0ff; }
+.youxi-story-cast-toggle:disabled { opacity: .55; cursor: not-allowed; }
 .youxi-story-inspector .youxi-story-cast > header strong {
   font-size: 13px;
 }
@@ -1165,12 +1185,58 @@
 }
 .youxi-story-meta em {
   padding: 3px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   color: #4c5bc8;
   border-radius: 99px;
   background: #eef0ff;
   font-size: 11px;
   font-style: normal;
 }
+.youxi-story-meta em button {
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: #6b78c9;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255,255,255,.78);
+  cursor: pointer;
+}
+.youxi-story-meta em button:hover { color: #fff; background: #c0556a; }
+.youxi-story-meta em button:disabled { opacity: .5; cursor: not-allowed; }
+.youxi-story-cast-picker {
+  margin-top: 10px;
+  padding: 11px 12px;
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--drama-line);
+  border-radius: 10px;
+  background: #fbfcfe;
+}
+.youxi-story-cast-picker > div { display: grid; gap: 6px; }
+.youxi-story-cast-picker > div > span { color: #626d7b; font-size: 11px; font-weight: 700; }
+.youxi-story-cast-picker > div > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.youxi-story-cast-picker > div > div > button {
+  height: 26px;
+  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #4f5968;
+  border: 1px solid var(--drama-line);
+  border-radius: 99px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.youxi-story-cast-picker > div > div > button:hover { color: #4f5dda; border-color: #8893ef; background: #f2f4ff; }
+.youxi-story-cast-picker > div > div > button:disabled { opacity: .55; cursor: not-allowed; }
+.youxi-story-cast-picker i { color: #98a2b0; font-size: 11px; font-style: normal; }
 .youxi-story-inspector .youxi-story-refs {
   width: 100%;
   margin: 14px 0 18px;
@@ -1224,6 +1290,12 @@
 .console-shell[data-theme="dark"] .youxi-shot-model select { color: #e1e7ef; }
 .console-shell[data-theme="dark"] .youxi-shot-model select { border-color: #3a4553; background: #202832; }
 .console-shell[data-theme="dark"] .youxi-story-meta em { color: #c5cbff; background: #252c45; }
+.console-shell[data-theme="dark"] .youxi-story-meta em button { color: #c5cbff; background: rgba(255,255,255,.14); }
+.console-shell[data-theme="dark"] .youxi-story-cast-toggle { color: #c5cbff; border-color: #626fc7; background: #252c45; }
+.console-shell[data-theme="dark"] .youxi-story-cast-picker { border-color: #303a47; background: #151b23; }
+.console-shell[data-theme="dark"] .youxi-story-cast-picker > div > span { color: #aeb9c6; }
+.console-shell[data-theme="dark"] .youxi-story-cast-picker > div > div > button { color: #e5eaf2; border-color: #303a47; background: #1d2530; }
+.console-shell[data-theme="dark"] .youxi-story-cast-picker i { color: #8b95a3; }
 .console-shell[data-theme="dark"] .youxi-story-refs label,
 .console-shell[data-theme="dark"] .youxi-story-refs figure { color: #e5eaf2; background: #171d26; border-color: #303a47; }
 .console-shell[data-theme="dark"] .youxi-story-inspector .youxi-story-goal { color: #aeb9c6; }

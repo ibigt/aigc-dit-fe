@@ -1,4 +1,4 @@
-import { Film, Lock, RefreshCw, Sparkles, Video, Wand2 } from "lucide-react";
+import { Film, Lock, Plus, RefreshCw, Sparkles, Video, Wand2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -14,6 +14,20 @@ import {
 import { mediaUrl } from "../../lib/media.js";
 
 const DURATIONS = [5, 10, 15];
+
+const CAST_TYPES = [
+  { type: "角色", key: "characterNames" },
+  { type: "场景", key: "locationName" },
+  { type: "道具", key: "propNames" },
+];
+
+function castOf(shot) {
+  return {
+    characterNames: (shot?.characterNames || []).filter(Boolean),
+    locationName: shot?.locationName || "",
+    propNames: (shot?.propNames || []).filter(Boolean),
+  };
+}
 
 function statusLabel(status) {
   if (status === "已锁定") return "已确认";
@@ -61,7 +75,9 @@ export function dramaStoryboardStatus(board) {
   return board?.status || "未开始";
 }
 
-function ShotInspector({ selected, generating, onSave }) {
+function ShotInspector({ selected, generating, lockedAssets, onSave }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [casting, setCasting] = useState(false);
   if (!selected) {
     return (
       <aside className="youxi-inspector youxi-story-inspector">
@@ -75,6 +91,42 @@ function ShotInspector({ selected, generating, onSave }) {
     );
   }
   const refs = pictureRefs(selected);
+  const cast = castOf(selected);
+  const chips = [
+    ...cast.characterNames.map((name) => ({ key: "characterNames", label: "角色", name })),
+    ...(cast.locationName ? [{ key: "locationName", label: "场景", name: cast.locationName }] : []),
+    ...cast.propNames.map((name) => ({ key: "propNames", label: "道具", name })),
+  ];
+
+  async function commitCast(next) {
+    setCasting(true);
+    try {
+      await onSave(selected, next);
+    } catch {
+      // 父组件已把失败写进 actionError 横幅
+    } finally {
+      setCasting(false);
+    }
+  }
+
+  function addAsset(asset) {
+    if (asset.type === "场景") {
+      if (asset.name !== cast.locationName) commitCast({ ...cast, locationName: asset.name });
+      return;
+    }
+    const key = asset.type === "角色" ? "characterNames" : "propNames";
+    if (cast[key].includes(asset.name)) return;
+    commitCast({ ...cast, [key]: [...cast[key], asset.name] });
+  }
+
+  function removeCast(key, name) {
+    if (key === "locationName") {
+      commitCast({ ...cast, locationName: "" });
+      return;
+    }
+    commitCast({ ...cast, [key]: cast[key].filter((item) => item !== name) });
+  }
+
   return (
     <aside className="youxi-inspector youxi-story-inspector">
       <div className="youxi-inspector-tabs">
@@ -103,19 +155,60 @@ function ShotInspector({ selected, generating, onSave }) {
         <section className="youxi-story-cast">
           <header>
             <strong>角色 / 场景 / 道具</strong>
+            <button
+              type="button"
+              className="youxi-story-cast-toggle"
+              disabled={generating}
+              onClick={() => setPickerOpen((open) => !open)}
+            >
+              {pickerOpen ? <X size={12} /> : <Plus size={12} />} {pickerOpen ? "收起" : "添加"}
+            </button>
           </header>
           <div className="youxi-story-meta">
-            {(selected.characterNames || []).map((name) => (
-              <em key={`c-${name}`}>角色 · {name}</em>
+            {chips.map((chip) => (
+              <em key={`${chip.key}-${chip.name}`}>
+                {chip.label} · {chip.name}
+                <button
+                  type="button"
+                  disabled={generating || casting}
+                  aria-label={`从本镜移除${chip.label} ${chip.name}`}
+                  onClick={() => removeCast(chip.key, chip.name)}
+                >
+                  <X size={10} />
+                </button>
+              </em>
             ))}
-            {selected.locationName && <em>场景 · {selected.locationName}</em>}
-            {(selected.propNames || []).map((name) => (
-              <em key={`p-${name}`}>道具 · {name}</em>
-            ))}
-            {!selected.characterNames?.length && !selected.locationName && !selected.propNames?.length && (
-              <em>未提取角色/场景/道具</em>
-            )}
+            {!chips.length && <em>未提取角色/场景/道具</em>}
           </div>
+          {pickerOpen && (
+            <div className="youxi-story-cast-picker">
+              {CAST_TYPES.map(({ type, key }) => {
+                const used = key === "locationName" ? [cast.locationName] : cast[key];
+                const options = (lockedAssets || []).filter(
+                  (asset) => asset.type === type && !used.includes(asset.name),
+                );
+                return (
+                  <div key={type}>
+                    <span>{type}</span>
+                    <div>
+                      {options.map((asset) => (
+                        <button
+                          type="button"
+                          key={asset.id}
+                          disabled={generating || casting}
+                          onClick={() => addAsset(asset)}
+                        >
+                          <Plus size={11} /> {asset.name}
+                        </button>
+                      ))}
+                      {!options.length && <i>没有可添加的已锁定{type}</i>}
+                    </div>
+                  </div>
+                );
+              })}
+              {!lockedAssets?.length && <i>主体页锁定的设定图才能作为本镜参考，请先去主体页确认。</i>}
+            </div>
+          )}
         </section>
         {selected.unboundNames?.length > 0 && (
           <p className="drama-form-error">未锁定：{selected.unboundNames.join("、")}</p>
@@ -264,6 +357,9 @@ export function DramaStoryboard({ series, episode }) {
       dialogue: patch.dialogue ?? shot.dialogue ?? "",
       continuityIn: patch.continuityIn ?? shot.continuityIn ?? "",
       continuityOut: patch.continuityOut ?? shot.continuityOut ?? "",
+      characterNames: patch.characterNames ?? shot.characterNames ?? [],
+      propNames: patch.propNames ?? shot.propNames ?? [],
+      locationName: patch.locationName ?? shot.locationName ?? "",
     };
     return runShot(shot.id, "save", () => updateDramaShot(shot.id, payload));
   }
@@ -540,8 +636,10 @@ export function DramaStoryboard({ series, episode }) {
         </div>
       </div>
       <ShotInspector
+        key={selected?.id || "none"}
         selected={shots.length ? selected : null}
         generating={generating}
+        lockedAssets={lockedAssets}
         onSave={saveShot}
       />
     </section>
