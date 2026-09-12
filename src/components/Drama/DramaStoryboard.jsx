@@ -292,11 +292,6 @@ function ShotInspector({ selected, generating, lockedAssets, onSave }) {
               ? <em className="drama-engine">手动</em>
               : <em className="drama-engine drama-engine--auto">自动</em>}
           </span>
-          <small className="drama-prompt-field__hint">
-            {selected.promptOverride
-              ? "当前为手动编辑，出片直接用此内容"
-              : "自动编译（风格 + 身份 + 镜头内容），可直接改写进入手动模式"}
-          </small>
           <textarea
             rows={10}
             value={selected.promptOverride ?? selected.compiledPrompt ?? ""}
