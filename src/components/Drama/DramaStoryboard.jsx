@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   bindDramaVideoModel,
   compileDramaStoryboard,
+  createDramaShot,
+  deleteDramaShot,
   draftDramaStoryboard,
   fetchDramaStoryboard,
   fetchDramaVideoModels,
@@ -309,6 +311,37 @@ export function DramaStoryboard({ series, episode }) {
     onError: (error) => setActionError(error.message || "编译失败"),
   });
 
+  const createShotMutation = useMutation({
+    mutationFn: () => createDramaShot(activeEpisodeId, { chapterId: selected?.chapterId }),
+    onSuccess: (shot) => {
+      queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
+      queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+      if (shot?.id) setShotId(shot.id);
+      setActionError("");
+    },
+    onError: (error) => setActionError(error.message || "新增分镜失败"),
+  });
+
+  const deleteShotMutation = useMutation({
+    mutationFn: (target) => deleteDramaShot(target.id),
+    onSuccess: (data, target) => {
+      queryClient.setQueryData(["drama-storyboard", activeEpisodeId], data);
+      queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+      const pool = (data?.chapters || []).flatMap((item) => item.shots || []);
+      const back = pool.find((item) => item.chapterId === target.chapterId) || pool[0];
+      setShotId(back?.id || null);
+      setActionError("");
+    },
+    onError: (error) => setActionError(error.message || "删除分镜失败"),
+  });
+
+  function removeShot() {
+    if (!selected?.id) return;
+    const label = `镜 ${selected.shotIndex}${selected.title ? `「${selected.title}」` : ""}`;
+    if (!window.confirm(`删除${label}？剩余分镜会重新编号，不可撤销。`)) return;
+    deleteShotMutation.mutate({ id: selected.id, chapterId: selected.chapterId });
+  }
+
   const bindMutation = useMutation({
     mutationFn: (id) => bindDramaVideoModel(seriesId, Number(id)),
     onSuccess: () => {
@@ -599,8 +632,26 @@ export function DramaStoryboard({ series, episode }) {
                 <strong>全部分镜</strong>
                 <span>共{shots.length}个分镜 · {shots.filter((item) => item.videoKey).length} 已出片</span>
               </div>
-              <div>
+              <div className="drama-shot-tools">
                 <span>{selected.title || `镜 ${selected.shotIndex}`}</span>
+                <button
+                  type="button"
+                  className="drama-tool-button"
+                  disabled={shots.length <= 1 || Boolean(selected.videoKey) || createShotMutation.isPending || deleteShotMutation.isPending}
+                  title={selected.videoKey ? "该镜已出片，不能删除" : "删除当前镜，剩余分镜重新编号"}
+                  onClick={removeShot}
+                >
+                  <X size={13} /> 删除分镜
+                </button>
+                <button
+                  type="button"
+                  className="drama-tool-button"
+                  disabled={shots.length === 0 || createShotMutation.isPending || deleteShotMutation.isPending}
+                  title="在本场末尾补一镜，人物 / 道具 / 地点沿用上一镜"
+                  onClick={() => createShotMutation.mutate()}
+                >
+                  <Plus size={13} /> 添加分镜
+                </button>
               </div>
             </div>
             <div className="youxi-filmstrip" role="list">

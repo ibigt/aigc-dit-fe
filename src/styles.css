@@ -1083,3 +1083,9 @@ button.asset-card__preview {
 .drama-scene__dialogue li { display: flex; gap: 8px; font-size: 12px; line-height: 1.7; }
 .drama-scene__dialogue b { flex: 0 0 auto; min-width: 3.5em; color: var(--primary); font-weight: 650; }
 .drama-scene__sound { margin: 0; color: var(--muted); font-size: 11px; }
+
+.drama-shot-tools { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.drama-shot-tools > span { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.drama-tool-button { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.7); color: var(--ink); font-size: 11px; font-weight: 650; cursor: pointer; }
+.drama-tool-button:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.drama-tool-button:disabled { opacity: .45; cursor: not-allowed; }

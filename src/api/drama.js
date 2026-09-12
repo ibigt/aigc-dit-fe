@@ -113,6 +113,14 @@ export function draftDramaStoryboard(episodeId) {
   return api.post(`/drama/episodes/${episodeId}/storyboard/draft`, null, { timeout: SCRIPT_LLM_TIMEOUT_MS });
 }
 
+export function createDramaShot(episodeId, payload = {}) {
+  return api.post(`/drama/episodes/${episodeId}/shots`, payload);
+}
+
+export function deleteDramaShot(shotId) {
+  return api.delete(`/drama/shots/${shotId}`);
+}
+
 export function compileDramaStoryboard(episodeId) {
   return api.post(`/drama/episodes/${episodeId}/storyboard/compile`);
 }
