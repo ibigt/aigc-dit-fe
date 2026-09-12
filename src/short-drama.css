@@ -564,10 +564,30 @@
   border: 0;
   background: transparent;
   text-align: left;
+  cursor: default;
 }
 .youxi-workspace .drama-project-title img { width: 34px; height: 34px; object-fit: cover; border-radius: 8px; }
 .youxi-workspace .drama-project-title svg { flex: 0 0 auto; color: #8993a1; }
-.youxi-workspace .drama-project-title:hover svg { color: #5664d8; }
+.drama-project-rename {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: #8993a1;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+.drama-project-rename:hover {
+  color: #5664d8;
+  background: #eef0ff;
+}
+.console-shell[data-theme="dark"] .drama-project-rename:hover {
+  color: #c5cbff;
+  background: #252c45;
+}
 .director-settings { display: grid; gap: 10px; }
 .director-settings > header { margin-bottom: 2px; }
 .director-settings label { display: grid; grid-template-columns: 70px 1fr; align-items: center; gap: 8px; color: #536070; font-size: 12px; }
@@ -628,7 +648,7 @@
 .youxi-shots-center > .youxi-storyboard-main { height: 100%; }
 
 /* Storyboard timeline and selected-shot inspector */
-.youxi-storyboard-main { grid-template-rows: minmax(225px,1fr) 58px min(236px,32vh); }
+.youxi-storyboard-main { grid-template-rows: minmax(0,1fr) 58px 214px; }
 .youxi-story-preview { grid-template-rows: minmax(0,1fr) auto; padding-bottom: 14px; }
 .youxi-story-preview > p { padding: 0 12px; color: #2d3745; line-height: 1.55; }
 .youxi-story-empty-preview { position: relative; width: calc(100% - 28px); height: calc(100% - 8px); min-height: 210px; overflow: hidden; border: 1px solid #d4d9e1; border-radius: 10px; background-color: #e8ebf0; background-image: linear-gradient(45deg,#cfd4dc 25%,transparent 25%),linear-gradient(-45deg,#cfd4dc 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#cfd4dc 75%),linear-gradient(-45deg,transparent 75%,#cfd4dc 75%); background-position: 0 0,0 10px,10px -10px,-10px 0; background-size: 20px 20px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.35),0 8px 24px rgba(35,42,60,.07); }
@@ -637,6 +657,7 @@
 .youxi-story-empty-state strong { font-size: 13px; }
 .youxi-story-empty-state > span { color: #6c7786; font-size: 10px; }
 .youxi-story-empty-state > button { height: 32px; margin-top: 3px; padding: 0 12px; display: inline-flex; align-items: center; gap: 5px; color: #fff; border: 0; border-radius: 8px; background: #6572ed; font-size: 11px; font-weight: 700; }
+.youxi-story-empty-state > button:disabled { opacity: .45; cursor: not-allowed; }
 .youxi-timeline { min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: 28px minmax(0,1fr); background: #fff; }
 .youxi-timeline-ruler { min-width: 860px; height: 28px; padding: 0 18px; display: grid; grid-template-columns: repeat(41, 1fr); border-bottom: 1px solid #e7eaf0; background: #f8f9fb; }
 .youxi-timeline-ruler i { position: relative; height: 9px; align-self: end; border-left: 1px solid #cbd1da; }
@@ -702,7 +723,26 @@
 .youxi-timeline { display: block; }
 .youxi-timeline-scroll { width: 100%; height: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-gutter: stable; }
 .youxi-timeline-ruler { min-width: 0; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(20px,1fr); box-sizing: border-box; }
-.youxi-filmstrip { min-width: 0; overflow-x: auto; overflow-y: hidden; box-sizing: border-box; scrollbar-gutter: stable; }
+.youxi-filmstrip {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  box-sizing: border-box;
+  gap: 8px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #c5ccd6 #eef1f5;
+}
+.youxi-filmstrip::-webkit-scrollbar { height: 8px; }
+.youxi-filmstrip::-webkit-scrollbar-thumb {
+  border-radius: 99px;
+  background: #c5ccd6;
+}
+.youxi-filmstrip::-webkit-scrollbar-track { background: #eef1f5; }
+.console-shell[data-theme="dark"] .youxi-filmstrip::-webkit-scrollbar-thumb { background: #4a5563; }
+.console-shell[data-theme="dark"] .youxi-filmstrip::-webkit-scrollbar-track { background: #1d2530; }
 .youxi-shot-thumb__empty { width: 100%; height: 91px; display: grid; place-content: center; justify-items: center; gap: 4px; color: #8b95a3; background-color: #e8ebf0; background-image: linear-gradient(45deg,#cfd4dc 25%,transparent 25%),linear-gradient(-45deg,#cfd4dc 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#cfd4dc 75%),linear-gradient(-45deg,transparent 75%,#cfd4dc 75%); background-position: 0 0,0 7px,7px -7px,-7px 0; background-size: 14px 14px; }
 .youxi-shot-thumb__empty b { color: #9b6d23; font-size: 10px; }
 
@@ -1017,7 +1057,39 @@
   min-height: 0;
 }
 .youxi-film-layout:not(:has(.youxi-chapters)) { grid-template-columns: minmax(0,1fr); }
-.youxi-film-main:not(:has(> header)) { grid-template-rows: minmax(0,1fr); }
+.youxi-film-layout:has(.youxi-chapters):not(:has(.youxi-inspector)) { grid-template-columns: 190px minmax(0,1fr); }
+.youxi-film-main:not(:has(> header)) {
+  display: flex;
+  flex-direction: column;
+  grid-template-rows: none;
+}
+.youxi-film-layout .youxi-final-player { flex: 1; }
+.youxi-film-banners { padding: 12px 22px 0; display: grid; gap: 8px; }
+.youxi-film-banner {
+  margin: 0;
+  padding: 10px 12px;
+  color: #5c6573;
+  border: 1px solid #e4e8ee;
+  border-radius: 8px;
+  background: #f6f8fb;
+  font-size: 12px;
+}
+.youxi-film-banner--warn {
+  color: #8a5a16;
+  border-color: #f0d7a8;
+  background: #fff7e8;
+}
+.youxi-film-layout .youxi-chapters > div > button small.is-ready { color: #4c5bc8; font-weight: 700; }
+.youxi-film-actions {
+  padding: 0 22px 18px;
+  display: flex;
+  justify-content: center;
+}
+.youxi-film-actions .button { height: 38px; display: inline-flex; align-items: center; gap: 6px; }
+.youxi-final-player video[data-ratio="16:9"] { aspect-ratio: 16 / 9; object-fit: contain; }
+.youxi-final-player video[data-ratio="1:1"] { aspect-ratio: 1 / 1; }
+.console-shell[data-theme="dark"] .youxi-film-banner { color: #c5ced8; border-color: #3a4554; background: #1b222c; }
+.console-shell[data-theme="dark"] .youxi-film-banner--warn { color: #f0d19a; border-color: #6b5428; background: #2a2214; }
 .youxi-film-layout .youxi-final-player { width: 100%; min-height: 0; }
 .drama-empty { min-height: 220px; display: grid; place-items: center; color: #7a8492; font-size: 13px; }
 .drama-empty p { margin: 0 0 12px; }
@@ -1031,6 +1103,10 @@
 .drama-script-settings { position: sticky; top: 0; padding: 16px; border: 1px solid var(--drama-line, #e5e8ee); border-radius: 14px; background: #fff; }
 .drama-script-settings .settings-block:last-of-type { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
 .drama-ratio-grid { grid-template-columns: repeat(3, 1fr); }
+.drama-resolution-grid { grid-template-columns: repeat(2, 1fr); margin-top: 0; }
+.drama-spec-label { margin: 0 0 8px; color: #626d7b; font-size: 12px; }
+.drama-spec-label + .ratio-card-grid + .drama-spec-label { margin-top: 14px; }
+.console-shell[data-theme="dark"] .drama-spec-label { color: #aeb9c6; }
 .drama-script-settings .style-card-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
 .drama-script-settings .drama-script__hint { margin: 10px 0 0; }
 .console-shell[data-theme="dark"] .drama-script-settings { background: #171d26; border-color: #303a47; }

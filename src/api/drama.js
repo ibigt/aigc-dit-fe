@@ -109,8 +109,11 @@ export function fetchDramaStoryboard(episodeId) {
   return api.get(`/drama/episodes/${episodeId}/storyboard`);
 }
 
-export function draftDramaStoryboard(episodeId) {
-  return api.post(`/drama/episodes/${episodeId}/storyboard/draft`, null, { timeout: SCRIPT_LLM_TIMEOUT_MS });
+export function draftDramaStoryboard(episodeId, durationSec) {
+  return api.post(`/drama/episodes/${episodeId}/storyboard/draft`, null, {
+    timeout: SCRIPT_LLM_TIMEOUT_MS,
+    params: { durationSec: durationSec || 15 },
+  });
 }
 
 export function createDramaShot(episodeId, payload = {}) {
@@ -151,6 +154,17 @@ export function generateDramaShot(shotId) {
 
 export function fetchDramaShotGenerateTask(shotId, taskId) {
   return api.get(`/drama/shots/${shotId}/generate/tasks/${taskId}`);
+}
+
+/** 拼接可能走重编码，超时需覆盖后端 ffmpeg encode 上限。 */
+const FILM_ASSEMBLE_TIMEOUT_MS = 16 * 60 * 1000;
+
+export function fetchDramaFilm(episodeId) {
+  return api.get(`/drama/episodes/${episodeId}/film`);
+}
+
+export function assembleDramaFilm(episodeId) {
+  return api.post(`/drama/episodes/${episodeId}/film/assemble`, null, { timeout: FILM_ASSEMBLE_TIMEOUT_MS });
 }
 
 export function pollDramaAssetGenerate(assetId, taskId, { interval = 2000, timeout = 8 * 60 * 1000 } = {}) {

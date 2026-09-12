@@ -31,6 +31,19 @@ function castOf(shot) {
   };
 }
 
+function durationOptionsFor(model) {
+  const listed = Array.isArray(model?.durations)
+    ? model.durations.map(Number).filter((item) => DURATIONS.includes(item))
+    : [];
+  return listed.length ? listed : DURATIONS;
+}
+
+function clampDuration(options, value) {
+  const list = options?.length ? options : DURATIONS;
+  if (list.includes(value)) return value;
+  return [...list].reverse().find((item) => item <= value) || list[list.length - 1] || 15;
+}
+
 function statusLabel(status) {
   if (status === "已锁定") return "已确认";
   return status || "未开始";
@@ -44,8 +57,27 @@ function pictureRefs(shot) {
   return (shot?.references || []).filter((item) => item?.assetId);
 }
 
+function isInFlightStatus(status) {
+  return status === "PENDING" || status === "RUNNING";
+}
+
 function isShotGenerating(shot, busy) {
-  return Boolean(shot?.generating || (shot?.id && busy?.[shot.id] === "generate"));
+  const status = shot?.genTaskStatus;
+  return Boolean(
+    shot?.generating
+    || isInFlightStatus(status)
+    || (shot?.id && busy?.[shot.id] === "generate")
+  );
+}
+
+function inFlightShots(shots) {
+  return (shots || []).filter((shot) => (
+    shot?.genTaskId
+    && (shot.generating || isInFlightStatus(shot.genTaskStatus))
+    && shot.genTaskStatus !== "FAILED"
+    && shot.genTaskStatus !== "CANCELLED"
+    && shot.genTaskStatus !== "SUCCEEDED"
+  ));
 }
 
 function ShotThumbPreview({ shot, busy }) {
@@ -251,6 +283,7 @@ export function DramaStoryboard({ series, episode }) {
   const [episodeId, setEpisodeId] = useState(episode?.id || episodes[0]?.id || null);
   const [shotId, setShotId] = useState(null);
   const [videoModelId, setVideoModelId] = useState(series?.videoModelId || "");
+  const [draftDurationSec, setDraftDurationSec] = useState(15);
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
 
@@ -275,6 +308,11 @@ export function DramaStoryboard({ series, episode }) {
     queryKey: ["drama-storyboard", activeEpisodeId],
     queryFn: () => fetchDramaStoryboard(activeEpisodeId),
     enabled: Boolean(activeEpisodeId),
+    refetchInterval: (query) => {
+      const chapters = query.state.data?.chapters || [];
+      const list = chapters.flatMap((item) => item.shots || []);
+      return inFlightShots(list).length ? 3000 : false;
+    },
   });
 
   const board = boardQuery.data;
@@ -284,7 +322,15 @@ export function DramaStoryboard({ series, episode }) {
   const selected = shots.find((item) => item.id === shotId) || shots[0];
   const scriptLocked = activeEpisode?.status === "已锁定";
   const videoModels = videoModelsQuery.data || [];
+  const durationOptions = useMemo(
+    () => durationOptionsFor(videoModels.find((item) => String(item.id) === String(videoModelId))),
+    [videoModels, videoModelId]
+  );
   const ratio = series?.aspectRatio || "16:9";
+
+  useEffect(() => {
+    setDraftDurationSec((current) => clampDuration(durationOptions, current));
+  }, [durationOptions]);
 
   useEffect(() => {
     if (!selected?.id) return;
@@ -292,7 +338,7 @@ export function DramaStoryboard({ series, episode }) {
   }, [selected?.id, shotId]);
 
   const draftMutation = useMutation({
-    mutationFn: () => draftDramaStoryboard(activeEpisodeId),
+    mutationFn: () => draftDramaStoryboard(activeEpisodeId, draftDurationSec),
     onSuccess: (data) => {
       queryClient.setQueryData(["drama-storyboard", activeEpisodeId], data);
       queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
@@ -386,7 +432,7 @@ export function DramaStoryboard({ series, episode }) {
 
   async function saveShot(shot, patch) {
     const payload = {
-      durationSec: patch.durationSec ?? shot.durationSec ?? 5,
+      durationSec: patch.durationSec ?? shot.durationSec ?? draftDurationSec ?? 15,
       dialogue: patch.dialogue ?? shot.dialogue ?? "",
       continuityIn: patch.continuityIn ?? shot.continuityIn ?? "",
       continuityOut: patch.continuityOut ?? shot.continuityOut ?? "",
@@ -394,13 +440,25 @@ export function DramaStoryboard({ series, episode }) {
       propNames: patch.propNames ?? shot.propNames ?? [],
       locationName: patch.locationName ?? shot.locationName ?? "",
     };
-    return runShot(shot.id, "save", () => updateDramaShot(shot.id, payload));
+    const result = await runShot(shot.id, "save", () => updateDramaShot(shot.id, payload));
+    queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
+    queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+    if (shot.videoKey && patch.durationSec != null && Number(patch.durationSec) !== Number(shot.durationSec)) {
+      setActionError("须重新生成当前镜头");
+    }
+    return result;
   }
 
   async function generate(shot) {
     if (!shot?.id) return;
     setBusy((current) => ({ ...current, [shot.id]: "generate" }));
     setActionError("");
+    patchShot({
+      ...shot,
+      generating: true,
+      genErrorMessage: "",
+      genTaskStatus: "PENDING",
+    });
     try {
       const result = await generateDramaShot(shot.id);
       patchShot(result?.shot || result);
@@ -412,8 +470,11 @@ export function DramaStoryboard({ series, episode }) {
         }
       }
       queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
+      queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
+      queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
     } catch (error) {
       setActionError(error.message || "出片失败");
+      queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
     } finally {
       setBusy((current) => {
         const next = { ...current };
@@ -423,36 +484,42 @@ export function DramaStoryboard({ series, episode }) {
     }
   }
 
+  const inflightKey = inFlightShots(shots).map((item) => `${item.id}:${item.genTaskId}`).join(",");
+
   useEffect(() => {
-    if (!selected?.generating || !selected?.genTaskId || busy[selected.id]) return undefined;
+    const targets = inFlightShots(shots).filter((shot) => !busy[shot.id]);
+    if (!targets.length) return undefined;
     let cancelled = false;
-    setBusy((current) => ({ ...current, [selected.id]: "generate" }));
-    pollDramaShotGenerate(selected.id, selected.genTaskId)
-      .then((done) => {
-        if (cancelled) return;
-        patchShot(done?.shot || done);
-        if (done?.task?.status === "FAILED") {
-          setActionError(done.task.errorMessage || "出片失败");
-        }
-        queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
-      })
-      .catch((error) => {
-        if (!cancelled) setActionError(error.message || "出片失败");
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setBusy((current) => {
-          const next = { ...current };
-          delete next[selected.id];
-          return next;
+    targets.forEach((shot) => {
+      setBusy((current) => ({ ...current, [shot.id]: "generate" }));
+      pollDramaShotGenerate(shot.id, shot.genTaskId)
+        .then((done) => {
+          if (cancelled) return;
+          patchShot(done?.shot || done);
+          if (done?.task?.status === "FAILED" && selected?.id === shot.id) {
+            setActionError(done.task.errorMessage || "出片失败");
+          }
+          queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
+          queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
+          queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+        })
+        .catch((error) => {
+          if (!cancelled && selected?.id === shot.id) setActionError(error.message || "出片失败");
+        })
+        .finally(() => {
+          setBusy((current) => {
+            const next = { ...current };
+            delete next[shot.id];
+            return next;
+          });
         });
-      });
+    });
     return () => {
       cancelled = true;
     };
-  }, [selected?.id, selected?.generating, selected?.genTaskId]);
+  }, [inflightKey]);
 
-  const generating = Boolean(selected && (busy[selected.id] === "generate" || selected.generating));
+  const generating = Boolean(selected && isShotGenerating(selected, busy));
   const error = boardQuery.error || bindMutation.error || (actionError ? { message: actionError } : null);
   const videoSrc = mediaUrl(selected?.videoUrl || selected?.videoKey);
 
@@ -509,21 +576,25 @@ export function DramaStoryboard({ series, episode }) {
                 ))}
               </select>
             </label>
-            {selected && (
-              <label className="youxi-shot-model">
-                时长
-                <select
-                  aria-label="本镜时长"
-                  value={selected.durationSec || 5}
-                  disabled={generating}
-                  onChange={(event) => saveShot(selected, { durationSec: Number(event.target.value) }).catch(() => {})}
-                >
-                  {DURATIONS.map((item) => (
-                    <option key={item} value={item}>{item} 秒</option>
-                  ))}
-                </select>
-              </label>
-            )}
+            <label className="youxi-shot-model">
+              时长
+              <select
+                aria-label="拆镜时长"
+                value={draftDurationSec}
+                disabled={generating}
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  setDraftDurationSec(next);
+                  if (selected) {
+                    saveShot(selected, { durationSec: next }).catch(() => {});
+                  }
+                }}
+              >
+                {durationOptions.map((item) => (
+                  <option key={item} value={item}>{item} 秒</option>
+                ))}
+              </select>
+            </label>
           </div>
           <div>
             <button
@@ -637,8 +708,8 @@ export function DramaStoryboard({ series, episode }) {
                 <button
                   type="button"
                   className="drama-tool-button"
-                  disabled={shots.length <= 1 || Boolean(selected.videoKey) || createShotMutation.isPending || deleteShotMutation.isPending}
-                  title={selected.videoKey ? "该镜已出片，不能删除" : "删除当前镜，剩余分镜重新编号"}
+                  disabled={shots.length <= 1 || Boolean(selected.videoKey) || generating || createShotMutation.isPending || deleteShotMutation.isPending}
+                  title={generating ? "该镜正在生成，请等任务结束再删除" : selected.videoKey ? "该镜已出片，不能删除" : "删除当前镜，剩余分镜重新编号"}
                   onClick={removeShot}
                 >
                   <X size={13} /> 删除分镜
@@ -664,7 +735,10 @@ export function DramaStoryboard({ series, episode }) {
                     <button
                       type="button"
                       className={`youxi-shot-thumb ${active ? "active" : ""}`}
-                      onClick={() => setShotId(shot.id)}
+                      onClick={() => {
+                        setShotId(shot.id);
+                        setActionError("");
+                      }}
                     >
                       <span className="youxi-shot-thumb__preview">
                         <span>镜 {shot.shotIndex}</span>

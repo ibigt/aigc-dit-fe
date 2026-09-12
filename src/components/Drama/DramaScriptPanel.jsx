@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, Lock, RectangleHorizontal, RectangleVertical, RefreshCw, Square, Wand2, Sparkles } from "lucide-react";
-import { analyzeDramaScript, generateDramaScript, importDramaScript, lockDramaScript, updateDramaSeries } from "../../api/drama.js";
+import { analyzeDramaScript, fetchDramaVideoModels, generateDramaScript, importDramaScript, lockDramaScript, updateDramaSeries } from "../../api/drama.js";
 import { DramaStylePicker } from "./DramaStylePicker.jsx";
 import { DEFAULT_DRAMA_STYLE_KEY } from "./dramaStyles.js";
 
@@ -16,6 +16,15 @@ const ASPECT_RATIOS = [
   { id: "9:16", label: "9:16", Icon: RectangleVertical },
   { id: "1:1", label: "1:1", Icon: Square },
 ];
+
+const RESOLUTIONS = ["480P", "720P"];
+
+function resolutionOptionsFor(model) {
+  const listed = Array.isArray(model?.resolutions)
+    ? model.resolutions.map((item) => String(item).toUpperCase()).filter((item) => RESOLUTIONS.includes(item))
+    : [];
+  return listed.length ? listed : RESOLUTIONS;
+}
 
 const ANALYSIS_STAGES = [
   { label: "读取剧本", detail: "正在识别人物、场景和剧情结构…", progress: 12 },
@@ -38,7 +47,7 @@ function sceneTitle(scene, index) {
 }
 
 /**
- * 剧本步骤：导入原文 → 分场渲染 → 锁定；右侧可选风格与视频比例。
+ * 剧本步骤：导入原文 → 分场渲染 → 锁定；右侧可选风格、视频比例与清晰度。
  * 分场结果由后端 DramaTextService 产出，这里只渲染与触发，不组装字段。
  */
 export function DramaScriptPanel({ episode, series }) {
@@ -100,10 +109,25 @@ export function DramaScriptPanel({ episode, series }) {
     onSuccess: refreshSeries,
   });
 
+  const videoModelsQuery = useQuery({
+    queryKey: ["drama-video-models"],
+    queryFn: fetchDramaVideoModels,
+  });
+
   const scenes = episode?.script?.scenes || [];
   const locked = episode?.status === "已锁定";
   const styleKey = series?.styleKey || DEFAULT_DRAMA_STYLE_KEY;
   const aspectRatio = series?.aspectRatio || "16:9";
+  const resolution = series?.defaultResolution || "720P";
+  const resolutionOptions = useMemo(
+    () => resolutionOptionsFor((videoModelsQuery.data || []).find((item) => String(item.id) === String(series?.videoModelId))),
+    [videoModelsQuery.data, series?.videoModelId]
+  );
+
+  useEffect(() => {
+    if (!series?.id || !resolutionOptions.length || resolutionOptions.includes(resolution)) return;
+    settings.mutate({ defaultResolution: resolutionOptions[resolutionOptions.length - 1] });
+  }, [series?.id, resolution, resolutionOptions]);
   const analyzing = analyze.isPending || run.isPending;
   const progressStartedAt = analysisStartedAt || runStartedAt;
   const elapsed = progressStartedAt ? Math.max(0, Math.floor((analysisNow - progressStartedAt) / 1000)) : 0;
@@ -261,9 +285,10 @@ export function DramaScriptPanel({ episode, series }) {
         </section>
         <section className="settings-block">
           <header>
-            <strong>视频比例</strong>
+            <strong>视频比例与清晰度</strong>
             <span>用于全部分镜和成片</span>
           </header>
+          <p className="drama-spec-label">视频比例</p>
           <div className="ratio-card-grid drama-ratio-grid">
             {ASPECT_RATIOS.map((item) => {
               const Icon = item.Icon;
@@ -280,6 +305,20 @@ export function DramaScriptPanel({ episode, series }) {
                 </button>
               );
             })}
+          </div>
+          <p className="drama-spec-label">清晰度</p>
+          <div className="ratio-card-grid drama-ratio-grid drama-resolution-grid">
+            {resolutionOptions.map((item) => (
+              <button
+                key={item}
+                type="button"
+                className={resolution === item ? "active" : ""}
+                disabled={settings.isPending || !series?.id}
+                onClick={() => { if (resolution !== item) settings.mutate({ defaultResolution: item }); }}
+              >
+                <span>{item}</span>
+              </button>
+            ))}
           </div>
         </section>
 

@@ -1,9 +1,10 @@
 import { ArrowLeft, ChevronRight, CircleCheck, Download, Film, Pencil, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
-import { fetchDramaSeriesDetail, updateDramaSeries } from "../../api/drama.js";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { fetchDramaFilm, fetchDramaSeriesDetail, updateDramaSeries } from "../../api/drama.js";
 import { DramaAssetBoard } from "./DramaAssetBoard.jsx";
+import { DramaFilmPanel, downloadDramaFilm } from "./DramaFilmPanel.jsx";
 import { DramaScriptPanel } from "./DramaScriptPanel.jsx";
 import { DramaStoryboard } from "./DramaStoryboard.jsx";
 import { dramaStyleOf } from "./dramaStyles.js";
@@ -14,6 +15,12 @@ const STEPS = [
   { id: "shots", label: "分镜", action: "剪辑成片" },
   { id: "film", label: "成片", action: "导出" },
 ];
+const STEP_IDS = STEPS.map((item) => item.id);
+
+function stepFromSearch(searchParams) {
+  const raw = searchParams.get("step");
+  return STEP_IDS.includes(raw) ? raw : "script";
+}
 
 function DramaDialog({ title, eyebrow, onClose, children }) {
   return (
@@ -32,27 +39,10 @@ function DramaDialog({ title, eyebrow, onClose, children }) {
   );
 }
 
-function FilmSlot() {
-  return (
-    <div className="drama-step youxi-film-layout">
-      <section className="youxi-film-main">
-        <div className="youxi-final-player">
-          <div className="youxi-story-empty-preview">
-            <div className="youxi-story-empty-state">
-              <Film size={24} />
-              <strong>尚未生成成片</strong>
-              <span>本集分镜出片后可在此拼接并导出 MP4</span>
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
-  );
-}
-
 export function DramaWorkbench({ seriesId }) {
   const id = seriesId;
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const seriesQuery = useQuery({
     queryKey: ["drama-series", id],
@@ -61,11 +51,25 @@ export function DramaWorkbench({ seriesId }) {
   });
   const series = seriesQuery.data;
   const episode = series?.episodes?.[0];
-  const [step, setStep] = useState("script");
+  const step = stepFromSearch(searchParams);
+
+  function setStep(next) {
+    const nextStep = STEP_IDS.includes(next) ? next : "script";
+    setSearchParams((current) => {
+      const params = new URLSearchParams(current);
+      if (nextStep === "script") {
+        params.delete("step");
+      } else {
+        params.set("step", nextStep);
+      }
+      return params;
+    }, { replace: true });
+  }
   const [notice, setNotice] = useState("");
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
   const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const goLibrary = () => navigate("/console", { state: { tab: "drama" } });
   const style = dramaStyleOf(series?.styleKey);
@@ -129,7 +133,7 @@ export function DramaWorkbench({ seriesId }) {
           <button className="drama-back" type="button" onClick={goLibrary}>
             <ArrowLeft size={18} /> 返回
           </button>
-          <button className="drama-project-title" type="button" onClick={() => { setRenameDraft(series.name); setRenameOpen(true); }} aria-label="修改项目名称">
+          <div className="drama-project-title">
             <img
               src={cover}
               alt=""
@@ -140,8 +144,15 @@ export function DramaWorkbench({ seriesId }) {
               }}
             />
             <strong>{series.name}</strong>
-            <Pencil size={13} />
-          </button>
+            <button
+              className="drama-project-rename"
+              type="button"
+              aria-label="修改项目名称"
+              onClick={() => { setRenameDraft(series.name); setRenameOpen(true); }}
+            >
+              <Pencil size={13} />
+            </button>
+          </div>
         </div>
         <nav aria-label="短剧创作流程">
           {STEPS.map((item, index) => (
@@ -187,7 +198,7 @@ export function DramaWorkbench({ seriesId }) {
           <DramaStoryboard series={series} episode={episode} />
         </div>
       )}
-      {step === "film" && <FilmSlot />}
+      {step === "film" && <DramaFilmPanel series={series} episode={episode} />}
       {renameOpen && (
         <DramaDialog title="修改项目名称" eyebrow="项目基础信息" onClose={() => { if (!renameMutation.isPending) setRenameOpen(false); }}>
           <form
@@ -218,14 +229,36 @@ export function DramaWorkbench({ seriesId }) {
           <div className="export-options">
             <button
               type="button"
-              onClick={() => {
-                setExportOpen(false);
-                showNotice("成片拼接将在后续波次接入，本步仅保留导出入口");
+              disabled={exporting}
+              onClick={async () => {
+                if (!episode?.id) {
+                  showNotice("请先打开剧集");
+                  return;
+                }
+                setExporting(true);
+                try {
+                  const film = await queryClient.fetchQuery({
+                    queryKey: ["drama-film", episode.id],
+                    queryFn: () => fetchDramaFilm(episode.id),
+                  });
+                  if (!film?.filmUrl) {
+                    setExportOpen(false);
+                    showNotice("请先拼接成片");
+                    return;
+                  }
+                  await downloadDramaFilm(film.filmUrl, `${series.name || "成片"}.mp4`);
+                  setExportOpen(false);
+                  showNotice(film.stale ? "已下载当前成片，分镜已更新请重新拼接" : "成片已开始下载");
+                } catch (error) {
+                  showNotice(error.message || "导出失败");
+                } finally {
+                  setExporting(false);
+                }
               }}
             >
               <Film size={20} />
               <span>
-                <strong>导出成片</strong>
+                <strong>{exporting ? "导出中…" : "导出成片"}</strong>
                 <small>MP4 · 不导出剪映草稿</small>
               </span>
               <ChevronRight size={17} />
