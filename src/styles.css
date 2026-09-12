@@ -1075,7 +1075,7 @@ button.asset-card__preview {
 .drama-prompt-field__head { display: flex; align-items: center; gap: 8px; color: #4e5868; font-size: 13px; font-weight: 700; }
 .drama-prompt-field__head strong { font-weight: 700; }
 .drama-prompt-field__head .drama-engine { margin-left: auto; flex: 0 0 auto; }
-.drama-prompt-field__hint { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; align-self: stretch; }
+.drama-prompt-field__hint { margin: 0 !important; color: var(--muted); font-size: 11px; line-height: 1.5; align-self: stretch; }
 .drama-prompt-field textarea { min-height: 180px; font: 12px/1.75 inherit; }
 .drama-prompt-field__actions { display: flex; justify-content: flex-end; }
 
@@ -1093,8 +1093,11 @@ button.asset-card__preview {
 .drama-scene__dialogue b { flex: 0 0 auto; min-width: 3.5em; color: var(--primary); font-weight: 650; }
 .drama-scene__sound { margin: 0; color: var(--muted); font-size: 11px; }
 
-.drama-shot-tools { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.drama-shot-tools { display: inline-flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
 .drama-shot-tools > span { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.drama-shot-tools > span { flex: 1 1 100%; order: -1; }
+
+.youxi-story-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .drama-tool-button { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.7); color: var(--ink); font-size: 11px; font-weight: 650; cursor: pointer; }
 .drama-tool-button:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
 .drama-tool-button:disabled { opacity: .45; cursor: not-allowed; }
