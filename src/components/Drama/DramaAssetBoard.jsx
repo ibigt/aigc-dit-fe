@@ -602,11 +602,10 @@ export function DramaAssetBoard({ series, episode }) {
                       </button>
                     </header>
                     <button
-                      className={`youxi-subject-card__select ${src ? "is-zoomable" : ""}`}
+                      className="youxi-subject-card__select"
                       type="button"
                       onClick={() => {
                         setSelectedId(item.id);
-                        if (src) setPreview({ src, title: item.name });
                       }}
                     >
                       <div className={`${!src ? "is-empty" : ""} ${generating ? "is-generating" : ""}`}>
