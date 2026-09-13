@@ -1206,6 +1206,30 @@
   aspect-ratio: 1 / 1;
   object-fit: cover;
 }
+.youxi-story-preview__video-wrap {
+  position: relative;
+  width: 100%;
+  display: grid;
+  place-items: center;
+}
+.youxi-story-preview__zoom {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: rgba(17, 20, 27, .7);
+  border: 0;
+  border-radius: 8px;
+  cursor: zoom-in;
+  backdrop-filter: blur(4px);
+}
+.youxi-story-preview__zoom:hover {
+  background: rgba(17, 20, 27, .9);
+}
 .youxi-story-empty-preview[data-ratio="9:16"] {
   width: min(280px, calc(100% - 28px));
   aspect-ratio: 9 / 16;

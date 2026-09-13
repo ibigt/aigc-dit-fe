@@ -1,4 +1,4 @@
-import { Film, Lock, Plus, RefreshCw, Sparkles, Video, Wand2, X } from "lucide-react";
+import { Film, Lock, Plus, RefreshCw, Sparkles, Video, Wand2, X, ZoomIn } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -733,17 +733,33 @@ export function DramaStoryboard({ series, episode }) {
           <section className="youxi-storyboard-main">
             <div className="youxi-story-preview">
               {videoSrc && !generating ? (
-                <video
-                  key={videoSrc}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  data-ratio={ratio}
-                  src={videoSrc}
-                  poster={mediaUrl(selected?.videoPosterUrl || selected?.videoPosterKey) || undefined}
-                >
-                  <track kind="captions" />
-                </video>
+                <div className="youxi-story-preview__video-wrap">
+                  <video
+                    key={videoSrc}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    data-ratio={ratio}
+                    src={videoSrc}
+                    poster={mediaUrl(selected?.videoPosterUrl || selected?.videoPosterKey) || undefined}
+                  >
+                    <track kind="captions" />
+                  </video>
+                  {shotPoster(selected) && (
+                    <button
+                      type="button"
+                      className="youxi-story-preview__zoom"
+                      aria-label="放大封面"
+                      title="放大封面"
+                      onClick={() => setPreview({
+                        src: shotPoster(selected),
+                        title: `镜 ${selected.shotIndex}${selected.title ? `「${selected.title}」` : ""}`,
+                      })}
+                    >
+                      <ZoomIn size={16} />
+                    </button>
+                  )}
+                </div>
               ) : (
                 <div className="youxi-story-empty-preview" data-ratio={ratio}>
                   <div className="youxi-story-empty-state">
