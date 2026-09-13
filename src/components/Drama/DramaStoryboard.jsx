@@ -295,7 +295,7 @@ function ShotInspector({ selected, generating, lockedAssets, onSave }) {
           <textarea
             rows={10}
             value={selected.promptOverride ?? selected.compiledPrompt ?? ""}
-            placeholder={selected.compiledPrompt ? "" : "尚未编译"}
+            placeholder={selected.compiledPrompt ? "" : "点击上方「重新编译」生成提示词，或直接手写覆盖"}
             onChange={(e) => {
               const value = e.target.value;
               onSave(selected, { promptOverride: value }).catch(() => {});
