@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900">
+  <defs>
+    <linearGradient id="sky-minguo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f0d9a8"/>
+      <stop offset="100%" stop-color="#b97d4a"/>
+    </linearGradient>
+    <linearGradient id="qipao" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6b9e4a"/>
+      <stop offset="100%" stop-color="#2f5d25"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#sky-minguo)"/>
+  <!-- old shanghai buildings -->
+  <g fill="#4a3528" opacity=".8">
+    <rect x="100" y="380" width="120" height="380"/>
+    <rect x="240" y="320" width="140" height="440"/>
+    <rect x="400" y="360" width="100" height="400"/>
+    <rect x="1060" y="340" width="160" height="420"/>
+    <rect x="1240" y="400" width="100" height="360"/>
+    <rect x="1360" y="360" width="140" height="400"/>
+  </g>
+  <!-- windows -->
+  <g fill="#f9d976" opacity=".6">
+    <rect x="120" y="410" width="20" height="24"/><rect x="160" y="410" width="20" height="24"/>
+    <rect x="120" y="460" width="20" height="24"/><rect x="160" y="460" width="20" height="24"/>
+    <rect x="120" y="510" width="20" height="24"/><rect x="160" y="510" width="20" height="24"/>
+    <rect x="260" y="360" width="22" height="28"/><rect x="300" y="360" width="22" height="28"/><rect x="340" y="360" width="22" height="28"/>
+    <rect x="260" y="420" width="22" height="28"/><rect x="300" y="420" width="22" height="28"/><rect x="340" y="420" width="22" height="28"/>
+    <rect x="260" y="480" width="22" height="28"/><rect x="300" y="480" width="22" height="28"/><rect x="340" y="480" width="22" height="28"/>
+    <rect x="1080" y="380" width="24" height="30"/><rect x="1130" y="380" width="24" height="30"/><rect x="1180" y="380" width="24" height="30"/>
+    <rect x="1080" y="440" width="24" height="30"/><rect x="1130" y="440" width="24" height="30"/><rect x="1180" y="440" width="24" height="30"/>
+  </g>
+  <!-- tram / trolley -->
+  <g transform="translate(540,560)">
+    <rect width="260" height="120" rx="10" fill="#2b3a52"/>
+    <rect x="10" y="10" width="240" height="60" rx="6" fill="#a8c4e0" opacity=".75"/>
+    <circle cx="60" cy="130" r="18" fill="#1a1a1a"/>
+    <circle cx="200" cy="130" r="18" fill="#1a1a1a"/>
+  </g>
+  <!-- figure in qipao -->
+  <g transform="translate(720,260)">
+    <ellipse cx="90" cy="70" rx="38" ry="44" fill="#f2d3b6"/>
+    <path d="M30 114 Q90 104 150 114 L170 520 Q90 560 10 520 Z" fill="url(#qipao)"/>
+    <path d="M82 114 L98 520" stroke="#e9c77a" stroke-width="4"/>
+    <path d="M54 40 Q74 18 90 12 Q106 18 126 40 Q110 26 90 22 Q70 26 54 40 Z" fill="#2a1a12"/>
+    <path d="M66 42 Q90 30 114 42 L116 56 Q90 48 64 56 Z" fill="#2a1a12"/>
+    <circle cx="78" cy="78" r="3" fill="#3a2820"/>
+    <circle cx="102" cy="78" r="3" fill="#3a2820"/>
+    <path d="M84 98 Q90 102 96 98" stroke="#a0522d" stroke-width="2" fill="none"/>
+  </g>
+  <!-- neon sign -->
+  <g transform="translate(1300,200)">
+    <rect x="0" y="0" width="120" height="50" rx="6" fill="#9a2a2a" opacity=".85"/>
+    <text x="60" y="33" text-anchor="middle" fill="#ffe082" font-size="22" font-family="serif" font-weight="bold">酒館</text>
+  </g>
+  <text x="800" y="820" text-anchor="middle" fill="#3d2414" font-size="52" font-family="serif" font-weight="bold">民国漫画风</text>
+</svg>

@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900">
+  <defs>
+    <linearGradient id="night" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0a0e2a"/>
+      <stop offset="55%" stop-color="#1a1140"/>
+      <stop offset="100%" stop-color="#2a0a3a"/>
+    </linearGradient>
+    <linearGradient id="neon1" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#ff0080"/>
+      <stop offset="100%" stop-color="#7a00ff"/>
+    </linearGradient>
+    <linearGradient id="neon2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#00e5ff"/>
+      <stop offset="100%" stop-color="#0066ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#night)"/>
+  <!-- rain -->
+  <g stroke="#88aaff" stroke-width="1" opacity=".25">
+    <line x1="100" y1="0" x2="90" y2="80"/>
+    <line x1="180" y1="40" x2="170" y2="120"/>
+    <line x1="260" y1="10" x2="250" y2="90"/>
+    <line x1="340" y1="60" x2="330" y2="140"/>
+    <line x1="420" y1="20" x2="410" y2="100"/>
+    <line x1="500" y1="70" x2="490" y2="150"/>
+    <line x1="580" y1="30" x2="570" y2="110"/>
+    <line x1="660" y1="50" x2="650" y2="130"/>
+    <line x1="740" y1="15" x2="730" y2="95"/>
+    <line x1="820" y1="55" x2="810" y2="135"/>
+    <line x1="900" y1="25" x2="890" y2="105"/>
+    <line x1="980" y1="65" x2="970" y2="145"/>
+    <line x1="1060" y1="10" x2="1050" y2="90"/>
+    <line x1="1140" y1="45" x2="1130" y2="125"/>
+    <line x1="1220" y1="20" x2="1210" y2="100"/>
+    <line x1="1300" y1="75" x2="1290" y2="155"/>
+    <line x1="1380" y1="35" x2="1370" y2="115"/>
+    <line x1="1460" y1="15" x2="1450" y2="95"/>
+  </g>
+  <!-- skyscrapers -->
+  <g fill="#141830">
+    <rect x="60" y="200" width="120" height="600"/>
+    <rect x="200" y="120" width="160" height="680"/>
+    <rect x="380" y="180" width="100" height="620"/>
+    <rect x="500" y="80" width="180" height="720"/>
+    <rect x="920" y="150" width="140" height="650"/>
+    <rect x="1080" y="100" width="160" height="700"/>
+    <rect x="1260" y="220" width="120" height="580"/>
+    <rect x="1400" y="160" width="140" height="640"/>
+  </g>
+  <!-- windows -->
+  <g fill="url(#neon2)" opacity=".7">
+    <rect x="80" y="240" width="12" height="18"/><rect x="110" y="240" width="12" height="18"/>
+    <rect x="80" y="290" width="12" height="18"/><rect x="140" y="290" width="12" height="18"/>
+    <rect x="220" y="160" width="14" height="20"/><rect x="260" y="160" width="14" height="20"/><rect x="300" y="160" width="14" height="20"/>
+    <rect x="220" y="220" width="14" height="20"/><rect x="280" y="220" width="14" height="20"/><rect x="320" y="220" width="14" height="20"/>
+    <rect x="520" y="120" width="16" height="22"/><rect x="560" y="120" width="16" height="22"/><rect x="600" y="120" width="16" height="22"/><rect x="640" y="120" width="16" height="22"/>
+    <rect x="520" y="180" width="16" height="22"/><rect x="580" y="180" width="16" height="22"/><rect x="640" y="180" width="16" height="22"/>
+    <rect x="940" y="190" width="14" height="20"/><rect x="980" y="190" width="14" height="20"/><rect x="1020" y="190" width="14" height="20"/>
+    <rect x="1100" y="140" width="14" height="20"/><rect x="1140" y="140" width="14" height="20"/><rect x="1180" y="140" width="14" height="20"/><rect x="1220" y="140" width="14" height="20"/>
+    <rect x="1420" y="200" width="14" height="20"/><rect x="1460" y="200" width="14" height="20"/><rect x="1500" y="200" width="14" height="20"/>
+  </g>
+  <!-- neon signs -->
+  <g>
+    <rect x="240" y="320" width="80" height="34" rx="4" fill="none" stroke="url(#neon1)" stroke-width="3"/>
+    <text x="280" y="344" text-anchor="middle" fill="#ff66c4" font-size="18" font-family="sans-serif" font-weight="bold">CYBER</text>
+    <rect x="960" y="280" width="100" height="36" rx="4" fill="none" stroke="url(#neon2)" stroke-width="3"/>
+    <text x="1010" y="305" text-anchor="middle" fill="#00e5ff" font-size="18" font-family="sans-serif" font-weight="bold">NEON 2099</text>
+  </g>
+  <!-- figure with cyber visor -->
+  <g transform="translate(720,300)">
+    <ellipse cx="80" cy="60" rx="36" ry="42" fill="#d0c4e8"/>
+    <rect x="36" y="52" width="88" height="22" rx="11" fill="#0a0a1a" stroke="#00e5ff" stroke-width="2"/>
+    <rect x="44" y="56" width="72" height="14" rx="7" fill="#ff0080" opacity=".85"/>
+    <path d="M20 104 Q80 94 140 104 L170 500 Q80 540 -10 500 Z" fill="url(#neon1)"/>
+    <path d="M40 104 Q80 96 120 104 L120 420 Q80 400 40 420 Z" fill="#1a1140" opacity=".5"/>
+  </g>
+  <text x="800" y="820" text-anchor="middle" fill="#00e5ff" font-size="52" font-family="sans-serif" font-weight="bold" style="filter: drop-shadow(0 0 12px #ff0080)">赛博朋克风</text>
+</svg>
