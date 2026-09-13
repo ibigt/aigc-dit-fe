@@ -14,6 +14,7 @@ import {
   updateDramaShot,
 } from "../../api/drama.js";
 import { mediaUrl } from "../../lib/media.js";
+import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 
 const DURATIONS = [5, 10, 15];
 
@@ -99,10 +100,14 @@ function inFlightShots(shots) {
   ));
 }
 
+function shotPoster(shot) {
+  return mediaUrl(shot?.videoPosterUrl || shot?.videoPosterKey);
+}
+
 function ShotThumbPreview({ shot, busy }) {
   const generating = isShotGenerating(shot, busy);
   const ready = Boolean(shot?.videoKey) && !generating;
-  const poster = mediaUrl(shot?.videoPosterUrl || shot?.videoPosterKey);
+  const poster = shotPoster(shot);
   const video = mediaUrl(shot?.videoUrl || shot?.videoKey);
   if (!ready) {
     return (
@@ -128,7 +133,7 @@ export function dramaStoryboardStatus(board) {
   return board?.status || "未开始";
 }
 
-function ShotInspector({ selected, generating, lockedAssets, onSave }) {
+function ShotInspector({ selected, generating, lockedAssets, onSave, onZoom }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [casting, setCasting] = useState(false);
   if (!selected) {
@@ -272,14 +277,26 @@ function ShotInspector({ selected, generating, lockedAssets, onSave }) {
         <div className="youxi-story-refs">
           <span>本镜参考图（出片按 Picture 序号自动绑定）</span>
           <div>
-            {refs.map((ref) => (
-              <figure key={ref.assetId} className="is-on">
-                {ref.imageUrl ? <img src={mediaUrl(ref.imageUrl) || ref.imageUrl} alt="" /> : <i />}
-                <b>Picture {ref.pictureIndex}</b>
-                {ref.name}
-                <small>{ref.type}{ref.locked === false ? " · 未锁定" : ""}</small>
-              </figure>
-            ))}
+            {refs.map((ref) => {
+              const src = mediaUrl(ref.imageUrl) || ref.imageUrl;
+              return (
+                <figure key={ref.assetId} className="is-on">
+                  {src ? (
+                    <button
+                      type="button"
+                      className="youxi-ref-zoom"
+                      aria-label={`放大参考图 ${ref.name}`}
+                      onClick={() => onZoom({ src, title: `${ref.name} · Picture ${ref.pictureIndex}` })}
+                    >
+                      <img src={src} alt="" />
+                    </button>
+                  ) : <i />}
+                  <b>Picture {ref.pictureIndex}</b>
+                  {ref.name}
+                  <small>{ref.type}{ref.locked === false ? " · 未锁定" : ""}</small>
+                </figure>
+              );
+            })}
             {!refs.length && (
               <em>锁定本镜角色 / 场景 / 道具后，出片会自动带上对应参考图</em>
             )}
@@ -330,6 +347,7 @@ export function DramaStoryboard({ series, episode }) {
   const [draftDurationSec, setDraftDurationSec] = useState(15);
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
+  const [preview, setPreview] = useState(null);
 
   const activeEpisode = episodes.find((item) => item.id === episodeId) || episodes[0] || episode;
   const activeEpisodeId = activeEpisode?.id;
@@ -777,14 +795,16 @@ export function DramaStoryboard({ series, episode }) {
                 const active = selected?.id === shot.id;
                 const generatingShot = isShotGenerating(shot, busy);
                 const ready = Boolean(shot.videoKey) && !generatingShot;
+                const poster = ready ? shotPoster(shot) : "";
                 return (
                   <div className="youxi-filmstrip-unit" key={shot.id}>
                     <button
                       type="button"
-                      className={`youxi-shot-thumb ${active ? "active" : ""}`}
+                      className={`youxi-shot-thumb ${active ? "active" : ""} ${poster ? "is-zoomable" : ""}`}
                       onClick={() => {
                         setShotId(shot.id);
                         setActionError("");
+                        if (poster) setPreview({ src: poster, title: `镜 ${shot.shotIndex}${shot.title ? `「${shot.title}」` : ""}` });
                       }}
                     >
                       <span className="youxi-shot-thumb__preview">
@@ -813,7 +833,9 @@ export function DramaStoryboard({ series, episode }) {
         generating={generating}
         lockedAssets={lockedAssets}
         onSave={saveShot}
+        onZoom={setPreview}
       />
+      <ImageLightbox preview={preview} onClose={() => setPreview(null)} />
     </section>
   );
 }

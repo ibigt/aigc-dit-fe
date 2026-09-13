@@ -1425,3 +1425,74 @@
 .youxi-subject-inspector .youxi-model-row { align-items: stretch; }
 .youxi-subject-inspector .youxi-model-row .button { white-space: nowrap; }
 .console-shell[data-theme="dark"] .youxi-inspector-actions p { color: #aeb9c6; }
+
+/* Click-to-zoom: subject images, shot posters, per-shot references. */
+.youxi-media-zoom,
+.youxi-ref-zoom {
+  padding: 0;
+  display: block;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  line-height: 0;
+  cursor: zoom-in;
+}
+.youxi-media-zoom { width: 100%; }
+.youxi-subject-card__select.is-zoomable > div,
+.youxi-shot-thumb.is-zoomable .youxi-shot-thumb__preview img { cursor: zoom-in; }
+.drama-lightbox {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  padding: 24px;
+  display: grid;
+  place-items: center;
+  background: rgba(11, 15, 21, .78);
+  backdrop-filter: blur(6px);
+}
+.drama-lightbox__frame {
+  margin: 0;
+  width: min(1160px, 100%);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+}
+.drama-lightbox__frame > header {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #eef1f6;
+}
+.drama-lightbox__frame > header strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.drama-lightbox__frame > header button {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: #eef1f6;
+  border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .1);
+  cursor: pointer;
+}
+.drama-lightbox__frame > header button:hover { background: rgba(255, 255, 255, .2); }
+.drama-lightbox__frame > img {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: calc(100vh - 100px);
+  align-self: center;
+  justify-self: center;
+  border-radius: 12px;
+  background: #10151c;
+  box-shadow: 0 26px 78px rgba(0, 0, 0, .45);
+  cursor: zoom-out;
+}

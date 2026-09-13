@@ -27,6 +27,7 @@ import {
   uploadDramaAssetImage,
 } from "../../api/drama.js";
 import { mediaUrl } from "../../lib/media.js";
+import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 
 const TYPES = [
   { id: "角色", label: "角色", Icon: UsersRound },
@@ -155,6 +156,7 @@ function SubjectInspector({
   onResolution,
   onGenerate,
   onUploadClick,
+  onZoom,
   onLock,
 }) {
   const src = mediaUrl(asset?.imageStorageKey || asset?.imageUrl);
@@ -236,7 +238,14 @@ function SubjectInspector({
               </header>
               <div>
                 {src ? (
-                  <img className="youxi-subject-media-preview" src={src} alt={`${asset.name}主体图`} />
+                  <button
+                    className="youxi-media-zoom"
+                    type="button"
+                    aria-label={`放大${asset.name}主体图`}
+                    onClick={onZoom}
+                  >
+                    <img className="youxi-subject-media-preview" src={src} alt={`${asset.name}主体图`} />
+                  </button>
                 ) : (
                   <button className="youxi-empty-subject-media" type="button" onClick={onUploadClick}>
                     <ImagePlus size={22} />
@@ -301,6 +310,7 @@ export function DramaAssetBoard({ series, episode }) {
   const [promptDirty, setPromptDirty] = useState(false);
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
+  const [preview, setPreview] = useState(null);
 
   const imageModelsQuery = useQuery({
     queryKey: ["drama-image-models"],
@@ -582,7 +592,14 @@ export function DramaAssetBoard({ series, episode }) {
                         <Trash2 size={14} />
                       </button>
                     </header>
-                    <button className="youxi-subject-card__select" type="button" onClick={() => setSelectedId(item.id)}>
+                    <button
+                      className={`youxi-subject-card__select ${src ? "is-zoomable" : ""}`}
+                      type="button"
+                      onClick={() => {
+                        setSelectedId(item.id);
+                        if (src) setPreview({ src, title: item.name });
+                      }}
+                    >
                       <div className={`${!src ? "is-empty" : ""} ${generating ? "is-generating" : ""}`}>
                         {src ? (
                           <>
@@ -651,6 +668,10 @@ export function DramaAssetBoard({ series, episode }) {
         onResolution={setResolution}
         onGenerate={() => selected && generate(selected).catch((err) => setActionError(err.message))}
         onUploadClick={() => fileRef.current?.click()}
+        onZoom={() => selected && setPreview({
+          src: mediaUrl(selected.imageStorageKey || selected.imageUrl),
+          title: selected.name,
+        })}
         onLock={() => selected && confirm(selected).catch((err) => setActionError(err.message))}
       />
 
@@ -675,6 +696,8 @@ export function DramaAssetBoard({ series, episode }) {
           onCreate={(form) => createMutation.mutate(form)}
         />
       )}
+
+      <ImageLightbox preview={preview} onClose={() => setPreview(null)} />
     </div>
   );
 }
