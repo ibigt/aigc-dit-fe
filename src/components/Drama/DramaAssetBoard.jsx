@@ -244,7 +244,12 @@ function SubjectInspector({
                     aria-label={`放大${asset.name}主体图`}
                     onClick={onZoom}
                   >
-                    <img className="youxi-subject-media-preview" src={src} alt={`${asset.name}主体图`} />
+                    <img
+                      key={src}
+                      className="youxi-subject-media-preview"
+                      src={src}
+                      alt={`${asset.name}主体图`}
+                    />
                   </button>
                 ) : (
                   <button className="youxi-empty-subject-media" type="button" onClick={onUploadClick}>
@@ -473,7 +478,11 @@ export function DramaAssetBoard({ series, episode }) {
     if (!file || !selected?.id) return;
     markBusy(selected.id, "upload", true);
     try {
-      await uploadDramaAssetImage(selected.id, file);
+      const updated = await uploadDramaAssetImage(selected.id, file);
+      queryClient.setQueryData(["drama-assets", episodeId], (current) => {
+        if (!Array.isArray(current)) return current;
+        return current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item));
+      });
       invalidate();
     } finally {
       markBusy(selected.id, "upload", false);
@@ -603,7 +612,7 @@ export function DramaAssetBoard({ series, episode }) {
                       <div className={`${!src ? "is-empty" : ""} ${generating ? "is-generating" : ""}`}>
                         {src ? (
                           <>
-                            <img src={src} alt={item.name} />
+                            <img key={src} src={src} alt={item.name} />
                             <span>{generating ? "生成中" : statusLabel(item.status)}</span>
                           </>
                         ) : (
