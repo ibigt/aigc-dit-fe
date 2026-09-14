@@ -13,6 +13,15 @@
   --lime: #dff47c;
   --aqua: #a6ecd9;
   --shadow: 0 18px 50px rgba(31, 42, 55, .10);
+  /* 短剧创作后台统一视觉规范 token */
+  --drama-col-left: 240px;
+  --drama-col-right: 360px;
+  --drama-grid-gap: 16px;
+  --drama-panel-radius: 14px;
+  --drama-panel-border: 1px solid var(--line);
+  --drama-panel-shadow: 0 1px 2px rgba(20, 27, 36, .05);
+  --drama-panel-bg: var(--surface);
+  --drama-page-bg: #f4f6f8;
 }
 
 * { box-sizing: border-box; }
@@ -1036,7 +1045,7 @@ button.asset-card__preview {
   .fast-cosmic-backdrop__beam { animation: none; }
 }
 
-.drama-script { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.drama-script { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; border: 2px solid var(--line); border-radius: 4px; background: var(--surface); }
 .drama-script__head { display: flex; align-items: center; gap: 10px; }
 .drama-analysis-summary { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--soft); }
 .drama-analysis-progress { border: 1px solid rgba(111, 94, 255, .28); border-radius: 12px; padding: 13px; background: linear-gradient(135deg, rgba(111, 94, 255, .09), var(--soft)); }
