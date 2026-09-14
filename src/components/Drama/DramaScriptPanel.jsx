@@ -293,7 +293,7 @@ export function DramaScriptPanel({ episode, series }) {
             <p>
               {elapsed >= 90
                 ? "模型响应时间较长，请耐心等待。关闭页面不会取消服务器任务。"
-                : run.isPending && run.variables === "generate"
+                : series?.textModelId
                   ? "正在调用文本模型生成剧本，通常需要几十秒。"
                   : "系统会依次完成分场、资产抽取和分镜生成，通常需要几十秒。"}
             </p>
