@@ -68,7 +68,7 @@ const ADAPTER_OPTIONS = [
   { key: "seedance-2", label: "Seedance 2.x", category: "video", provider: "RunningHub", defaultEndpoint: "https://www.runninghub.ai", modes: ["t2v", "r2v"], defaultPaths: { t2vPath: "rhart-video/sparkvideo-2.0/text-to-video", r2vPath: "rhart-video/sparkvideo-2.0/multimodal-video" } },
   { key: "seedance-2.0", label: "Seedance 2.0", category: "video", provider: "官方API", defaultEndpoint: "https://ark.cn-beijing.volces.com/api/v3", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "doubao-seedance-2-0-260128" },
   { key: "seedance-2.5", label: "Seedance 2.5", category: "video", provider: "官方API", defaultEndpoint: "https://ark.cn-beijing.volces.com/api/v3", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "doubao-seedance-2-5-260628" },
-  { key: "minimax-h3", label: "MiniMax-H3", category: "video", provider: "ComfyUI", defaultEndpoint: "http://127.0.0.1:8188", modes: ["t2v", "r2v", "i2v"], defaultPaths: {} },
+  { key: "minimax-h3", label: "MiniMax-H3", category: "video", provider: "官方API", defaultEndpoint: "https://api.minimax.cn", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "MiniMax-H3" },
   { key: "agnes-video-2.5", label: "Agnes Video 2.5", category: "video", provider: "官方API", defaultEndpoint: "https://api.agnes-ai.cn/v1", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "agnes-video-2.5-flash" },
   { key: "agnes-text", label: "Agnes 对话", category: "text", provider: "官方API", defaultEndpoint: "https://api.agnes-ai.cn/v1", modes: [], defaultPaths: {}, defaultModelKey: "agnes-2.5-flash" },
   { key: "openai-compat", label: "OpenAI 兼容", category: "text", provider: "自定义配置", defaultEndpoint: "", modes: [], defaultPaths: {}, defaultModelKey: "" },
@@ -89,9 +89,22 @@ function defaultAdapterKey(category) {
 const ARK_PAYG_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3";
 const ARK_PLAN_ENDPOINT = "https://ark.cn-beijing.volces.com/api/plan/v3";
 const PROVIDER_OFFICIAL_TOKEN_PLAN = "官方API（token plan）";
+const MINIMAX_OFFICIAL_ENDPOINT = "https://api.minimax.cn";
+const MINIMAX_COMFY_ENDPOINT = "http://127.0.0.1:8188";
+const MINIMAX_OFFICIAL_MODEL_KEY = "MiniMax-H3";
+const MINIMAX_COMFY_MODEL_KEY = "minimax-h3";
+const MINIMAX_MAX_MODEL_KEY = "MiniMax-H3-Max";
 
 function isSeedanceOfficial(adapterKey) {
   return adapterKey === "seedance-2.0" || adapterKey === "seedance-2.5";
+}
+
+function isMiniMaxH3(adapterKey) {
+  return adapterKey === "minimax-h3";
+}
+
+function isComfyUiSource(provider) {
+  return /comfy/i.test(String(provider || ""));
 }
 
 function isOfficialTokenPlan(provider) {
@@ -111,6 +124,27 @@ function seedanceOfficialSource(model) {
     return PROVIDER_OFFICIAL_TOKEN_PLAN;
   }
   return "官方API";
+}
+
+function miniMaxSource(model) {
+  if (isComfyUiSource(model?.provider) || looksLikeComfyEndpoint(model?.endpoint)) {
+    return "ComfyUI";
+  }
+  return "官方API";
+}
+
+function looksLikeComfyEndpoint(endpoint) {
+  const value = String(endpoint || "").toLowerCase();
+  return value.includes("8188") || value.includes("127.0.0.1") || value.includes("localhost");
+}
+
+function officialHint(adapterKey, isText, provider) {
+  if (adapterKey === "minimax-h3") {
+    return isComfyUiSource(provider)
+      ? "地址填 ComfyUI 服务，如 http://127.0.0.1:8188。模型标识可用 minimax-h3。本地网关无鉴权时 API Key 可留空。"
+      : "地址填 https://api.minimax.cn。模型标识填 MiniMax-H3 或 MiniMax-H3-Max。Key 用按量「接口密钥」，不要用 Token Plan 订阅 Key。H3 支持 768P/2K、4–15 秒、文生/图生/参考生；H3-Max 仅文生/图生，480P/768P、5–15 秒。";
+  }
+  return seedanceOfficialHint(adapterKey, isText, provider);
 }
 
 function seedanceOfficialHint(adapterKey, isText, provider) {
@@ -491,7 +525,9 @@ function ModelDialog({ model, onClose, onSave, saving }) {
     return {
       ...model,
       adapterKey,
-      provider: isSeedanceOfficial(adapterKey) ? seedanceOfficialSource(model) : (adapterOf(adapterKey)?.provider || model.provider),
+      provider: isMiniMaxH3(adapterKey)
+        ? miniMaxSource(model)
+        : (isSeedanceOfficial(adapterKey) ? seedanceOfficialSource(model) : (adapterOf(adapterKey)?.provider || model.provider)),
       capabilities: filterCapsForAdapter(model.capabilities, model.category || "image", adapterKey),
       t2iPath: pathValue(model, "t2iPath"),
       i2iPath: pathValue(model, "i2iPath"),
@@ -519,15 +555,21 @@ function ModelDialog({ model, onClose, onSave, saving }) {
       ...current,
       category,
       adapterKey: adapter.key,
-      provider: isSeedanceOfficial(adapter.key) && isOfficialTokenPlan(current.provider) ? PROVIDER_OFFICIAL_TOKEN_PLAN : adapter.provider,
+      provider: isMiniMaxH3(adapter.key)
+        ? (isMiniMaxH3(current.adapterKey) && isComfyUiSource(current.provider) ? "ComfyUI" : "官方API")
+        : (isSeedanceOfficial(adapter.key) && isOfficialTokenPlan(current.provider) ? PROVIDER_OFFICIAL_TOKEN_PLAN : adapter.provider),
       capabilities: filterCapsForAdapter(current.capabilities, category, adapter.key),
     };
-    if (!current.endpoint || current.endpoint === prevDefault || current.endpoint === ARK_PAYG_ENDPOINT || current.endpoint === ARK_PLAN_ENDPOINT) {
-      next.endpoint = isOfficialTokenPlan(next.provider) ? ARK_PLAN_ENDPOINT : adapter.defaultEndpoint;
+    if (!current.endpoint || current.endpoint === prevDefault || current.endpoint === ARK_PAYG_ENDPOINT || current.endpoint === ARK_PLAN_ENDPOINT || current.endpoint === MINIMAX_OFFICIAL_ENDPOINT || current.endpoint === MINIMAX_COMFY_ENDPOINT) {
+      next.endpoint = isMiniMaxH3(adapter.key)
+        ? (next.provider === "ComfyUI" ? MINIMAX_COMFY_ENDPOINT : MINIMAX_OFFICIAL_ENDPOINT)
+        : (isOfficialTokenPlan(next.provider) ? ARK_PLAN_ENDPOINT : adapter.defaultEndpoint);
     }
     const prevModelKey = adapterOf(current.adapterKey)?.defaultModelKey;
-    if (!current.modelKey || current.modelKey === prevModelKey) {
-      next.modelKey = adapter.defaultModelKey || "";
+    if (!current.modelKey || current.modelKey === prevModelKey || current.modelKey === MINIMAX_OFFICIAL_MODEL_KEY || current.modelKey === MINIMAX_COMFY_MODEL_KEY) {
+      next.modelKey = isMiniMaxH3(adapter.key) && next.provider === "ComfyUI"
+        ? MINIMAX_COMFY_MODEL_KEY
+        : (adapter.defaultModelKey || "");
     }
     for (const [pathKey, path] of Object.entries(adapter.defaultPaths || {})) {
       if (!pathValue(next, pathKey)) next[pathKey] = path;
@@ -548,6 +590,22 @@ function ModelDialog({ model, onClose, onSave, saving }) {
     }
     if (!isOfficialTokenPlan(provider) && paygDefault && (!current.modelKey || current.modelKey === planDefault)) {
       next.modelKey = paygDefault;
+    }
+    return next;
+  });
+  const changeMiniMaxSource = (provider) => setDraft((current) => {
+    const next = { ...current, provider };
+    if (!current.endpoint || current.endpoint === MINIMAX_OFFICIAL_ENDPOINT || current.endpoint === MINIMAX_COMFY_ENDPOINT
+        || current.endpoint === ARK_PAYG_ENDPOINT || current.endpoint === ARK_PLAN_ENDPOINT
+        || current.endpoint === adapterOf(current.adapterKey)?.defaultEndpoint) {
+      next.endpoint = provider === "ComfyUI" ? MINIMAX_COMFY_ENDPOINT : MINIMAX_OFFICIAL_ENDPOINT;
+    }
+    if (provider === "ComfyUI") {
+      if (!current.modelKey || current.modelKey === MINIMAX_OFFICIAL_MODEL_KEY || current.modelKey === MINIMAX_MAX_MODEL_KEY) {
+        next.modelKey = MINIMAX_COMFY_MODEL_KEY;
+      }
+    } else if (!current.modelKey || current.modelKey === MINIMAX_COMFY_MODEL_KEY) {
+      next.modelKey = MINIMAX_OFFICIAL_MODEL_KEY;
     }
     return next;
   });
@@ -580,7 +638,9 @@ function ModelDialog({ model, onClose, onSave, saving }) {
           ? "文本通道走官方对话接口。默认地址与 Agnes 图/视频相同，模型标识填 agnes-2.5-flash。"
           : isSeedanceOfficial(adapter?.key)
             ? "适配协议只负责 t2v/r2v/i2v 字段翻译。接入来源选「官方API」走按量 /api/v3，选「官方API（token plan）」走订阅 /api/plan/v3。"
-            : "适配协议决定字段翻译；来源「官方API」与 Agnes 默认地址已自动带出。请填写官方 API Key，模型标识使用官方 model ID。")
+            : adapter?.key === "minimax-h3"
+              ? "适配协议 MiniMax-H3。接入来源选「官方API」走云端视频 V2（按量接口密钥）；选「ComfyUI」走本地工作流。"
+              : "适配协议决定字段翻译；来源「官方API」与 Agnes 默认地址已自动带出。请填写官方 API Key，模型标识使用官方 model ID。")
         : "适配协议决定字段翻译；来源 RunningHub 与默认 API 地址已自动带出。";
   async function onTestConnection() {
     setTesting(true);
@@ -620,10 +680,12 @@ function ModelDialog({ model, onClose, onSave, saving }) {
           <label>适配协议<select required value={draft.adapterKey} onChange={(event) => changeAdapter(event.target.value)}>{adaptersForCategory(draft.category).map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
           {isSeedanceOfficial(draft.adapterKey)
             ? <label>接入来源<select value={isOfficialTokenPlan(draft.provider) ? PROVIDER_OFFICIAL_TOKEN_PLAN : "官方API"} onChange={(event) => changeOfficialSource(event.target.value)}><option value="官方API">官方API</option><option value={PROVIDER_OFFICIAL_TOKEN_PLAN}>官方API（token plan）</option></select></label>
+            : isMiniMaxH3(draft.adapterKey)
+              ? <label>接入来源<select value={isComfyUiSource(draft.provider) ? "ComfyUI" : "官方API"} onChange={(event) => changeMiniMaxSource(event.target.value)}><option value="官方API">官方API</option><option value="ComfyUI">ComfyUI</option></select></label>
             : <label>接入来源<input value={draft.provider || ""} readOnly /></label>}
           <label>模型标识<input required value={draft.modelKey} onChange={(event) => updateIdentity({ modelKey: event.target.value })} placeholder={adapter?.key === "openai-compat" ? "如 deepseek-v3-flash" : (adapter?.defaultModelKey || (isText ? "对话模型名，如 gpt-4o-mini" : "商品标识，如 seedance-2.0"))} /></label>
-          <label className="model-form-wide">{endpointLabel(draft.provider)}<input required value={draft.endpoint || ""} onChange={(event) => update("endpoint", event.target.value)} placeholder={draft.provider === "自定义配置" ? "https://api.openai.com/v1 或兼容网关" : ""} />{isOfficialSource(draft.provider) && <small className="model-logo-hint">{seedanceOfficialHint(adapter?.key, isText, draft.provider)}</small>}</label>
-          <label className="model-form-wide">API Key<input type="password" value={draft.apiKey || ""} onChange={(event) => update("apiKey", event.target.value)} placeholder={draft.hasApiKey ? "已加密保存，留空则保持不变" : (adapter?.provider === "自定义配置" ? "可留空（本地网关无鉴权）" : "明文仅提交一次，服务端加密落库")} />{isOfficialSource(draft.provider) && !isText && <small className="model-logo-hint">{draft.hasApiKey ? "卡片显示「密钥已配置」后才会用这条 Key 调官方接口。" : (isOfficialTokenPlan(draft.provider) ? "当前尚未落库。请粘贴 Agent Plan 订阅 Key，再点右下角保存配置。" : "当前尚未落库。请粘贴火山方舟 API Key（不要用 IAM AK/SK），再点右下角保存配置。")}</small>}</label>
+          <label className="model-form-wide">{endpointLabel(draft.provider)}<input required value={draft.endpoint || ""} onChange={(event) => update("endpoint", event.target.value)} placeholder={draft.provider === "自定义配置" ? "https://api.openai.com/v1 或兼容网关" : ""} />{(isOfficialSource(draft.provider) || (isMiniMaxH3(adapter?.key) && isComfyUiSource(draft.provider))) && <small className="model-logo-hint">{officialHint(adapter?.key, isText, draft.provider)}</small>}</label>
+          <label className="model-form-wide">API Key<input type="password" value={draft.apiKey || ""} onChange={(event) => update("apiKey", event.target.value)} placeholder={draft.hasApiKey ? "已加密保存，留空则保持不变" : ((adapter?.provider === "自定义配置" || (isMiniMaxH3(adapter?.key) && isComfyUiSource(draft.provider))) ? "可留空（本地网关无鉴权）" : "明文仅提交一次，服务端加密落库")} />{isOfficialSource(draft.provider) && !isText && <small className="model-logo-hint">{draft.hasApiKey ? "卡片显示「密钥已配置」后才会用这条 Key 调官方接口。" : (adapter?.key === "minimax-h3" ? "当前尚未落库。请粘贴 MiniMax 按量接口密钥（不要用 Token Plan 订阅 Key），再点右下角保存配置。" : (isOfficialTokenPlan(draft.provider) ? "当前尚未落库。请粘贴 Agent Plan 订阅 Key，再点右下角保存配置。" : "当前尚未落库。请粘贴火山方舟 API Key（不要用 IAM AK/SK），再点右下角保存配置。"))}</small>}</label>
           <div className="model-form-wide model-cap-field"><span>品牌图标</span><div className="model-logo-picker">{MODEL_LOGO_CATALOG.map((item) => <button type="button" key={item.file} className={draft.logo === item.file ? "active" : ""} title={item.label} aria-label={item.label} onClick={() => update("logo", item.file)}><img src={item.file} alt="" /></button>)}</div><small className="model-logo-hint">按名称 / 标识自动匹配，也可手动点选。未命中时使用通用图标。</small></div>
           {!isText && <div className="model-form-wide model-cap-field"><span>能力勾选</span><div className="model-cap-row">{visibleCapOptions.map((cap) => <label key={cap.id} className="model-cap-chip"><input type="checkbox" checked={caps.includes(cap.id)} onChange={() => toggleCap(cap.id)} />{cap.label}</label>)}</div></div>}
           {!isText && !isOfficialSource(draft.provider) && visibleCapOptions.filter((cap) => caps.includes(cap.id)).map((cap) => (
@@ -683,7 +745,9 @@ function toModelPayload(draft) {
     name: draft.name,
     modelKey: draft.modelKey,
     adapterKey,
-    provider: isSeedanceOfficial(adapterKey) ? (draft.provider || adapter?.provider) : (adapter?.provider || draft.provider),
+    provider: isSeedanceOfficial(adapterKey) || isMiniMaxH3(adapterKey)
+      ? (draft.provider || adapter?.provider)
+      : (adapter?.provider || draft.provider),
     endpoint: draft.endpoint,
     apiKey: draft.apiKey || undefined,
     category,

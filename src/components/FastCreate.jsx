@@ -10,10 +10,12 @@ import { formatDateTime, mediaUrl, storageKeyOf } from "../lib/media.js";
 const videoRatios = ["自动", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
 const imageRatios = ["21:9", "16:9", "5:4", "4:3", "3:2", "1:1", "2:3", "3:4", "4:5", "9:16"];
 const videoDurations = Array.from({ length: 12 }, (_, index) => index + 4);
-const miniMaxDurations = Array.from({ length: 11 }, (_, index) => index + 5);
+const miniMaxDurations = Array.from({ length: 12 }, (_, index) => index + 4);
+const miniMaxMaxDurations = Array.from({ length: 11 }, (_, index) => index + 5);
+const miniMaxComfyDurations = Array.from({ length: 11 }, (_, index) => index + 5);
 const agnesDurations = Array.from({ length: 9 }, (_, index) => index + 4);
 const videoResolutions = ["480P", "720P", "1080P", "2K", "4K"];
-const videoResolutionMultipliers = { "480P": 0.5, "720P": 0.75, "1080P": 1, "2K": 1.5, "4K": 2.5 };
+const videoResolutionMultipliers = { "480P": 0.5, "720P": 0.75, "768P": 0.8, "1080P": 1, "2K": 1.5, "4K": 2.5 };
 const qualityLevels = ["Low", "Medium", "High"];
 const DEFAULT_SESSION_ID = "new-creation-default";
 const MODE_CAPS = ["t2i", "i2i", "t2v", "r2v", "i2v"];
@@ -22,6 +24,7 @@ function canonicalCap(cap) {
   return cap;
 }
 function modelSupports(model, mode) {
+  if (mode === "r2v" && isMiniMaxH3Max(model)) return false;
   const caps = Array.isArray(model?.capabilities) ? model.capabilities.map(canonicalCap) : [];
   if (!caps.length) return true;
   const specific = caps.filter((item) => MODE_CAPS.includes(item));
@@ -33,6 +36,12 @@ function supportsLibraryCite(model, generationType) {
 }
 function isMiniMaxH3(model) {
   return model?.adapterKey === "minimax-h3" || String(model?.modelKey || "").toLowerCase().includes("minimax");
+}
+function isMiniMaxComfy(model) {
+  return isMiniMaxH3(model) && /comfy/i.test(String(model?.provider || ""));
+}
+function isMiniMaxOfficial(model) {
+  return isMiniMaxH3(model) && !isMiniMaxComfy(model);
 }
 function isAgnes(model) {
   const key = String(model?.adapterKey || model?.modelKey || "").toLowerCase();
@@ -56,13 +65,22 @@ function isSeedanceFast(model) {
 function imageOnlyRefs(model) {
   return isAgnes(model);
 }
+function isMiniMaxH3Max(model) {
+  return String(model?.modelKey || "").toLowerCase().includes("h3-max")
+    || String(model?.modelKey || "").toLowerCase().includes("h3_max");
+}
 function durationOptionsFor(model) {
+  if (isMiniMaxH3Max(model)) return miniMaxMaxDurations;
+  if (isMiniMaxComfy(model)) return miniMaxComfyDurations;
   if (isMiniMaxH3(model)) return miniMaxDurations;
   if (isAgnes(model)) return agnesDurations;
   return videoDurations;
 }
 function videoResolutionsFor(model) {
   if (isAgnes(model)) return ["720P"];
+  if (isMiniMaxH3Max(model) && isMiniMaxOfficial(model)) return ["480P", "768P"];
+  if (isMiniMaxOfficial(model)) return ["768P", "2K"];
+  if (isMiniMaxComfy(model)) return videoResolutions;
   if (isSeedance25(model) || (isSeedance20Official(model) && isSeedanceFast(model))) return ["480P", "720P"];
   if (isSeedance20Official(model)) return ["480P", "720P", "1080P"];
   return videoResolutions;
@@ -453,6 +471,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     || selectedModel?.adapterKey === "seedance-2.5"
     || String(selectedModel?.provider || "").toLowerCase() === "runninghub"
     || isAgnes(selectedModel)
+    || isMiniMaxH3(selectedModel)
     || isSeedanceOfficial(selectedModel);
   const unitPrice = Number.parseFloat(selectedModel?.pricing?.sale?.output) || (generationType === "video" ? 12 : 2);
   const parameterMultiplier = generationType === "video"

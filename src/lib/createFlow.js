@@ -109,19 +109,12 @@ export function tasksToMessages(tasks = []) {
   return messages;
 }
 
-export function friendlyGenerateError(message, model) {
+export function friendlyGenerateError(message) {
   const text = String(message || "").trim();
   if (!text) return "生成失败，积分已退还";
   const lower = text.toLowerCase();
-  if (lower.includes("real person") || text.includes("真人")) {
-    return "参考图可能包含真人，官方 Seedance 已拒绝。请更换不含真人脸的参考图，或改用 MiniMax 等本地模型。";
-  }
-  const adapter = String(model?.adapterKey || "").toLowerCase();
-  const key = String(model?.modelKey || model?.name || "").toLowerCase();
-  const official = adapter === "seedance-2.0" || adapter === "seedance-2.5"
-    || key.includes("doubao-seedance-2");
-  if (official && /agnes/i.test(text)) {
-    return "官方 Seedance 仍在生成中，请稍后刷新会话。若参考图含真人脸会被接口拒绝。";
+  if (lower.includes("http 429") || lower.includes("exceeded the quota") || lower.includes("rate limit") || text.includes("额度")) {
+    return "官方 Seedance 额度繁忙或请求过密。请等一两分钟再点生成，不要连续点多镜。";
   }
   return text;
 }

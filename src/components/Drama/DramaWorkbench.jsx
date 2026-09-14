@@ -48,6 +48,7 @@ export function DramaWorkbench({ seriesId }) {
     queryKey: ["drama-series", id],
     queryFn: () => fetchDramaSeriesDetail(id),
     enabled: Boolean(id),
+    placeholderData: (previousData) => previousData,
   });
   const series = seriesQuery.data;
   const episode = series?.episodes?.[0];

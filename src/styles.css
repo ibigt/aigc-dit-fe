@@ -1080,6 +1080,8 @@ button.asset-card__preview {
 .drama-prompt-field__head .drama-engine { margin-left: auto; flex: 0 0 auto; }
 .drama-prompt-field__hint { margin: 0 !important; color: var(--muted); font-size: 11px; line-height: 1.5; align-self: stretch; }
 .drama-prompt-field textarea { min-height: 180px; font: 12px/1.75 inherit; }
+.drama-prompt-field textarea:disabled,
+.drama-prompt-field textarea[readonly] { cursor: default; background: #f6f7fa; color: #3d4654; }
 .drama-prompt-field__actions { display: flex; justify-content: flex-end; }
 
 .drama-scenes { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }

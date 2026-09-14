@@ -1,4 +1,4 @@
-import { AudioLines, Film, Lock, Plus, RefreshCw, Sparkles, Video, Wand2, X, ZoomIn } from "lucide-react";
+import { AudioLines, Film, Lock, Plus, RefreshCw, Sparkles, Trash2, Video, Wand2, X, ZoomIn } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -69,10 +69,6 @@ function friendlyShotError(message, model) {
   return text;
 }
 
-function shotLine(shot) {
-  return shot?.dialogue || shot?.narrativeGoal || shot?.scene || "";
-}
-
 function pictureRefs(shot) {
   return (shot?.references || []).filter((item) => item?.assetId);
 }
@@ -133,9 +129,10 @@ export function dramaStoryboardStatus(board) {
   return board?.status || "未开始";
 }
 
-function ShotInspector({ selected, generating, lockedAssets, onSave, onZoom }) {
+function ShotInspector({ selected, generating, readOnly, lockedAssets, onSave, onZoom }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [casting, setCasting] = useState(false);
+  const frozen = generating || readOnly;
   if (!selected) {
     return (
       <aside className="youxi-inspector youxi-story-inspector">
@@ -192,19 +189,19 @@ function ShotInspector({ selected, generating, lockedAssets, onSave, onZoom }) {
       </div>
       <div className="youxi-inspector-scroll">
         <label className="youxi-field">
-          <span>台词 / 剧本</span>
+          <span>台词</span>
           <small>镜 {selected.shotIndex}</small>
           <textarea
             rows={5}
-            disabled={generating}
-            defaultValue={shotLine(selected)}
-            key={`${selected.id}:${selected.dialogue || ""}:${selected.narrativeGoal || ""}`}
+            disabled={frozen}
+            defaultValue={selected.dialogue || ""}
+            key={`${selected.id}:dialogue:${selected.dialogue || ""}`}
             onBlur={(event) => {
               const value = event.target.value;
-              if (value === shotLine(selected)) return;
+              if (value === (selected.dialogue || "")) return;
               onSave(selected, { dialogue: value }).catch(() => {});
             }}
-            placeholder="当前镜头尚未填写台词或画面描述"
+            placeholder="当前镜头尚未填写台词"
           />
         </label>
         {selected.narrativeGoal && selected.narrativeGoal !== selected.dialogue && (
@@ -216,7 +213,7 @@ function ShotInspector({ selected, generating, lockedAssets, onSave, onZoom }) {
             <button
               type="button"
               className="youxi-story-cast-toggle"
-              disabled={generating}
+              disabled={frozen}
               onClick={() => setPickerOpen((open) => !open)}
             >
               {pickerOpen ? <X size={12} /> : <Plus size={12} />} {pickerOpen ? "收起" : "添加"}
@@ -228,7 +225,7 @@ function ShotInspector({ selected, generating, lockedAssets, onSave, onZoom }) {
                 {chip.label} · {chip.name}
                 <button
                   type="button"
-                  disabled={generating || casting}
+                  disabled={frozen || casting}
                   aria-label={`从本镜移除${chip.label} ${chip.name}`}
                   onClick={() => removeCast(chip.key, chip.name)}
                 >
@@ -253,7 +250,7 @@ function ShotInspector({ selected, generating, lockedAssets, onSave, onZoom }) {
                         <button
                           type="button"
                           key={asset.id}
-                          disabled={generating || casting}
+                          disabled={frozen || casting}
                           onClick={() => addAsset(asset)}
                         >
                           <Plus size={11} /> {asset.name}
@@ -312,6 +309,7 @@ function ShotInspector({ selected, generating, lockedAssets, onSave, onZoom }) {
           <textarea
             rows={10}
             value={selected.promptOverride ?? selected.compiledPrompt ?? ""}
+            disabled={frozen}
             placeholder={selected.compiledPrompt ? "" : "点击上方「重新编译」生成提示词，或直接手写覆盖"}
             onChange={(e) => {
               const value = e.target.value;
@@ -323,6 +321,7 @@ function ShotInspector({ selected, generating, lockedAssets, onSave, onZoom }) {
               <button
                 type="button"
                 className="drama-tool-button drama-tool-button--ghost"
+                disabled={frozen}
                 onClick={() => {
                   onSave(selected, { promptOverride: "" }).catch(() => {});
                 }}
@@ -348,6 +347,7 @@ export function DramaStoryboard({ series, episode }) {
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
   const [preview, setPreview] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const activeEpisode = episodes.find((item) => item.id === episodeId) || episodes[0] || episode;
   const activeEpisodeId = activeEpisode?.id;
@@ -421,7 +421,7 @@ export function DramaStoryboard({ series, episode }) {
   });
 
   const createShotMutation = useMutation({
-    mutationFn: () => createDramaShot(activeEpisodeId, { chapterId: selected?.chapterId }),
+    mutationFn: (payload) => createDramaShot(activeEpisodeId, payload),
     onSuccess: (shot) => {
       queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
       queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
@@ -436,19 +436,39 @@ export function DramaStoryboard({ series, episode }) {
     onSuccess: (data, target) => {
       queryClient.setQueryData(["drama-storyboard", activeEpisodeId], data);
       queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+      queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
       const pool = (data?.chapters || []).flatMap((item) => item.shots || []);
       const back = pool.find((item) => item.chapterId === target.chapterId) || pool[0];
       setShotId(back?.id || null);
+      setDeleteTarget(null);
       setActionError("");
     },
     onError: (error) => setActionError(error.message || "删除分镜失败"),
   });
 
-  function removeShot() {
-    if (!selected?.id) return;
-    const label = `镜 ${selected.shotIndex}${selected.title ? `「${selected.title}」` : ""}`;
-    if (!window.confirm(`删除${label}？剩余分镜会重新编号，不可撤销。`)) return;
-    deleteShotMutation.mutate({ id: selected.id, chapterId: selected.chapterId });
+  function insertAfter(shot) {
+    if (!shot?.id || draftMutation.isPending) return;
+    createShotMutation.mutate({
+      chapterId: shot.chapterId,
+      afterShotId: shot.id,
+    });
+  }
+
+  function requestRemoveShot(shot) {
+    if (!shot?.id) return;
+    setDeleteTarget(shot);
+  }
+
+  function confirmRemoveShot() {
+    if (!deleteTarget?.id) return;
+    deleteShotMutation.mutate({ id: deleteTarget.id, chapterId: deleteTarget.chapterId });
+  }
+
+  function deleteBlockedReason(shot) {
+    if (draftMutation.isPending) return "正在拆镜，请稍候";
+    if (shots.length <= 1) return "至少保留一个分镜";
+    if (isShotGenerating(shot, busy)) return "该镜正在生成，请等任务结束再删除";
+    return "";
   }
 
   const bindMutation = useMutation({
@@ -586,6 +606,7 @@ export function DramaStoryboard({ series, episode }) {
   }, [inflightKey]);
 
   const generating = Boolean(selected && isShotGenerating(selected, busy));
+  const drafting = draftMutation.isPending;
   const error = boardQuery.error || bindMutation.error || (actionError ? { message: actionError } : null);
   const videoSrc = mediaUrl(selected?.videoUrl || selected?.videoKey);
 
@@ -653,7 +674,7 @@ export function DramaStoryboard({ series, episode }) {
               <select
                 aria-label="分镜时长"
                 value={clampDuration(durationOptions, selected?.durationSec ?? draftDurationSec)}
-                disabled={generating}
+                disabled={generating || drafting}
                 onChange={(event) => {
                   const next = Number(event.target.value);
                   setDraftDurationSec(next);
@@ -671,7 +692,7 @@ export function DramaStoryboard({ series, episode }) {
           <div>
             <button
               type="button"
-              disabled={compileAllMutation.isPending || !shots.length}
+              disabled={compileAllMutation.isPending || !shots.length || drafting}
               onClick={() => compileAllMutation.mutate()}
             >
               <RefreshCw size={14} /> {compileAllMutation.isPending ? "编译中…" : "重新编译"}
@@ -686,7 +707,7 @@ export function DramaStoryboard({ series, episode }) {
             <button
               className="youxi-toolbar-primary"
               type="button"
-              disabled={!selected || generating || !videoModelId}
+              disabled={!selected || generating || drafting || !videoModelId}
               onClick={() => generate(selected)}
             >
               <Video size={14} /> {generating ? "出片中…" : "生成当前镜头"}
@@ -779,7 +800,7 @@ export function DramaStoryboard({ series, episode }) {
                           ? "身份或风格已变，请重新编译后再出片"
                           : "将按本镜角色 / 场景 / 道具自动绑定 Picture 参考图后出片"}
                     </span>
-                    <button type="button" disabled={generating || !videoModelId} onClick={() => generate(selected)}>
+                    <button type="button" disabled={generating || drafting || !videoModelId} onClick={() => generate(selected)}>
                       <Sparkles size={14} /> {generating ? "出片中…" : "生成当前镜头"}
                     </button>
                   </div>
@@ -793,24 +814,6 @@ export function DramaStoryboard({ series, episode }) {
               </div>
               <div className="drama-shot-tools">
                 <span>{selected.title || `镜 ${selected.shotIndex}`}</span>
-                <button
-                  type="button"
-                  className="drama-tool-button"
-                  disabled={shots.length <= 1 || Boolean(selected.videoKey) || generating || createShotMutation.isPending || deleteShotMutation.isPending}
-                  title={generating ? "该镜正在生成，请等任务结束再删除" : selected.videoKey ? "该镜已出片，不能删除" : "删除当前镜，剩余分镜重新编号"}
-                  onClick={removeShot}
-                >
-                  <X size={13} /> 删除分镜
-                </button>
-                <button
-                  type="button"
-                  className="drama-tool-button"
-                  disabled={shots.length === 0 || createShotMutation.isPending || deleteShotMutation.isPending}
-                  title="在本场末尾补一镜，人物 / 道具 / 地点沿用上一镜"
-                  onClick={() => createShotMutation.mutate()}
-                >
-                  <Plus size={13} /> 添加分镜
-                </button>
               </div>
             </div>
             <div className="youxi-filmstrip" role="list">
@@ -818,17 +821,18 @@ export function DramaStoryboard({ series, episode }) {
                 const active = selected?.id === shot.id;
                 const generatingShot = isShotGenerating(shot, busy);
                 const ready = Boolean(shot.videoKey) && !generatingShot;
+                const deleteReason = deleteBlockedReason(shot);
                 return (
                   <div className="youxi-filmstrip-unit" key={shot.id}>
-                    <button
-                      type="button"
-                      className={`youxi-shot-thumb ${active ? "active" : ""}`}
-                      onClick={() => {
-                        setShotId(shot.id);
-                        setActionError("");
-                      }}
-                    >
-                      <span className="youxi-shot-thumb__preview">
+                    <article className={`youxi-shot-thumb ${active ? "active" : ""}`}>
+                      <button
+                        type="button"
+                        className="youxi-shot-thumb__preview"
+                        onClick={() => {
+                          setShotId(shot.id);
+                          setActionError("");
+                        }}
+                      >
                         <span className="youxi-shot-thumb__label">
                           <b>镜 {shot.shotIndex}</b>
                           <em title={shot.title || ""}>{shot.title?.trim() || "未命名"}</em>
@@ -841,7 +845,32 @@ export function DramaStoryboard({ series, episode }) {
                               ? `${shot.durationSec || 5}s · 已生成`
                               : `${shot.durationSec || 5}s`}
                         </small>
-                      </span>
+                      </button>
+                      <footer>
+                        <button
+                          type="button"
+                          className="youxi-shot-thumb__delete"
+                          disabled={Boolean(deleteReason) || createShotMutation.isPending || deleteShotMutation.isPending}
+                          title={deleteReason || "删除这一镜"}
+                          aria-label={`删除镜 ${shot.shotIndex}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            requestRemoveShot(shot);
+                          }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </footer>
+                    </article>
+                    <button
+                      type="button"
+                      className="youxi-shot-add"
+                      disabled={createShotMutation.isPending || deleteShotMutation.isPending || drafting}
+                      title="在此之后插入一镜"
+                      aria-label={`在镜 ${shot.shotIndex} 之后添加分镜`}
+                      onClick={() => insertAfter(shot)}
+                    >
+                      <Plus size={14} />
                     </button>
                   </div>
                 );
@@ -855,10 +884,47 @@ export function DramaStoryboard({ series, episode }) {
         key={selected?.id || "none"}
         selected={shots.length ? selected : null}
         generating={generating}
+        readOnly={drafting}
         lockedAssets={lockedAssets}
         onSave={saveShot}
         onZoom={setPreview}
       />
+      {deleteTarget && (
+        <div
+          className="drama-dialog-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !deleteShotMutation.isPending) setDeleteTarget(null);
+          }}
+        >
+          <section className="drama-dialog drama-dialog--confirm" role="dialog" aria-modal="true" aria-labelledby="drama-shot-delete-title">
+            <header>
+              <div>
+                <span>分镜</span>
+                <h2 id="drama-shot-delete-title">删除这一镜？</h2>
+              </div>
+              <button type="button" aria-label="关闭" disabled={deleteShotMutation.isPending} onClick={() => setDeleteTarget(null)}>
+                <X size={18} />
+              </button>
+            </header>
+            <p className="drama-dialog__copy">
+              确定删除镜 {deleteTarget.shotIndex}
+              {deleteTarget.title ? `「${deleteTarget.title}」` : ""}？
+              剩余分镜会重新编号。若本集已拼接成片，成片将作废并删除，需重新拼接。不可撤销。
+            </p>
+            <footer className="drama-dialog__actions">
+              <button type="button" disabled={deleteShotMutation.isPending} onClick={() => setDeleteTarget(null)}>取消</button>
+              <button
+                type="button"
+                className="button button--danger"
+                disabled={deleteShotMutation.isPending}
+                onClick={confirmRemoveShot}
+              >
+                {deleteShotMutation.isPending ? "删除中…" : "删除"}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
       <ImageLightbox preview={preview} onClose={() => setPreview(null)} />
     </section>
   );

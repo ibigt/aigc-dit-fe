@@ -146,7 +146,6 @@ function SubjectInspector({
   nameDraft,
   summaryDraft,
   generating,
-  modelBound,
   busy,
   actionError,
   onNameChange,
@@ -159,7 +158,6 @@ function SubjectInspector({
   promptSaving,
   onBindModel,
   onResolution,
-  onGenerate,
   onUploadClick,
   voiceLock,
   voiceBusy,
@@ -167,10 +165,8 @@ function SubjectInspector({
   onVoiceSave,
   onVoiceUploadClick,
   onZoom,
-  onLock,
 }) {
   const src = mediaUrl(asset?.imageStorageKey || asset?.imageUrl);
-  const generateLabel = asset?.imageStorageKey ? "重新生成" : "图片生成";
   return (
     <aside className="youxi-inspector youxi-subject-inspector">
       <div className="youxi-inspector-tabs">
@@ -254,14 +250,6 @@ function SubjectInspector({
                   </option>
                 ))}
               </select>
-              <button
-                className="button button--primary"
-                type="button"
-                disabled={!modelBound || generating || !prompt.trim() || busy}
-                onClick={onGenerate}
-              >
-                <Sparkles size={15} /> {generating ? "生成中…" : modelBound ? generateLabel : "先选模型"}
-              </button>
             </div>
             {asset.genErrorMessage && <p className="drama-form-error">{asset.genErrorMessage}</p>}
             <section className="youxi-material-block">
@@ -297,15 +285,7 @@ function SubjectInspector({
               </div>
             </section>
             <div className="youxi-inspector-actions">
-              <button
-                className="button button--primary"
-                type="button"
-                disabled={busy || generating || !asset.imageStorageKey || asset.status === "已锁定"}
-                onClick={onLock}
-              >
-                {asset.status === "已锁定" ? "已锁定" : busy ? "锁定中…" : "锁定资产"}
-              </button>
-              <p>锁定且有图后，才能作为分镜参考。改提示词或重生成会重新待确认。</p>
+              <p>在卡片右上角生成或锁定。锁定且有图后，才能作为分镜参考。改提示词或重生成会重新待确认。</p>
             </div>
           </>
         ) : (
@@ -410,6 +390,7 @@ export function DramaAssetBoard({ series, episode }) {
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["drama-assets", episodeId] });
     queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+    queryClient.invalidateQueries({ queryKey: ["drama-storyboard", episodeId] });
   };
 
   const markBusy = (id, action, on) => {
@@ -659,21 +640,55 @@ export function DramaAssetBoard({ series, episode }) {
               {filtered.map((item) => {
                 const src = mediaUrl(item.imageStorageKey || item.imageUrl);
                 const generating = Boolean(item.generating) || isBusy(item.id, "generate");
+                const cardPrompt = (item.id === selected?.id ? promptDraft : promptOf(item)).trim();
                 return (
                   <article className={`youxi-subject-card ${selected?.id === item.id ? "active" : ""}`} key={item.id}>
                     <header>
                       <strong>{item.name}</strong>
-                      <button
-                        type="button"
-                        aria-label={`删除${item.name}`}
-                        disabled={generating || isBusy(item.id, "delete")}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          remove(item).catch((err) => setActionError(err.message));
-                        }}
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="youxi-subject-card__actions">
+                        <button
+                          type="button"
+                          className="youxi-subject-card__gen"
+                          aria-label={generating ? "生成中" : item.imageStorageKey ? `重新生成${item.name}` : `生成${item.name}图片`}
+                          disabled={!modelBound || generating || !cardPrompt || isBusy(item.id, "lock") || isBusy(item.id, "delete")}
+                          title={!modelBound ? "先在右侧选择图像模型" : !cardPrompt ? "先填写图片提示词" : (item.imageStorageKey ? "按当前提示词重新生成设定图" : "生成设定图")}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSelectedId(item.id);
+                            generate(item).catch((err) => setActionError(err.message));
+                          }}
+                        >
+                          <Sparkles size={13} />
+                          <span className="youxi-subject-card__label">{generating ? "生成中" : item.imageStorageKey ? "重新生成" : "图片生成"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={`youxi-subject-card__lock${item.status === "已锁定" ? " is-locked" : ""}`}
+                          aria-label={item.status === "已锁定" ? `${item.name}已锁定` : `锁定${item.name}`}
+                          disabled={isBusy(item.id, "lock") || generating || !item.imageStorageKey || item.status === "已锁定"}
+                          title={item.status === "已锁定" ? "已锁定" : !item.imageStorageKey ? "先生成或上传图片再锁定" : "锁定后可作为分镜参考"}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSelectedId(item.id);
+                            confirm(item).catch((err) => setActionError(err.message));
+                          }}
+                        >
+                          <Lock size={13} />
+                          <span className="youxi-subject-card__label">{item.status === "已锁定" ? "已锁定" : isBusy(item.id, "lock") ? "锁定中" : "锁定"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="youxi-subject-card__trash"
+                          aria-label={`删除${item.name}`}
+                          disabled={generating || isBusy(item.id, "delete")}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            remove(item).catch((err) => setActionError(err.message));
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </header>
                     <button
                       className="youxi-subject-card__select"
@@ -722,7 +737,6 @@ export function DramaAssetBoard({ series, episode }) {
         nameDraft={nameDraft}
         summaryDraft={summaryDraft}
         generating={selectedGenerating}
-        modelBound={modelBound}
         busy={selectedBusy}
         promptChanged={promptChanged}
         promptSaving={isBusy(selected?.id, "save")}
@@ -747,7 +761,6 @@ export function DramaAssetBoard({ series, episode }) {
           if (value) bindMutation.mutate(value);
         }}
         onResolution={setResolution}
-        onGenerate={() => selected && generate(selected).catch((err) => setActionError(err.message))}
         onUploadClick={() => fileRef.current?.click()}
         voiceLock={voiceLockDraft}
         voiceBusy={isBusy(selected?.id, "voice")}
@@ -758,7 +771,6 @@ export function DramaAssetBoard({ series, episode }) {
           src: mediaUrl(selected.imageStorageKey || selected.imageUrl),
           title: selected.name,
         })}
-        onLock={() => selected && confirm(selected).catch((err) => setActionError(err.message))}
       />
 
       <input
