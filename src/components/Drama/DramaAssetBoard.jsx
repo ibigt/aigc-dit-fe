@@ -193,6 +193,7 @@ function SubjectInspector({
   onZoom,
 }) {
   const src = mediaUrl(asset?.imageStorageKey || asset?.imageUrl);
+  const voiceDescriptionChanged = (voiceLock || "").trim() !== (asset?.voiceLock || "").trim();
   return (
     <aside className="youxi-inspector youxi-subject-inspector">
       <div className="youxi-inspector-tabs">
@@ -227,11 +228,18 @@ function SubjectInspector({
                   <input value={voiceLock} onChange={onVoiceLockChange} placeholder="例：30岁低沉男声，普通话，克制冷静" />
                 </label>
                 {asset.voiceReferenceUrl && <audio controls preload="metadata" src={mediaUrl(asset.voiceReferenceUrl) || asset.voiceReferenceUrl} />}
-                <div>
-                  <button type="button" onClick={onVoiceUploadClick} disabled={voiceBusy}>
+                <div className="drama-native-voice__actions">
+                  <button className="drama-voice-action drama-voice-action--secondary" type="button" onClick={onVoiceUploadClick} disabled={voiceBusy}>
                     <Upload size={13} /> {asset.voiceReferenceUrl ? "更换参考音频" : "上传参考音频"}
                   </button>
-                  <button type="button" onClick={onVoiceSave} disabled={voiceBusy}>保存音色</button>
+                  <button
+                    className="drama-voice-action drama-voice-action--primary"
+                    type="button"
+                    onClick={onVoiceSave}
+                    disabled={voiceBusy || !voiceDescriptionChanged}
+                  >
+                    <Save size={13} /> 保存声音描述
+                  </button>
                 </div>
                 <small>对白、环境声和音效随视频一次生成；参考音频只锁定音色身份。</small>
               </section>

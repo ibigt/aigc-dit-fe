@@ -1636,7 +1636,31 @@
 .drama-native-voice header em { color: #6d28d9; font-size: 11px; font-style: normal; }
 .drama-native-voice audio { width: 100%; height: 30px; }
 .drama-native-voice > div { justify-content: space-between; }
+.drama-native-voice__actions { display: grid !important; grid-template-columns: 1fr 1fr; gap: 8px; }
+.drama-voice-action {
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+  transition: border-color .18s ease, background-color .18s ease, color .18s ease;
+}
+.drama-voice-action--secondary { color: #5b6472; border-color: #dcdfea; background: #fff; }
+.drama-voice-action--secondary:hover:not(:disabled) { color: #5b21b6; border-color: #c4b5fd; background: #f5f3ff; }
+.drama-voice-action--primary { color: #fff; border-color: #6d4bd1; background: #6d4bd1; }
+.drama-voice-action--primary:hover:not(:disabled) { border-color: #5b36c2; background: #5b36c2; }
+.drama-voice-action:disabled { opacity: .48; cursor: not-allowed; }
 .drama-native-voice > small { color: var(--text-secondary, #6b7280); line-height: 1.45; }
+.console-shell[data-theme="dark"] .drama-native-voice { border-color: #493c69; background: #211d2c; }
+.console-shell[data-theme="dark"] .drama-voice-action--secondary { color: #d7ddea; border-color: #485262; background: #252d37; }
+.console-shell[data-theme="dark"] .drama-voice-action--secondary:hover:not(:disabled) { color: #ddd6fe; border-color: #7561a8; background: #312943; }
 .youxi-native-audio-badge {
   min-height: 32px;
   padding: 0 9px;
