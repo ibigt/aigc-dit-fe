@@ -3,8 +3,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { createDramaSeries, deleteDramaSeries, fetchDramaSeries, fetchDramaTextModels, updateDramaSeries } from "../../api/drama.js";
-import { formatDateTime } from "../../lib/media.js";
-import { dramaStyleOf } from "./dramaStyles.js";
+import { formatDateTime, mediaUrl } from "../../lib/media.js";
 
 const emptyForm = {
   name: "",
@@ -115,21 +114,16 @@ export function DramaHome() {
         {listQuery.isLoading && <div className="drama-empty">正在加载项目…</div>}
         {!listQuery.isLoading && series.length === 0 && <div className="drama-empty">还没有短剧项目，点击右上角创建</div>}
         {series.map((item) => {
-          const style = dramaStyleOf(item.styleKey);
-          const cover = item.styleCover || style.cover;
+          const cover = mediaUrl(item.coverUrl || item.coverKey);
           const episodeCount = item.episodeCount || item.episodes?.length || item.plannedEpisodeCount || 1;
           return (
             <article className="drama-project-card" key={item.id}>
-              <div className="drama-project-card__cover">
-                <img
-                  src={cover}
-                  alt=""
-                  onError={(event) => {
-                    if (event.currentTarget.dataset.fallback === "1") return;
-                    event.currentTarget.dataset.fallback = "1";
-                    event.currentTarget.src = style.fallback;
-                  }}
-                />
+              <div className={`drama-project-card__cover ${cover ? "" : "is-empty"}`}>
+                {cover ? (
+                  <img src={cover} alt="" />
+                ) : (
+                  <div className="drama-project-card__placeholder" />
+                )}
                 <span>共{episodeCount}集</span>
                 <button
                   type="button"

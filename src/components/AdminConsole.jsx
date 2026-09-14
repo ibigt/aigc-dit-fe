@@ -51,7 +51,7 @@ const adminMenus = [
 
 const categoryLabels = { image: "图像模型", video: "视频模型", text: "文本模型" };
 const categoryTabs = [{ id: "all", label: "全部" }, { id: "video", label: "视频模型" }, { id: "image", label: "图像模型" }, { id: "text", label: "文本模型" }];
-const providerOptions = ["全部来源", "ComfyUI", "RunningHub", "官方API", "自定义配置"];
+const providerOptions = ["全部来源", "ComfyUI", "RunningHub", "官方API", "官方API（token plan）", "自定义配置"];
 const usageColors = ["#665cf1", "#33a474", "#e2943b", "#d76588", "#8b94a1"];
 
 const MODE_CAP_OPTIONS = [
@@ -66,6 +66,8 @@ const ADAPTER_OPTIONS = [
   { key: "gpt-image-2", label: "GPT Image 2", category: "image", provider: "RunningHub", defaultEndpoint: "https://www.runninghub.ai", modes: ["t2i"], defaultPaths: { t2iPath: "rhart-image-g-2/text-to-image" } },
   { key: "agnes-image-2.5", label: "Agnes Image 2.5", category: "image", provider: "官方API", defaultEndpoint: "https://api.agnes-ai.cn/v1", modes: ["t2i", "i2i"], defaultPaths: {}, defaultModelKey: "agnes-image-2.5-flash" },
   { key: "seedance-2", label: "Seedance 2.x", category: "video", provider: "RunningHub", defaultEndpoint: "https://www.runninghub.ai", modes: ["t2v", "r2v"], defaultPaths: { t2vPath: "rhart-video/sparkvideo-2.0/text-to-video", r2vPath: "rhart-video/sparkvideo-2.0/multimodal-video" } },
+  { key: "seedance-2.0", label: "Seedance 2.0", category: "video", provider: "官方API", defaultEndpoint: "https://ark.cn-beijing.volces.com/api/v3", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "doubao-seedance-2-0-260128" },
+  { key: "seedance-2.5", label: "Seedance 2.5", category: "video", provider: "官方API", defaultEndpoint: "https://ark.cn-beijing.volces.com/api/v3", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "doubao-seedance-2-5-260628" },
   { key: "minimax-h3", label: "MiniMax-H3", category: "video", provider: "ComfyUI", defaultEndpoint: "http://127.0.0.1:8188", modes: ["t2v", "r2v", "i2v"], defaultPaths: {} },
   { key: "agnes-video-2.5", label: "Agnes Video 2.5", category: "video", provider: "官方API", defaultEndpoint: "https://api.agnes-ai.cn/v1", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "agnes-video-2.5-flash" },
   { key: "agnes-text", label: "Agnes 对话", category: "text", provider: "官方API", defaultEndpoint: "https://api.agnes-ai.cn/v1", modes: [], defaultPaths: {}, defaultModelKey: "agnes-2.5-flash" },
@@ -84,6 +86,49 @@ function defaultAdapterKey(category) {
   return adaptersForCategory(category)[0]?.key || "";
 }
 
+const ARK_PAYG_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3";
+const ARK_PLAN_ENDPOINT = "https://ark.cn-beijing.volces.com/api/plan/v3";
+const PROVIDER_OFFICIAL_TOKEN_PLAN = "官方API（token plan）";
+
+function isSeedanceOfficial(adapterKey) {
+  return adapterKey === "seedance-2.0" || adapterKey === "seedance-2.5";
+}
+
+function isOfficialTokenPlan(provider) {
+  return /token\s*plan|agent plan/i.test(String(provider || ""));
+}
+
+function isOfficialSource(provider) {
+  return String(provider || "").startsWith("官方API");
+}
+
+function arkPlanModelKey(adapterKey) {
+  return adapterKey === "seedance-2.0" ? "doubao-seedance-2.0" : "";
+}
+
+function seedanceOfficialSource(model) {
+  if (isOfficialTokenPlan(model?.provider) || String(model?.endpoint || "").toLowerCase().includes("/api/plan/v3")) {
+    return PROVIDER_OFFICIAL_TOKEN_PLAN;
+  }
+  return "官方API";
+}
+
+function seedanceOfficialHint(adapterKey, isText, provider) {
+  if (adapterKey === "seedance-2.5") {
+    return isOfficialTokenPlan(provider)
+      ? "来源为官方API（token plan），地址 /api/plan/v3。模型标识用控制台给出的 2.5 名，Key 用订阅页专属 Key。"
+      : "来源为官方API，地址 /api/v3。模型标识填 doubao-seedance-2-5-260628，Key 用方舟按量 API Key。";
+  }
+  if (adapterKey === "seedance-2.0") {
+    return isOfficialTokenPlan(provider)
+      ? "来源为官方API（token plan），地址 /api/plan/v3。标识填 doubao-seedance-2.0 或控制台 Fast 名。Medium 套餐可能已不支持 2.0。"
+      : "来源为官方API，地址 /api/v3。标准版 doubao-seedance-2-0-260128，Fast doubao-seedance-2-0-fast-260128。";
+  }
+  return isText
+    ? "默认 https://api.agnes-ai.cn/v1。对话标识填 agnes-2.5-flash。"
+    : "默认 https://api.agnes-ai.cn/v1。图片标识填 agnes-image-2.5-flash，视频填 agnes-video-2.5-flash。";
+}
+
 function inferAdapterKey(model) {
   if (model?.adapterKey && adapterOf(model.adapterKey)) return model.adapterKey;
   const provider = String(model?.provider || "").toLowerCase();
@@ -93,8 +138,10 @@ function inferAdapterKey(model) {
     if (provider.includes("自定义") || provider.includes("手动") || provider.includes("openai") || key.includes("openai") || key.includes("gpt-4") || key.includes("gpt-3")) return "openai-compat";
     return "agnes-text";
   }
-  if (key.includes("agnes-image") || ((provider.includes("官方") || provider.includes("agnes")) && category === "image")) return "agnes-image-2.5";
-  if (key.includes("agnes") || ((provider.includes("官方") || provider.includes("agnes")) && category === "video")) return "agnes-video-2.5";
+  if (key.includes("agnes-image") || (key.includes("agnes") && category === "image")) return "agnes-image-2.5";
+  if (key.includes("seedance-2.5") || key.includes("seedance-2-5") || key.includes("doubao-seedance-2-5")) return "seedance-2.5";
+  if (key.includes("doubao-seedance-2-0") || key.includes("doubao-seedance-2.0") || key.includes("seedance-2-0-fast") || key.includes("seedance-2.0-fast") || provider.includes("ark") || provider.includes("火山") || provider.includes("方舟")) return "seedance-2.0";
+  if (key.includes("agnes")) return "agnes-video-2.5";
   if (key.includes("minimax") || (provider.includes("comfy") && category === "video")) return "minimax-h3";
   if (key.includes("seedance") || (provider.includes("running") && category === "video")) return "seedance-2";
   if (key.includes("gpt-image") || (provider.includes("running") && category === "image")) return "gpt-image-2";
@@ -104,6 +151,9 @@ function inferAdapterKey(model) {
 const MODEL_LOGO_CATALOG = [
   { file: "/model-logos/agnes.svg", label: "Agnes AI", keys: ["agnes"] },
   { file: "/model-logos/deepseek.svg", label: "DeepSeek", keys: ["deepseek", "深度求索"] },
+  { file: "/model-logos/xiaomi-color.svg", label: "小米 / MiMo", keys: ["mimo", "xiaomi", "小米"] },
+  { file: "/model-logos/zhipu-color.svg", label: "智谱 / GLM", keys: ["zhipu", "智谱", "质谱", "glm", "chatglm", "cogvideo", "清影"] },
+  { file: "/model-logos/kimi.svg", label: "Kimi / 月之暗面", keys: ["kimi", "moonshot", "月之暗面"] },
   { file: "/model-logos/openai.svg", label: "OpenAI / GPT", keys: ["gpt-image", "gpt", "openai", "dall-e", "dalle", "sora"] },
   { file: "/model-logos/bytedance-color.svg", label: "字节 / Seedance", keys: ["seedance", "seedream", "bytedance"] },
   { file: "/model-logos/doubao-color.svg", label: "豆包", keys: ["doubao", "豆包"] },
@@ -150,7 +200,7 @@ function modelLogoSrc(model) {
 
 function endpointLabel(provider) {
   if (provider === "ComfyUI") return "ComfyUI 服务地址";
-  if (provider === "官方API") return "官方 API 地址";
+  if (isOfficialSource(provider)) return "官方 API 地址";
   if (provider === "自定义配置" || provider === "手动配置") return "Base URL";
   return "RunningHub API 地址";
 }
@@ -169,7 +219,7 @@ function matchesProviderFilter(modelProvider, filter) {
 
 function pathPlaceholder(cap, adapterKey) {
   const adapter = adapterOf(adapterKey);
-  if (adapter?.provider === "官方API") return "官方 API 无需填写路径";
+  if (isOfficialSource(adapter?.provider)) return "官方 API 无需填写路径";
   if (adapter?.key === "minimax-h3") return "可留空（MiniMax-H3 使用内置工作流）";
   if (adapter?.provider === "RunningHub") return cap.placeholder;
   return "接口路径或完整 URL";
@@ -441,7 +491,7 @@ function ModelDialog({ model, onClose, onSave, saving }) {
     return {
       ...model,
       adapterKey,
-      provider: adapterOf(adapterKey)?.provider || model.provider,
+      provider: isSeedanceOfficial(adapterKey) ? seedanceOfficialSource(model) : (adapterOf(adapterKey)?.provider || model.provider),
       capabilities: filterCapsForAdapter(model.capabilities, model.category || "image", adapterKey),
       t2iPath: pathValue(model, "t2iPath"),
       i2iPath: pathValue(model, "i2iPath"),
@@ -469,11 +519,11 @@ function ModelDialog({ model, onClose, onSave, saving }) {
       ...current,
       category,
       adapterKey: adapter.key,
-      provider: adapter.provider,
+      provider: isSeedanceOfficial(adapter.key) && isOfficialTokenPlan(current.provider) ? PROVIDER_OFFICIAL_TOKEN_PLAN : adapter.provider,
       capabilities: filterCapsForAdapter(current.capabilities, category, adapter.key),
     };
-    if (!current.endpoint || current.endpoint === prevDefault) {
-      next.endpoint = adapter.defaultEndpoint;
+    if (!current.endpoint || current.endpoint === prevDefault || current.endpoint === ARK_PAYG_ENDPOINT || current.endpoint === ARK_PLAN_ENDPOINT) {
+      next.endpoint = isOfficialTokenPlan(next.provider) ? ARK_PLAN_ENDPOINT : adapter.defaultEndpoint;
     }
     const prevModelKey = adapterOf(current.adapterKey)?.defaultModelKey;
     if (!current.modelKey || current.modelKey === prevModelKey) {
@@ -489,6 +539,18 @@ function ModelDialog({ model, onClose, onSave, saving }) {
   };
   const changeAdapter = (adapterKey) => setDraft((current) => applyAdapter(current, adapterKey));
   const changeCategory = (category) => setDraft((current) => applyAdapter(current, defaultAdapterKey(category), category));
+  const changeOfficialSource = (provider) => setDraft((current) => {
+    const next = { ...current, provider, endpoint: isOfficialTokenPlan(provider) ? ARK_PLAN_ENDPOINT : ARK_PAYG_ENDPOINT };
+    const paygDefault = adapterOf(current.adapterKey)?.defaultModelKey || "";
+    const planDefault = arkPlanModelKey(current.adapterKey);
+    if (isOfficialTokenPlan(provider) && planDefault && (!current.modelKey || current.modelKey === paygDefault)) {
+      next.modelKey = planDefault;
+    }
+    if (!isOfficialTokenPlan(provider) && paygDefault && (!current.modelKey || current.modelKey === planDefault)) {
+      next.modelKey = paygDefault;
+    }
+    return next;
+  });
   const toggleCap = (cap) => setDraft((current) => {
     const allowed = capsForAdapter(current.category, current.adapterKey).some((item) => item.id === cap);
     if (!allowed) return current;
@@ -516,7 +578,9 @@ function ModelDialog({ model, onClose, onSave, saving }) {
       : adapter?.provider === "官方API"
         ? (isText
           ? "文本通道走官方对话接口。默认地址与 Agnes 图/视频相同，模型标识填 agnes-2.5-flash。"
-          : "适配协议决定字段翻译；来源「官方API」与 Agnes 默认地址已自动带出。请填写官方 API Key，模型标识使用官方 model ID。")
+          : isSeedanceOfficial(adapter?.key)
+            ? "适配协议只负责 t2v/r2v/i2v 字段翻译。接入来源选「官方API」走按量 /api/v3，选「官方API（token plan）」走订阅 /api/plan/v3。"
+            : "适配协议决定字段翻译；来源「官方API」与 Agnes 默认地址已自动带出。请填写官方 API Key，模型标识使用官方 model ID。")
         : "适配协议决定字段翻译；来源 RunningHub 与默认 API 地址已自动带出。";
   async function onTestConnection() {
     setTesting(true);
@@ -554,13 +618,15 @@ function ModelDialog({ model, onClose, onSave, saving }) {
           <label>名称<input required value={draft.name} onChange={(event) => updateIdentity({ name: event.target.value })} placeholder={isText ? "例如：Agnes 对话" : "例如：自有视频模型"} /></label>
           <label>模型类型<select value={draft.category} onChange={(event) => changeCategory(event.target.value)}><option value="image">图像模型</option><option value="video">视频模型</option><option value="text">文本模型</option></select></label>
           <label>适配协议<select required value={draft.adapterKey} onChange={(event) => changeAdapter(event.target.value)}>{adaptersForCategory(draft.category).map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
-          <label>接入来源<input value={draft.provider || ""} readOnly /></label>
+          {isSeedanceOfficial(draft.adapterKey)
+            ? <label>接入来源<select value={isOfficialTokenPlan(draft.provider) ? PROVIDER_OFFICIAL_TOKEN_PLAN : "官方API"} onChange={(event) => changeOfficialSource(event.target.value)}><option value="官方API">官方API</option><option value={PROVIDER_OFFICIAL_TOKEN_PLAN}>官方API（token plan）</option></select></label>
+            : <label>接入来源<input value={draft.provider || ""} readOnly /></label>}
           <label>模型标识<input required value={draft.modelKey} onChange={(event) => updateIdentity({ modelKey: event.target.value })} placeholder={adapter?.key === "openai-compat" ? "如 deepseek-v3-flash" : (adapter?.defaultModelKey || (isText ? "对话模型名，如 gpt-4o-mini" : "商品标识，如 seedance-2.0"))} /></label>
-          <label className="model-form-wide">{endpointLabel(draft.provider)}<input required value={draft.endpoint || ""} onChange={(event) => update("endpoint", event.target.value)} placeholder={draft.provider === "自定义配置" ? "https://api.openai.com/v1 或兼容网关" : ""} />{draft.provider === "官方API" && <small className="model-logo-hint">{isText ? "默认 https://api.agnes-ai.cn/v1。对话标识填 agnes-2.5-flash。" : "默认 https://api.agnes-ai.cn/v1。图片标识填 agnes-image-2.5-flash，视频填 agnes-video-2.5-flash。"}</small>}</label>
-          <label className="model-form-wide">API Key<input type="password" value={draft.apiKey || ""} onChange={(event) => update("apiKey", event.target.value)} placeholder={draft.hasApiKey ? "已加密保存，留空则保持不变" : (adapter?.provider === "自定义配置" ? "可留空（本地网关无鉴权）" : "明文仅提交一次，服务端加密落库")} /></label>
+          <label className="model-form-wide">{endpointLabel(draft.provider)}<input required value={draft.endpoint || ""} onChange={(event) => update("endpoint", event.target.value)} placeholder={draft.provider === "自定义配置" ? "https://api.openai.com/v1 或兼容网关" : ""} />{isOfficialSource(draft.provider) && <small className="model-logo-hint">{seedanceOfficialHint(adapter?.key, isText, draft.provider)}</small>}</label>
+          <label className="model-form-wide">API Key<input type="password" value={draft.apiKey || ""} onChange={(event) => update("apiKey", event.target.value)} placeholder={draft.hasApiKey ? "已加密保存，留空则保持不变" : (adapter?.provider === "自定义配置" ? "可留空（本地网关无鉴权）" : "明文仅提交一次，服务端加密落库")} />{isOfficialSource(draft.provider) && !isText && <small className="model-logo-hint">{draft.hasApiKey ? "卡片显示「密钥已配置」后才会用这条 Key 调官方接口。" : (isOfficialTokenPlan(draft.provider) ? "当前尚未落库。请粘贴 Agent Plan 订阅 Key，再点右下角保存配置。" : "当前尚未落库。请粘贴火山方舟 API Key（不要用 IAM AK/SK），再点右下角保存配置。")}</small>}</label>
           <div className="model-form-wide model-cap-field"><span>品牌图标</span><div className="model-logo-picker">{MODEL_LOGO_CATALOG.map((item) => <button type="button" key={item.file} className={draft.logo === item.file ? "active" : ""} title={item.label} aria-label={item.label} onClick={() => update("logo", item.file)}><img src={item.file} alt="" /></button>)}</div><small className="model-logo-hint">按名称 / 标识自动匹配，也可手动点选。未命中时使用通用图标。</small></div>
           {!isText && <div className="model-form-wide model-cap-field"><span>能力勾选</span><div className="model-cap-row">{visibleCapOptions.map((cap) => <label key={cap.id} className="model-cap-chip"><input type="checkbox" checked={caps.includes(cap.id)} onChange={() => toggleCap(cap.id)} />{cap.label}</label>)}</div></div>}
-          {!isText && draft.provider !== "官方API" && visibleCapOptions.filter((cap) => caps.includes(cap.id)).map((cap) => (
+          {!isText && !isOfficialSource(draft.provider) && visibleCapOptions.filter((cap) => caps.includes(cap.id)).map((cap) => (
             <label key={cap.pathKey} className="model-form-wide">{cap.pathLabel}<input value={pathValue(draft, cap.pathKey)} onChange={(event) => update(cap.pathKey, event.target.value)} placeholder={pathPlaceholder(cap, draft.adapterKey)} /></label>
           ))}
           {!isText && draft.provider === "RunningHub" && <><label>实例类型<input value={draft.instanceType || ""} onChange={(event) => update("instanceType", event.target.value)} placeholder="可选，如 48G" /></label><label>并发限制<input type="number" min="1" max="10" value={draft.concurrentLimit || 1} onChange={(event) => update("concurrentLimit", Number(event.target.value))} /></label></>}
@@ -617,7 +683,7 @@ function toModelPayload(draft) {
     name: draft.name,
     modelKey: draft.modelKey,
     adapterKey,
-    provider: adapter?.provider || draft.provider,
+    provider: isSeedanceOfficial(adapterKey) ? (draft.provider || adapter?.provider) : (adapter?.provider || draft.provider),
     endpoint: draft.endpoint,
     apiKey: draft.apiKey || undefined,
     category,
@@ -695,7 +761,7 @@ function ModelsPage() {
     {notice && <div className={`admin-notice${noticeError ? " admin-notice--error" : ""}`}>{noticeError ? null : <Check size={15} />}{notice}<button aria-label="关闭提示" onClick={() => setNotice("")}><X size={14} /></button></div>}
     {modelsQuery.error && <div className="admin-notice admin-notice--error">{errorMessage(modelsQuery.error, "模型列表加载失败")}</div>}
     <div className="model-category-tabs" role="tablist" aria-label="模型类型">{categoryTabs.map((tab) => <button role="tab" aria-selected={category === tab.id} className={category === tab.id ? "active" : ""} key={tab.id} onClick={() => setCategory(tab.id)}>{tab.label}<span>{tab.id === "all" ? modelItems.length : modelItems.filter((item) => item.category === tab.id).length}</span></button>)}</div>
-    <div className="model-summary"><span><Server size={17} /><b>{modelItems.filter((item) => item.provider === "ComfyUI").length}</b> ComfyUI</span><span><CloudCog size={17} /><b>{modelItems.filter((item) => item.provider === "RunningHub").length}</b> RunningHub</span><span><Globe size={17} /><b>{modelItems.filter((item) => item.provider === "官方API").length}</b> 官方API</span><span><Cpu size={17} /><b>{modelItems.filter((item) => item.provider === "自定义配置" || item.provider === "手动配置").length}</b> 自定义配置</span><em>已启用 {modelItems.filter((item) => item.enabled !== false).length} / {modelItems.length}</em></div>
+    <div className="model-summary"><span><Server size={17} /><b>{modelItems.filter((item) => item.provider === "ComfyUI").length}</b> ComfyUI</span><span><CloudCog size={17} /><b>{modelItems.filter((item) => item.provider === "RunningHub").length}</b> RunningHub</span><span><Globe size={17} /><b>{modelItems.filter((item) => String(item.provider || "").startsWith("官方API")).length}</b> 官方API</span><span><Cpu size={17} /><b>{modelItems.filter((item) => item.provider === "自定义配置" || item.provider === "手动配置").length}</b> 自定义配置</span><em>已启用 {modelItems.filter((item) => item.enabled !== false).length} / {modelItems.length}</em></div>
     <div className="model-toolbar"><label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索模型名称或标识" /></label><select aria-label="筛选接入来源" value={provider} onChange={(event) => setProvider(event.target.value)}>{providerOptions.map((item) => <option key={item}>{item}</option>)}</select><div className="view-switch" role="group" aria-label="视图模式"><button className={view === "cards" ? "active" : ""} aria-label="卡片模式" onClick={() => setView("cards")}><Grid2X2 size={15} /></button><button className={view === "list" ? "active" : ""} aria-label="列表模式" onClick={() => setView("list")}><List size={15} /></button></div></div>
     {view === "cards" ? <div className="model-card-grid">{visible.map((model) => <ModelCard key={model.id} model={model} onToggle={(enabled) => toggleMutation.mutate({ id: model.id, enabled })} onEdit={() => setEditing({ ...model, apiKey: "" })} onRemove={() => { if (window.confirm(`确定删除模型“${model.name}”吗？`)) removeMutation.mutate(model); }} />)}</div> : <div className="admin-table-card model-table"><div className="admin-table-scroll"><table><thead><tr><th>模型</th><th>类型</th><th>接入来源</th><th>售价</th><th>成本</th><th>服务状态</th><th>创作端可用</th><th>操作</th></tr></thead><tbody>{visible.map((model) => <tr key={model.id}><td><span className="table-model-logo"><img src={modelLogoSrc(model)} alt="" /></span><span><strong>{model.name}</strong><small>{model.modelKey}</small></span></td><td><span className="category-chip">{categoryLabels[model.category]}</span></td><td>{model.provider}</td><td><PriceCell title="售价" pricing={model.pricing} side="sale" /></td><td><PriceCell title="成本" pricing={model.pricing} side="cost" /></td><td><span className="service-ok"><i />{model.hasApiKey ? "密钥已配置" : "未配置密钥"}</span></td><td><label className="toggle-switch"><input aria-label={`${model.name} 创作端可用`} type="checkbox" checked={model.enabled !== false} onChange={(event) => toggleMutation.mutate({ id: model.id, enabled: event.target.checked })} /><span /></label></td><td><div className="table-actions"><button aria-label={`编辑模型：${model.name}`} onClick={() => setEditing({ ...model, apiKey: "" })}><Pencil size={14} /></button><button className="danger" aria-label={`删除模型：${model.name}`} onClick={() => { if (window.confirm(`确定删除模型“${model.name}”吗？`)) removeMutation.mutate(model); }}><Trash2 size={14} /></button></div></td></tr>)}</tbody></table></div></div>}
     {!visible.length && <div className="admin-empty"><Bot size={22} /><strong>没有匹配的模型</strong><span>接入模型或调整类型、来源、关键词后重试。</span></div>}

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchAssets } from "../api/assets.js";
 import { createSession, deleteSession, fetchSession, fetchSessions, saveCreationToAsset } from "../api/creations.js";
 import { IMAGE_POLL_TIMEOUT_MS, pollGenerateTask, submitGenerate, VIDEO_POLL_TIMEOUT_MS } from "../api/generate.js";
-import { materialToAsset, promptForResult, tasksToMessages, taskToResultMessage } from "../lib/createFlow.js";
+import { friendlyGenerateError, materialToAsset, promptForResult, tasksToMessages, taskToResultMessage } from "../lib/createFlow.js";
 import { formatDateTime, mediaUrl, storageKeyOf } from "../lib/media.js";
 
 const videoRatios = ["自动", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
@@ -38,13 +38,34 @@ function isAgnes(model) {
   const key = String(model?.adapterKey || model?.modelKey || "").toLowerCase();
   return key.includes("agnes");
 }
+function isSeedance25(model) {
+  const key = String(model?.adapterKey || model?.modelKey || "").toLowerCase();
+  return key.includes("seedance-2.5") || key.includes("seedance-2-5") || key.includes("doubao-seedance-2-5");
+}
+function isSeedance20Official(model) {
+  const adapter = String(model?.adapterKey || "").toLowerCase();
+  const key = String(model?.modelKey || "").toLowerCase();
+  return adapter === "seedance-2.0" || key.includes("doubao-seedance-2-0") || key.includes("doubao-seedance-2.0");
+}
+function isSeedanceOfficial(model) {
+  return isSeedance25(model) || isSeedance20Official(model);
+}
+function isSeedanceFast(model) {
+  return String(model?.modelKey || "").toLowerCase().includes("fast");
+}
+function imageOnlyRefs(model) {
+  return isAgnes(model);
+}
 function durationOptionsFor(model) {
   if (isMiniMaxH3(model)) return miniMaxDurations;
   if (isAgnes(model)) return agnesDurations;
   return videoDurations;
 }
 function videoResolutionsFor(model) {
-  return isAgnes(model) ? ["720P"] : videoResolutions;
+  if (isAgnes(model)) return ["720P"];
+  if (isSeedance25(model) || (isSeedance20Official(model) && isSeedanceFast(model))) return ["480P", "720P"];
+  if (isSeedance20Official(model)) return ["480P", "720P", "1080P"];
+  return videoResolutions;
 }
 function clampDurationForModel(model, duration) {
   const options = durationOptionsFor(model);
@@ -428,8 +449,11 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const showVideoModes = generationType === "video" && (modelSupports(selectedModel, "r2v") || supportsFrames);
   const copiesLimited = selectedModel?.adapterKey === "gpt-image-2"
     || selectedModel?.adapterKey === "seedance-2"
+    || selectedModel?.adapterKey === "seedance-2.0"
+    || selectedModel?.adapterKey === "seedance-2.5"
     || String(selectedModel?.provider || "").toLowerCase() === "runninghub"
-    || isAgnes(selectedModel);
+    || isAgnes(selectedModel)
+    || isSeedanceOfficial(selectedModel);
   const unitPrice = Number.parseFloat(selectedModel?.pricing?.sale?.output) || (generationType === "video" ? 12 : 2);
   const parameterMultiplier = generationType === "video"
     ? (videoResolutionMultipliers[resolution] || 1)
@@ -707,7 +731,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     const next = Array.from(files || [])
       .filter((file) => {
         if (!file.type.startsWith("video/")) return true;
-        return generationType === "video" && !isAgnes(selectedModel);
+        return generationType === "video" && !imageOnlyRefs(selectedModel);
       })
       .map((file) => ({ name: file.name, url: URL.createObjectURL(file), file, type: file.type.startsWith("video/") ? "video" : "image" }));
     setReferenceImages((items) => [...items, ...next]);
@@ -833,7 +857,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
       });
       watchingTasksRef.current.delete(submitted.id);
       const result = finished.status === "FAILED"
-        ? failResult(finished.errorMessage || "生成失败，积分已退还")
+        ? failResult(friendlyGenerateError(finished.errorMessage, currentModel))
         : taskToResultMessage(finished);
       updateSessionMessages(sessionId, (items) => replacePendingMessage(items, pendingKey, result));
       onConsumeCredits(0, { model: currentModel.name, type: currentType, refresh: true });
@@ -922,14 +946,14 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         </div>
         <div className="composer-shell composer-shell--expanded">
           <div className={`composer creation-composer ${referenceImages.length || firstFrame || lastFrame ? "has-material" : ""}`}>
-            <input ref={referenceInputRef} aria-label="上传参考素材" className="visually-hidden" type="file" accept={generationType === "video" && !isAgnes(selectedModel) ? "image/*,video/*" : "image/*"} multiple disabled={!supportsLibrary} onChange={(event) => { addReferenceImages(event.target.files); event.target.value = ""; }} />
+            <input ref={referenceInputRef} aria-label="上传参考素材" className="visually-hidden" type="file" accept={generationType === "video" && !imageOnlyRefs(selectedModel) ? "image/*,video/*" : "image/*"} multiple disabled={!supportsLibrary} onChange={(event) => { addReferenceImages(event.target.files); event.target.value = ""; }} />
             <input ref={firstFrameInputRef} aria-label="上传视频首帧" className="visually-hidden" type="file" accept="image/*" disabled={!supportsFrames} onChange={(event) => { setFrame(event.target.files?.[0], setFirstFrame); event.target.value = ""; }} />
             <input ref={lastFrameInputRef} aria-label="上传视频尾帧" className="visually-hidden" type="file" accept="image/*" disabled={!supportsFrames} onChange={(event) => { setFrame(event.target.files?.[0], setLastFrame); event.target.value = ""; }} />
             <div className="composer-kind-tabs" role="tablist" aria-label="创作类型"><button role="tab" aria-selected={generationType === "video"} className={generationType === "video" ? "active" : ""} onClick={() => changeType("video")}><Video size={14} />视频</button><button role="tab" aria-selected={generationType === "image"} className={generationType === "image" ? "active" : ""} onClick={() => changeType("image")}><Image size={14} />图片</button></div>
             {submitError && <p className="create-submit-error">{submitError}</p>}
             <div className="creation-composer__body">
               <div className={`creation-reference-slots ${videoMode === "frames" && generationType === "video" ? "is-frames" : ""}`}>
-                {generationType === "video" && videoMode === "frames" ? <><UploadTile label="首帧" detail="起始画面" material={firstFrame} onClick={() => firstFrameInputRef.current?.click()} onRemove={() => setFirstFrame(null)} /><ArrowLeftRight className="frame-bridge" size={15} /><UploadTile label="尾帧" detail="结束画面" material={lastFrame} onClick={() => lastFrameInputRef.current?.click()} onRemove={() => setLastFrame(null)} /></> : supportsLibrary ? <>{referenceImages.map((item, index) => <UploadTile key={item.storageKey || item.id || `${item.url}-${index}`} label={item.name || `参考 ${index + 1}`} material={item} onRemove={() => setReferenceImages((items) => items.filter((_, itemIndex) => itemIndex !== index))} />)}<UploadTile label="参考" detail={generationType === "video" ? (isAgnes(selectedModel) ? "图片" : "图片/视频") : "支持多选"} onClick={() => referenceInputRef.current?.click()} /></> : null}
+                {generationType === "video" && videoMode === "frames" ? <><UploadTile label="首帧" detail="起始画面" material={firstFrame} onClick={() => firstFrameInputRef.current?.click()} onRemove={() => setFirstFrame(null)} /><ArrowLeftRight className="frame-bridge" size={15} /><UploadTile label="尾帧" detail="结束画面" material={lastFrame} onClick={() => lastFrameInputRef.current?.click()} onRemove={() => setLastFrame(null)} /></> : supportsLibrary ? <>{referenceImages.map((item, index) => <UploadTile key={item.storageKey || item.id || `${item.url}-${index}`} label={item.name || `参考 ${index + 1}`} material={item} onRemove={() => setReferenceImages((items) => items.filter((_, itemIndex) => itemIndex !== index))} />)}<UploadTile label="参考" detail={generationType === "video" ? (imageOnlyRefs(selectedModel) ? "图片" : "图片/视频") : "支持多选"} onClick={() => referenceInputRef.current?.click()} /></> : null}
               </div>
               <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendPrompt(); } }} placeholder={generationType === "video" ? "描述您想要生成的视频内容，例如，“一个孩子在公园里放风筝，金色阳光，镜头上移。”" : "描述您想生成的图片，例如，“夕阳映照在海面上，鲜艳的色彩与汹涌的波涛交相辉映。”"} />
             </div>
@@ -944,7 +968,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
                     return <button type="button" role="option" aria-selected={selected} className={selected ? "active" : ""} key={item.id} onClick={() => { setModel(String(item.id)); setOpenPanel(null); setAssetPickerOpen(false); }}><span><strong>{item.name}</strong><small>{item.description || item.badge || item.provider}</small></span>{selected && <Check size={14} />}</button>;
                   })}</div>}
                 </div>
-                {showVideoModes && <div className="creation-control-wrap"><button type="button" className="creation-pill" aria-expanded={openPanel === "mode"} onClick={() => setOpenPanel(openPanel === "mode" ? null : "mode")}><Film size={14} />{videoMode === "reference" ? "参考生成" : "首/尾帧"}<ChevronDown size={13} /></button>{openPanel === "mode" && <div className="creation-popover creation-mode-popover"><button className={videoMode === "reference" ? "active" : ""} onClick={() => { setVideoMode("reference"); setOpenPanel(null); }}><Images size={14} /><span><strong>参考生成</strong><small>{isAgnes(selectedModel) ? "可用图片作为参考（Flash 不支持参考视频）" : "可用图片或视频作为参考"}</small></span>{videoMode === "reference" && <Check size={14} />}</button><button className={videoMode === "frames" ? "active" : ""} disabled={!supportsFrames} onClick={() => { if (!supportsFrames) return; setVideoMode("frames"); setOpenPanel(null); }}><Film size={14} /><span><strong>首/尾帧</strong><small>{supportsFrames ? "控制视频起始与结束画面" : "当前模型不支持首尾帧"}</small></span>{videoMode === "frames" && <Check size={14} />}</button></div>}</div>}
+                {showVideoModes && <div className="creation-control-wrap"><button type="button" className="creation-pill" aria-expanded={openPanel === "mode"} onClick={() => setOpenPanel(openPanel === "mode" ? null : "mode")}><Film size={14} />{videoMode === "reference" ? "参考生成" : "首/尾帧"}<ChevronDown size={13} /></button>{openPanel === "mode" && <div className="creation-popover creation-mode-popover"><button className={videoMode === "reference" ? "active" : ""} onClick={() => { setVideoMode("reference"); setOpenPanel(null); }}><Images size={14} /><span><strong>参考生成</strong><small>{imageOnlyRefs(selectedModel) ? "可用图片作为参考（不支持参考视频）" : "可用图片或视频作为参考"}</small></span>{videoMode === "reference" && <Check size={14} />}</button><button className={videoMode === "frames" ? "active" : ""} disabled={!supportsFrames} onClick={() => { if (!supportsFrames) return; setVideoMode("frames"); setOpenPanel(null); }}><Film size={14} /><span><strong>首/尾帧</strong><small>{supportsFrames ? "控制视频起始与结束画面" : "当前模型不支持首尾帧"}</small></span>{videoMode === "frames" && <Check size={14} />}</button></div>}</div>}
                 <div className="creation-control-wrap"><button type="button" className="creation-pill creation-spec-pill" aria-expanded={openPanel === "params"} onClick={() => setOpenPanel(openPanel === "params" ? null : "params")}><Maximize2 size={14} />{generationType === "video" ? `${resolution} · ${duration}s · ${ratio}` : `${resolution} · ${quality} · ${ratio}`}<ChevronDown size={13} /></button>{openPanel === "params" && <ParameterPanel generationType={generationType} ratio={ratio} setRatio={setRatio} resolution={resolution} setResolution={setResolution} duration={duration} setDuration={setDuration} quality={quality} setQuality={setQuality} durationOptions={durationOptionsFor(selectedModel)} resolutionOptions={generationType === "video" ? videoResolutionsFor(selectedModel) : ["1K", "2K", "4K"]} />}</div>
                 <button type="button" className="creation-icon-action" title={supportsLibrary ? (generationType === "video" ? "从素材库引用图片或视频" : "从素材库引用") : "当前模型不支持参考素材"} aria-label="从素材库引用素材" disabled={!supportsLibrary} onClick={() => { if (supportsLibrary) openAssetPicker(); }}><AtSign size={16} /></button>
                 <button type="button" className="creation-icon-action" title="重置输入" aria-label="重置输入内容与参数" onClick={resetComposer}><RotateCcw size={15} /></button>

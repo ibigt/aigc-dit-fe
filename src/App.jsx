@@ -15,7 +15,7 @@ export function App() {
   }, []);
 
   if (loading) {
-    return <div className="app-boot">正在进入光驭…</div>;
+    return <div className="app-boot">正在进入同道…</div>;
   }
 
   return (

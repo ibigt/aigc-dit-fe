@@ -1,3 +1,4 @@
+
 const logoByModel = {
   "minimax-h3": "/model-logos/hailuo-color.svg",
   "wan-2-2": "/model-logos/alibabacloud-color.svg",
@@ -14,6 +15,7 @@ const logoByModel = {
   "qwen-image-3": "/model-logos/qwen-color.svg",
   "qwen-image-3-pro": "/model-logos/qwen-color.svg",
   "seedance-2": "/model-logos/doubao-color.svg",
+  "seedance-2.5": "/model-logos/doubao-color.svg",
   "seedance-2-fast": "/model-logos/doubao-color.svg",
   "seedance-2-global": "/model-logos/bytedance-color.svg",
   "happyhorse-1": "/model-logos/alibabacloud-color.svg",
@@ -48,6 +50,7 @@ const pricingByModel = {
   "qwen-image-3": pricing("张", "3 积分", "¥0.16", "0.5 积分", "¥0.02", "0.1 积分", "¥0.005"),
   "qwen-image-3-pro": pricing("张", "5 积分", "¥0.29", "0.8 积分", "¥0.04", "0.1 积分", "¥0.008"),
   "seedance-2": pricing("秒", "8 积分", "¥0.72"),
+  "seedance-2.5": pricing("秒", "8 积分", "按方舟计价"),
   "seedance-2-fast": pricing("秒", "5 积分", "¥0.58"),
   "seedance-2-global": pricing("秒", "9 积分", "¥0.68"),
   "happyhorse-1": pricing("秒", "6 积分", "¥0.40"),
@@ -69,8 +72,8 @@ function decorateModel(model) {
 }
 
 export const fallbackConfig = {
-  appName: "致启·光驭",
-  shortName: "光驭",
+  appName: "同道",
+  shortName: "同道",
   tagline: "把想象，编排成光影",
   description: "面向创作者的 AI 影像生成平台",
   apiBaseUrl: "/api",
@@ -96,6 +99,7 @@ export const fallbackConfig = {
     { id: "qwen-image-3", name: "Qwen Image 3.0", description: "文生图、参考图与编辑", badge: "图像", category: "image", provider: "ComfyUI", modelKey: "qwen-image-3", endpoint: "http://127.0.0.1:8188", enabled: true },
     { id: "qwen-image-3-pro", name: "Qwen Image 3.0 Pro", description: "专业商业视觉生产", badge: "图像", category: "image", provider: "ComfyUI", modelKey: "qwen-image-3-pro", endpoint: "http://127.0.0.1:8188", enabled: true },
     { id: "seedance-2", name: "Seedance 2.0", description: "文生视频，4–15 秒高质量有声成片", badge: "视频", category: "video", capabilities: ["video", "t2v"], provider: "RunningHub", modelKey: "seedance-2.0", endpoint: "https://www.runninghub.ai", enabled: true },
+    { id: "seedance-2.5", name: "Seedance 2.5", description: "火山方舟官方 API，4–15 秒 480P/720P 有声成片", badge: "视频", category: "video", capabilities: ["video", "t2v", "r2v", "i2v"], provider: "官方API", adapterKey: "seedance-2.5", modelKey: "doubao-seedance-2-5-260628", endpoint: "https://ark.cn-beijing.volces.com/api/v3", enabled: true },
     { id: "seedance-2-fast", name: "Seedance 2.0 Fast", description: "快速多模态视频生成", badge: "视频", category: "video", provider: "RunningHub", modelKey: "seedance-2.0-fast", endpoint: "https://www.runninghub.cn/api", enabled: true },
     { id: "seedance-2-global", name: "Seedance 2.0 海外版", description: "面向国际素材的合规生成链路", badge: "视频", category: "video", provider: "RunningHub", modelKey: "seedance-2.0-global", endpoint: "https://www.runninghub.cn/api", enabled: true },
     { id: "happyhorse-1", name: "HappyHorse 1.0", description: "文生视频、首帧与多图参考", badge: "视频", category: "video", provider: "手动配置", modelKey: "happyhorse-1.0", endpoint: "/mock-api/video", enabled: true },
