@@ -1,5 +1,5 @@
-import { AudioLines, Film, Lock, Plus, RefreshCw, Sparkles, Trash2, Video, Wand2, X, ZoomIn } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { AudioLines, Film, Lock, Plus, RefreshCw, Save, Sparkles, Trash2, Video, Wand2, X, ZoomIn } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   bindDramaVideoModel,
@@ -132,6 +132,8 @@ export function dramaStoryboardStatus(board) {
 function ShotInspector({ selected, generating, readOnly, lockedAssets, onSave, onZoom }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [casting, setCasting] = useState(false);
+  const promptRef = useRef(null);
+  const promptCountRef = useRef(null);
   const frozen = generating || readOnly;
   if (!selected) {
     return (
@@ -180,6 +182,13 @@ function ShotInspector({ selected, generating, readOnly, lockedAssets, onSave, o
       return;
     }
     commitCast({ ...cast, [key]: cast[key].filter((item) => item !== name) });
+  }
+
+  const promptInitial = selected.promptOverride ?? selected.compiledPrompt ?? "";
+
+  function savePrompt(value) {
+    if (value === promptInitial) return;
+    onSave(selected, { promptOverride: value }).catch(() => {});
   }
 
   return (
@@ -305,31 +314,40 @@ function ShotInspector({ selected, generating, readOnly, lockedAssets, onSave, o
             {selected.promptOverride
               ? <em className="drama-engine">手动</em>
               : <em className="drama-engine drama-engine--auto">自动</em>}
+            <em className="drama-prompt-field__count"><span ref={promptCountRef}>{promptInitial.length}</span> 字</em>
           </span>
           <textarea
+            ref={promptRef}
             rows={10}
-            value={selected.promptOverride ?? selected.compiledPrompt ?? ""}
             disabled={frozen}
+            defaultValue={promptInitial}
+            key={`${selected.id}:prompt:${promptInitial}`}
             placeholder={selected.compiledPrompt ? "" : "点击上方「重新编译」生成提示词，或直接手写覆盖"}
-            onChange={(e) => {
-              const value = e.target.value;
-              onSave(selected, { promptOverride: value }).catch(() => {});
+            onInput={(event) => {
+              if (promptCountRef.current) promptCountRef.current.textContent = String(event.target.value.length);
             }}
+            onBlur={(event) => savePrompt(event.target.value)}
           />
-          {selected.promptOverride && (
-            <div className="drama-prompt-field__actions">
+          <div className="drama-prompt-field__actions">
+            <button
+              type="button"
+              className="button button--primary drama-prompt-field__save"
+              disabled={frozen}
+              onClick={() => savePrompt(promptRef.current?.value ?? "")}
+            >
+              <Save size={14} /> 保存
+            </button>
+            {selected.promptOverride && (
               <button
                 type="button"
                 className="drama-tool-button drama-tool-button--ghost"
                 disabled={frozen}
-                onClick={() => {
-                  onSave(selected, { promptOverride: "" }).catch(() => {});
-                }}
+                onClick={() => savePrompt("")}
               >
                 恢复自动编译
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </label>
       </div>
     </aside>
