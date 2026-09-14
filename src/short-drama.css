@@ -13,13 +13,10 @@
 .drama-project-card { position: relative; min-width: 0; overflow: hidden; border: 1px solid #e4e7eb; border-radius: 14px; background: #fff; box-shadow: 0 7px 22px rgba(35,43,54,.05); cursor: pointer; transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
 .drama-project-card__open { position: absolute; z-index: 2; inset: 0; border: 0; border-radius: inherit; background: transparent; cursor: pointer; }.drama-project-card__open:focus-visible { outline: 2px solid var(--primary); outline-offset: -3px; }
 .drama-project-card:hover { transform: translateY(-3px); border-color: #ccd1f1; box-shadow: 0 15px 36px rgba(39,49,70,.1); }
-.drama-project-card__cover { position: relative; aspect-ratio: 1.52; overflow: hidden; background: #e8ebf0; }
-.drama-project-card__cover.is-empty { background: #e8ebf0; }
-.drama-project-card__placeholder { width: 100%; height: 100%; background: #e8ebf0; }
-.drama-project-card__cover:not(.is-empty)::after { content: ""; position: absolute; inset: 45% 0 0; background: linear-gradient(transparent,rgba(7,10,15,.72)); pointer-events: none; }
+.drama-project-card__cover { position: relative; aspect-ratio: 1.52; overflow: hidden; background: #202731; }
 .drama-project-card__cover > img { width: 100%; height: 100%; object-fit: cover; transition: transform .4s ease; }.drama-project-card:hover .drama-project-card__cover > img { transform: scale(1.035); }
+.drama-project-card__cover::after { content: ""; position: absolute; inset: 45% 0 0; background: linear-gradient(transparent,rgba(7,10,15,.72)); pointer-events: none; }
 .drama-project-card__cover > span { position: absolute; z-index: 1; right: 10px; bottom: 9px; color: white; font-size: 9px; }
-.drama-project-card__cover.is-empty > span { color: #6d7680; }
 .drama-project-card__cover > button { position: absolute; z-index: 3; right: 8px; top: 8px; width: 30px; height: 30px; border: 1px solid rgba(255,255,255,.18); border-radius: 9px; display: grid; place-items: center; color: white; background: rgba(16,21,28,.58); backdrop-filter: blur(10px); }
 .drama-project-menu { position: absolute; z-index: 5; right: 8px; top: 43px; width: 128px; padding: 5px; border: 1px solid rgba(255,255,255,.14); border-radius: 9px; color: #fff; background: rgba(21,27,35,.94); box-shadow: 0 12px 30px rgba(0,0,0,.25); }
 .drama-project-menu label, .drama-project-menu button { width: 100%; min-height: 30px; padding: 0 8px; border: 0; border-radius: 6px; display: flex; align-items: center; gap: 7px; color: inherit; background: none; font-size: 9px; text-align: left; }.drama-project-menu label:hover, .drama-project-menu button:hover { background: rgba(255,255,255,.09); }.drama-project-menu input { display: none; }
@@ -63,9 +60,7 @@
 .console-shell[data-theme="dark"] :is(.drama-project-card__body footer,.drama-script-editor>header,.drama-script-editor footer,.drama-step-title,.shot-table td,.storyboard-grid footer,.script-chat>header,.script-document>header,.script-outline,.script-document>footer) { border-color: #2d3643; }
 .console-shell[data-theme="dark"] .shot-table th { color: #a9b3bf; }.console-shell[data-theme="dark"] .shot-table td { color: #c3ccd7; }.console-shell[data-theme="dark"] .script-message--user p { color: #fff; }.console-shell[data-theme="dark"] .script-history>div button.active,.console-shell[data-theme="dark"] .drama-episode-panel>button.active,.console-shell[data-theme="dark"] .script-outline button.active { background: #252d45; }.console-shell[data-theme="dark"] .drama-view-switch { background: #202731; }.console-shell[data-theme="dark"] .drama-view-switch button.active { background: #30394a; }.console-shell[data-theme="dark"] .film-ready,.console-shell[data-theme="dark"] .drama-toast { color: #91d1ac; background: #1b3329; border-color: #31503f; }
 .console-shell[data-theme="dark"] .script-new { background: #5360c8; }.console-shell[data-theme="dark"] .script-history>div strong { color: #dbe1ea; }.console-shell[data-theme="dark"] .script-history>div button.active strong { color: #cbd1ff; }.console-shell[data-theme="dark"] .script-message--user>div { background: #5965cd; }.console-shell[data-theme="dark"] .script-mode-chip { color: #cbd1ff; background: #29324a; }.console-shell[data-theme="dark"] .script-composer>div:last-child>button:first-child { color: #c0c8d4; }.console-shell[data-theme="dark"] .script-mode-cards em { color: #adb6ff; }
-.console-shell[data-theme="dark"] .drama-project-card__cover,
-.console-shell[data-theme="dark"] .drama-project-card__placeholder { background: #202731; }
-.console-shell[data-theme="dark"] .drama-project-card__cover.is-empty > span { color: #aab4c1; }
+.console-shell[data-theme="dark"] .drama-progress b { color: #b7c0cd; }.console-shell[data-theme="dark"] .drama-project-new strong { color: #e1e6ed; }
 .console-shell[data-theme="dark"] .drama-back,.console-shell[data-theme="dark"] .drama-episode-panel>button { color: #b7c0cd; }.console-shell[data-theme="dark"] .drama-episode-panel>button.active em { color: #b5bdff; }.console-shell[data-theme="dark"] .director-setting { color: #cbd1ff; background: #252d45; border-color: #3b4660; }.console-shell[data-theme="dark"] .director-setting small { color: #b7c0cd; }.console-shell[data-theme="dark"] .drama-settings-note strong { color: #e1e6ed; }
 .console-shell[data-theme="dark"] .drama-view-switch button { color: #b7c0cd; }.console-shell[data-theme="dark"] .drama-view-switch button.active { color: #cbd1ff; }.console-shell[data-theme="dark"] .shot-table td:nth-child(6)>button { background: #5360c8; }.console-shell[data-theme="dark"] .shot-table .shot-remove { color: #e19aa2; }
 .console-shell[data-theme="dark"] :is(.drama-create-form>label,.director-form>label,.drama-create-form>div>label) { color: #b7c0cd; }.console-shell[data-theme="dark"] :is(.drama-create-form footer button,.director-form footer button,.drama-dialog>header button) { color: #dce2eb; background: #202731; border-color: #303a47; }
@@ -649,14 +644,7 @@
 .youxi-shot-thumb.active { border-color: #6572ed; box-shadow: 0 0 0 2px rgba(101,114,237,.13); }
 .youxi-shot-thumb__preview { min-width: 0; min-height: 0; padding: 0; display: grid; grid-template-rows: 29px 91px 22px; color: inherit; border: 0; background: transparent; text-align: left; }
 .youxi-shot-thumb__preview > span { padding: 7px 9px 0; font-size: 11px; font-weight: 700; }
-.youxi-shot-thumb__preview img,
-.youxi-shot-thumb__preview video {
-  width: 100%;
-  height: 91px;
-  object-fit: cover;
-  pointer-events: none;
-  background: #111720;
-}
+.youxi-shot-thumb__preview img { width: 100%; height: 91px; object-fit: cover; }
 .youxi-shot-thumb__preview small { padding: 4px 8px 0; color: #a2626c; font-size: 9px; }
 .youxi-shot-thumb__preview small.is-ready { color: #347b61; }
 .youxi-shot-thumb > footer { display: grid; grid-template-columns: repeat(3,1fr); align-items: center; border-top: 1px solid #edf0f3; }
@@ -1010,12 +998,8 @@
 /* Wave A: existing step panels stay scrollable inside the new shell. */
 .youxi-workspace .drama-step.drama-step--slot { overflow: auto; background: transparent; }
 .youxi-workspace .drama-step--slot > .drama-script,
+.youxi-workspace .drama-step--slot > .drama-asset-board,
 .youxi-workspace .drama-step--slot > .drama-storyboard { height: auto; min-height: 100%; }
-.youxi-workspace .drama-step.drama-step--slot:has(> .youxi-subject-layout) { overflow: hidden; }
-.youxi-workspace .drama-step--slot > .youxi-subject-layout {
-  height: 100%;
-  min-height: 0;
-}
 .youxi-film-layout:not(:has(.youxi-chapters)) { grid-template-columns: minmax(0,1fr); }
 .youxi-film-main:not(:has(> header)) { grid-template-rows: minmax(0,1fr); }
 .youxi-film-layout .youxi-final-player { width: 100%; min-height: 0; }
@@ -1237,40 +1221,3 @@
   .youxi-storyboard-layout--board .youxi-shots-center { height: auto; }
   .youxi-storyboard-layout--board > .youxi-inspector { min-height: 480px; border-left: 0; border-top: 1px solid var(--drama-line); }
 }
-
-/* Wave B subjects: category rail + cards + inspector, no voice UI. */
-.youxi-subject-main { grid-template-rows: 52px minmax(0, 1fr); }
-.youxi-subject-body {
-  min-height: 0;
-  overflow: hidden;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-}
-.youxi-subject-body > .youxi-subject-grid { min-height: 0; }
-.youxi-subject-gate {
-  margin: 12px 16px 0;
-  grid-template-columns: 28px 1fr;
-}
-.youxi-subject-error { margin: 8px 16px 0; }
-.youxi-field--compact { margin-top: 12px; }
-.youxi-field--compact select { width: 100%; }
-.youxi-field--summary textarea { min-height: 72px; }
-.youxi-inspector-actions { margin-top: 18px; display: grid; gap: 8px; }
-.youxi-inspector-actions .button { height: 40px; }
-.youxi-inspector-actions p { margin: 0; color: #687482; font-size: 11px; line-height: 1.6; }
-.youxi-material-block .youxi-subject-media-preview {
-  width: 100%;
-  max-width: 100%;
-  height: auto;
-  max-height: 220px;
-  object-fit: cover;
-}
-.youxi-subject-card__select > div.is-generating::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: rgba(12, 16, 22, .28);
-}
-.youxi-subject-inspector .youxi-model-row { align-items: stretch; }
-.youxi-subject-inspector .youxi-model-row .button { white-space: nowrap; }
-.console-shell[data-theme="dark"] .youxi-inspector-actions p { color: #aeb9c6; }
