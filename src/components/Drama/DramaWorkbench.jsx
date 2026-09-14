@@ -10,8 +10,8 @@ import { DramaStoryboard } from "./DramaStoryboard.jsx";
 import { dramaStyleOf } from "./dramaStyles.js";
 
 const STEPS = [
-  { id: "script", label: "剧本", action: "主体提取" },
-  { id: "subjects", label: "主体", action: "智能分镜" },
+  { id: "script", label: "剧本", action: "资产提取" },
+  { id: "subjects", label: "资产", action: "智能分镜" },
   { id: "shots", label: "分镜", action: "剪辑成片" },
   { id: "film", label: "成片", action: "导出" },
 ];

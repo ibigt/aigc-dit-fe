@@ -16,7 +16,7 @@ import {
 import { mediaUrl } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 
-const DURATIONS = [5, 10, 15];
+const DURATIONS = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 const CAST_TYPES = [
   { type: "角色", key: "characterNames" },
@@ -264,7 +264,7 @@ function ShotInspector({ selected, generating, lockedAssets, onSave, onZoom }) {
                   </div>
                 );
               })}
-              {!lockedAssets?.length && <i>主体页锁定的设定图才能作为本镜参考，请先去主体页确认。</i>}
+              {!lockedAssets?.length && <i>资产页锁定的设定图才能作为本镜参考，请先去资产页确认。</i>}
             </div>
           )}
         </section>
@@ -644,8 +644,8 @@ export function DramaStoryboard({ series, episode }) {
             <label className="youxi-shot-model">
               时长
               <select
-                aria-label="拆镜时长"
-                value={draftDurationSec}
+                aria-label="分镜时长"
+                value={clampDuration(durationOptions, selected?.durationSec ?? draftDurationSec)}
                 disabled={generating}
                 onChange={(event) => {
                   const next = Number(event.target.value);
@@ -694,7 +694,7 @@ export function DramaStoryboard({ series, episode }) {
             <Lock size={16} />
             <div>
               <strong>先锁定分场剧本</strong>
-              <p>剧本锁定后才能拆分镜。未锁定主体不能作为参考图。</p>
+              <p>剧本锁定后才能拆分镜。未锁定资产不能作为参考图。</p>
             </div>
           </div>
         )}
@@ -767,7 +767,7 @@ export function DramaStoryboard({ series, episode }) {
                     <strong>{generating ? "正在生成视频" : "尚未生成视频"}</strong>
                     <span>
                       {generating
-                        ? "默认 r2v：锁定主体参考图 + 编译后的提示词"
+                        ? "默认 r2v：锁定资产参考图 + 编译后的提示词"
                         : selected?.compiledStale
                           ? "身份或风格已变，请重新编译后再出片"
                           : "将按本镜角色 / 场景 / 道具自动绑定 Picture 参考图后出片"}
@@ -811,20 +811,21 @@ export function DramaStoryboard({ series, episode }) {
                 const active = selected?.id === shot.id;
                 const generatingShot = isShotGenerating(shot, busy);
                 const ready = Boolean(shot.videoKey) && !generatingShot;
-                const poster = ready ? shotPoster(shot) : "";
                 return (
                   <div className="youxi-filmstrip-unit" key={shot.id}>
                     <button
                       type="button"
-                      className={`youxi-shot-thumb ${active ? "active" : ""} ${poster ? "is-zoomable" : ""}`}
+                      className={`youxi-shot-thumb ${active ? "active" : ""}`}
                       onClick={() => {
                         setShotId(shot.id);
                         setActionError("");
-                        if (poster) setPreview({ src: poster, title: `镜 ${shot.shotIndex}${shot.title ? `「${shot.title}」` : ""}` });
                       }}
                     >
                       <span className="youxi-shot-thumb__preview">
-                        <span>镜 {shot.shotIndex}</span>
+                        <span className="youxi-shot-thumb__label">
+                          <b>镜 {shot.shotIndex}</b>
+                          <em title={shot.title || ""}>{shot.title?.trim() || "未命名"}</em>
+                        </span>
                         <ShotThumbPreview shot={shot} busy={busy} />
                         <small className={ready ? "is-ready" : ""}>
                           {generatingShot

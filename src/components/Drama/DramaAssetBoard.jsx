@@ -5,6 +5,7 @@ import {
   Lock,
   Plus,
   RefreshCw,
+  Save,
   Sparkles,
   Trash2,
   Upload,
@@ -77,7 +78,7 @@ function SubjectCreateDialog({ type, pending, error, onClose, onCreate }) {
       <section className="drama-dialog" role="dialog" aria-modal="true">
         <header>
           <div>
-            <span>统一主体设定</span>
+            <span>统一资产设定</span>
             <h2>新增{type}</h2>
           </div>
         </header>
@@ -151,7 +152,9 @@ function SubjectInspector({
   onSummaryChange,
   onSummaryBlur,
   onPromptChange,
-  onPromptBlur,
+  onPromptSave,
+  promptChanged,
+  promptSaving,
   onBindModel,
   onResolution,
   onGenerate,
@@ -164,7 +167,7 @@ function SubjectInspector({
   return (
     <aside className="youxi-inspector youxi-subject-inspector">
       <div className="youxi-inspector-tabs">
-        <button type="button" className="active">主体图</button>
+        <button type="button" className="active">资产图</button>
       </div>
       <div className="youxi-inspector-scroll">
         {asset ? (
@@ -190,11 +193,18 @@ function SubjectInspector({
                 value={prompt}
                 maxLength={PROMPT_MAX}
                 onChange={onPromptChange}
-                onBlur={onPromptBlur}
                 placeholder="提取后会自动带出设定图提示词，可按角色/场景/道具继续改"
               />
             </label>
             <div className="field-count">{(prompt || "").length} / {PROMPT_MAX}</div>
+            <button
+              className={`button youxi-prompt-save ${promptChanged ? "button--primary" : ""}`}
+              type="button"
+              disabled={!promptChanged || generating || busy || promptSaving}
+              onClick={onPromptSave}
+            >
+              <Save size={14} /> {promptSaving ? "保存中…" : "保存修改"}
+            </button>
             <label className="youxi-field youxi-field--compact">
               <span>出图分辨率</span>
               <select aria-label="出图分辨率" value={resolution} onChange={(event) => onResolution(event.target.value)}>
@@ -229,7 +239,7 @@ function SubjectInspector({
             {asset.genErrorMessage && <p className="drama-form-error">{asset.genErrorMessage}</p>}
             <section className="youxi-material-block">
               <header>
-                <strong>主体图</strong>
+                <strong>资产图</strong>
                 <div className="material-actions">
                   <button type="button" onClick={onUploadClick} disabled={generating || busy}>
                     <Upload size={14} /> 本地上传
@@ -241,14 +251,14 @@ function SubjectInspector({
                   <button
                     className="youxi-media-zoom"
                     type="button"
-                    aria-label={`放大${asset.name}主体图`}
+                    aria-label={`放大${asset.name}资产图`}
                     onClick={onZoom}
                   >
                     <img
                       key={src}
                       className="youxi-subject-media-preview"
                       src={src}
-                      alt={`${asset.name}主体图`}
+                      alt={`${asset.name}资产图`}
                     />
                   </button>
                 ) : (
@@ -266,7 +276,7 @@ function SubjectInspector({
                 disabled={busy || generating || !asset.imageStorageKey || asset.status === "已锁定"}
                 onClick={onLock}
               >
-                {asset.status === "已锁定" ? "已锁定" : busy ? "锁定中…" : "锁定主体"}
+                {asset.status === "已锁定" ? "已锁定" : busy ? "锁定中…" : "锁定资产"}
               </button>
               <p>锁定且有图后，才能作为分镜参考。改提示词或重生成会重新待确认。</p>
             </div>
@@ -445,7 +455,7 @@ export function DramaAssetBoard({ series, episode }) {
       return imagePrompt && !item.imageStorageKey && !item.generating && !isBusy(item.id, "generate");
     }).slice(0, BATCH_LIMIT);
     if (!pending.length) {
-      setActionError("当前分类没有待生成的主体图");
+      setActionError("当前分类没有待生成的资产图");
       return;
     }
     setActionError("");
@@ -493,15 +503,27 @@ export function DramaAssetBoard({ series, episode }) {
   const error = bindMutation.error || extractMutation.error || lockScriptMutation.error || createMutation.error;
   const selectedBusy = isBusy(selected?.id, "lock") || isBusy(selected?.id, "save") || isBusy(selected?.id, "upload");
   const selectedGenerating = Boolean(selected?.generating) || isBusy(selected?.id, "generate");
+  const promptChanged = Boolean(selected) && promptDraft.trim() !== promptOf(selected).trim();
+
+  async function savePrompt() {
+    if (!selected || !promptChanged) return;
+    markBusy(selected.id, "save", true);
+    try {
+      await saveFields(selected, { imagePrompt: promptDraft });
+      invalidate();
+    } finally {
+      markBusy(selected.id, "save", false);
+    }
+  }
 
   return (
     <div className="drama-asset-board youxi-subject-layout">
       <aside className="youxi-subject-nav">
         <header>
-          <strong>主体分类</strong>
+          <strong>资产分类</strong>
           <span>共{assets.length}个</span>
         </header>
-        <div className="youxi-subject-tabs" role="tablist" aria-label="主体类型">
+        <div className="youxi-subject-tabs" role="tablist" aria-label="资产类型">
           {TYPES.map((item) => (
             <button
               key={item.id}
@@ -564,7 +586,7 @@ export function DramaAssetBoard({ series, episode }) {
               <Lock size={16} />
               <div>
                 <strong>请先锁定分场剧本</strong>
-                <p>锁定后可从剧本当中提取角色、场景、道具。未锁定主体不能进分镜。</p>
+                <p>锁定后可从剧本当中提取角色、场景、道具。未锁定资产不能进分镜。</p>
               </div>
             </div>
           )}
@@ -618,7 +640,7 @@ export function DramaAssetBoard({ series, episode }) {
                           <div className="youxi-subject-empty">
                             <ImageIcon size={31} />
                             <b>{generating ? "生成中" : "上传图片"}</b>
-                            <small>也可在右侧生成主体图</small>
+                            <small>也可在右侧生成资产图</small>
                           </div>
                         )}
                       </div>
@@ -650,6 +672,8 @@ export function DramaAssetBoard({ series, episode }) {
         generating={selectedGenerating}
         modelBound={modelBound}
         busy={selectedBusy}
+        promptChanged={promptChanged}
+        promptSaving={isBusy(selected?.id, "save")}
         actionError=""
         onNameChange={(event) => setNameDraft(event.target.value)}
         onNameBlur={() => {
@@ -665,10 +689,7 @@ export function DramaAssetBoard({ series, episode }) {
           setPromptDirty(true);
           setPromptDraft(event.target.value);
         }}
-        onPromptBlur={() => {
-          if (!selected || promptDraft.trim() === promptOf(selected).trim()) return;
-          saveFields(selected).then(invalidate).catch((err) => setActionError(err.message));
-        }}
+        onPromptSave={() => savePrompt().catch((err) => setActionError(err.message))}
         onBindModel={(value) => {
           setImageModelId(value);
           if (value) bindMutation.mutate(value);
