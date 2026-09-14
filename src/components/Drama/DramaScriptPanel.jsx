@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Lock, RectangleHorizontal, RectangleVertical, RefreshCw, Save, Square, Wand2, Sparkles } from "lucide-react";
-import { analyzeDramaScript, fetchDramaVideoModels, generateDramaScript, importDramaScript, lockDramaScript, updateDramaSeries } from "../../api/drama.js";
+import { FileText, RectangleHorizontal, RectangleVertical, Save, Square, Sparkles } from "lucide-react";
+import { analyzeDramaScript, fetchDramaVideoModels, updateDramaSeries } from "../../api/drama.js";
 import { DramaStylePicker } from "./DramaStylePicker.jsx";
 import { DEFAULT_DRAMA_STYLE_KEY } from "./dramaStyles.js";
 
@@ -108,7 +108,6 @@ export function DramaScriptPanel({ episode, series }) {
   const [raw, setRaw] = useState("");
   const [analysis, setAnalysis] = useState(null);
   const [analysisStartedAt, setAnalysisStartedAt] = useState(null);
-  const [runStartedAt, setRunStartedAt] = useState(null);
   const [analysisNow, setAnalysisNow] = useState(Date.now());
   const [draft, setDraft] = useState(() => settingsDraftFrom(series));
   const [savedDraft, setSavedDraft] = useState(() => settingsDraftFrom(series));
@@ -139,17 +138,6 @@ export function DramaScriptPanel({ episode, series }) {
     return updateDramaSeries(series.id, seriesPayload(next));
   }
 
-  const run = useMutation({
-    mutationFn: (mode) => {
-      if (!episode) throw new Error("请先创建剧集");
-      if (mode === "import") return importDramaScript(episode.id, raw);
-      if (mode === "generate") return generateDramaScript(episode.id, raw);
-      return lockDramaScript(episode.id);
-    },
-    onSuccess: () => { setRunStartedAt(null); refreshSeries(); },
-    onError: () => { setRunStartedAt(null); refreshSeries(); },
-  });
-
   const analyze = useMutation({
     mutationFn: async () => {
       if (!episode) throw new Error("请先创建剧集");
@@ -177,10 +165,10 @@ export function DramaScriptPanel({ episode, series }) {
   });
 
   useEffect(() => {
-    if (!analysisStartedAt && !runStartedAt) return undefined;
+    if (!analysisStartedAt) return undefined;
     const timer = window.setInterval(() => setAnalysisNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [analysisStartedAt, runStartedAt]);
+  }, [analysisStartedAt]);
 
   const settings = useMutation({
     mutationFn: persistSettings,
@@ -198,7 +186,6 @@ export function DramaScriptPanel({ episode, series }) {
   });
 
   const scenes = episode?.script?.scenes || [];
-  const locked = episode?.status === "已锁定";
   const dirty = !sameSettings(draft, savedDraft);
   const resolutionOptions = useMemo(
     () => resolutionOptionsFor((videoModelsQuery.data || []).find((item) => String(item.id) === String(series?.videoModelId))),
@@ -212,8 +199,8 @@ export function DramaScriptPanel({ episode, series }) {
       defaultResolution: resolutionOptions[resolutionOptions.length - 1],
     }));
   }, [series?.id, draft.defaultResolution, resolutionOptions]);
-  const analyzing = analyze.isPending || run.isPending;
-  const progressStartedAt = analysisStartedAt || runStartedAt;
+  const analyzing = analyze.isPending;
+  const progressStartedAt = analysisStartedAt;
   const elapsed = progressStartedAt ? Math.max(0, Math.floor((analysisNow - progressStartedAt) / 1000)) : 0;
   const currentStage = analysisStage(elapsed);
   const elapsedLabel = `${Math.floor(elapsed / 60)}分${String(elapsed % 60).padStart(2, "0")}秒`;
@@ -243,15 +230,14 @@ export function DramaScriptPanel({ episode, series }) {
           />
         </label>
 
-        {episode?.canGenerate === false && episode?.textServiceAvailable && !locked && (
+        {episode?.canGenerate === false && episode?.textServiceAvailable && (
           <p className="drama-script__hint">
             {series?.textModelId
-              ? "已绑定文本模型，但通道不可用（请到管理端检查 Base URL / 适配协议）。未修好前导入只走规则分场。"
-              : "该项目未绑定可用文本模型，只会走规则分场。"}
+              ? "已绑定文本模型，但通道不可用（请到管理端检查 Base URL / 适配协议）。"
+              : "该项目未绑定可用文本模型。"}
           </p>
         )}
-        {run.isError && <p className="drama-form-error">{run.error.message}</p>}
-        {locked && <p className="drama-script__hint">已锁定。再改原文会回到待确认，下游资产与分镜标为已过期。</p>}
+        {analyze.isError && <p className="drama-form-error">{analyze.error.message}</p>}
 
         <div className="drama-script__actions">
           <button
@@ -261,21 +247,6 @@ export function DramaScriptPanel({ episode, series }) {
             onClick={() => { setAnalysis(null); setAnalysisStartedAt(Date.now()); setAnalysisNow(Date.now()); analyze.mutate(); }}
           >
             <Sparkles size={15} /> {analyzing ? "分析中…" : "一键分析剧本"}
-          </button>
-          <button className="button" type="button" disabled={!raw.trim() || analyzing || locked} onClick={() => { setAnalysis(null); setRunStartedAt(Date.now()); setAnalysisNow(Date.now()); run.mutate("import"); }}>
-            <RefreshCw size={15} /> {run.isPending && run.variables === "import" ? "解析中…" : "导入并分场"}
-          </button>
-          <button
-            className="button"
-            type="button"
-            disabled={!raw.trim() || analyzing || !episode?.canGenerate || locked}
-            title={episode?.canGenerate ? "" : "项目需绑定已启用的文本模型"}
-            onClick={() => { setAnalysis(null); setRunStartedAt(Date.now()); setAnalysisNow(Date.now()); run.mutate("generate"); }}
-          >
-            <Wand2 size={15} /> {run.isPending && run.variables === "generate" ? "生成中…" : "文本模型生成"}
-          </button>
-          <button className="button" type="button" disabled={scenes.length === 0 || analyzing || locked} onClick={() => run.mutate("lock")}>
-            <Lock size={15} /> {locked ? "已锁定" : "锁定剧本"}
           </button>
         </div>
 
