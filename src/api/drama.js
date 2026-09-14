@@ -97,6 +97,12 @@ export function uploadDramaAssetImage(assetId, file) {
   return api.post(`/drama/assets/${assetId}/upload`, data);
 }
 
+export function uploadDramaAssetVoiceReference(assetId, file) {
+  const data = new FormData();
+  data.append("file", file);
+  return api.post(`/drama/assets/${assetId}/voice-reference`, data);
+}
+
 export function generateDramaAssetImage(assetId, payload = {}) {
   return api.post(`/drama/assets/${assetId}/generate`, payload);
 }

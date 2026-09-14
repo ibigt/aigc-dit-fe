@@ -1,4 +1,4 @@
-import { Film, Lock, Plus, RefreshCw, Sparkles, Video, Wand2, X, ZoomIn } from "lucide-react";
+import { AudioLines, Film, Lock, Plus, RefreshCw, Sparkles, Video, Wand2, X, ZoomIn } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -384,6 +384,7 @@ export function DramaStoryboard({ series, episode }) {
   const selected = shots.find((item) => item.id === shotId) || shots[0];
   const scriptLocked = activeEpisode?.status === "已锁定";
   const videoModels = videoModelsQuery.data || [];
+  const selectedVideoModel = videoModels.find((item) => String(item.id) === String(videoModelId));
   const durationOptions = useMemo(
     () => durationOptionsFor(videoModels.find((item) => String(item.id) === String(videoModelId))),
     [videoModels, videoModelId]
@@ -636,11 +637,17 @@ export function DramaStoryboard({ series, episode }) {
                 )}
                 {videoModels.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.name}{item.provider ? ` · ${item.provider}` : ""}
+                    {item.name}{item.provider ? ` · ${item.provider}` : ""}{item.supportsNativeAudio ? " · 原生有声" : ""}
                   </option>
                 ))}
               </select>
             </label>
+            {selectedVideoModel?.supportsNativeAudio && (
+              <span className="youxi-native-audio-badge">
+                <AudioLines size={13} /> 视频与声音一次生成
+                {selectedVideoModel.supportsAudioReference ? " · 支持角色音色参考" : ""}
+              </span>
+            )}
             <label className="youxi-shot-model">
               时长
               <select

@@ -1,5 +1,6 @@
 import {
   Clapperboard,
+  AudioLines,
   Image as ImageIcon,
   ImagePlus,
   Lock,
@@ -26,6 +27,7 @@ import {
   pollDramaAssetGenerate,
   updateDramaAsset,
   uploadDramaAssetImage,
+  uploadDramaAssetVoiceReference,
 } from "../../api/drama.js";
 import { mediaUrl } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
@@ -159,6 +161,11 @@ function SubjectInspector({
   onResolution,
   onGenerate,
   onUploadClick,
+  voiceLock,
+  voiceBusy,
+  onVoiceLockChange,
+  onVoiceSave,
+  onVoiceUploadClick,
   onZoom,
   onLock,
 }) {
@@ -187,6 +194,26 @@ function SubjectInspector({
                 placeholder={`${type}身份、外形或用途，入梦/换装须独立成条`}
               />
             </label>
+            {type === "角色" && (
+              <section className="drama-native-voice">
+                <header>
+                  <strong><AudioLines size={14} /> 原生视频音色</strong>
+                  <em>{asset.voiceReferenceUrl ? "已绑定参考音频" : "文字描述"}</em>
+                </header>
+                <label className="youxi-field">
+                  <span>音色描述</span>
+                  <input value={voiceLock} onChange={onVoiceLockChange} placeholder="例：30岁低沉男声，普通话，克制冷静" />
+                </label>
+                {asset.voiceReferenceUrl && <audio controls preload="metadata" src={mediaUrl(asset.voiceReferenceUrl) || asset.voiceReferenceUrl} />}
+                <div>
+                  <button type="button" onClick={onVoiceUploadClick} disabled={voiceBusy}>
+                    <Upload size={13} /> {asset.voiceReferenceUrl ? "更换参考音频" : "上传参考音频"}
+                  </button>
+                  <button type="button" onClick={onVoiceSave} disabled={voiceBusy}>保存音色</button>
+                </div>
+                <small>对白、环境声和音效随视频一次生成；参考音频只锁定音色身份。</small>
+              </section>
+            )}
             <label className="youxi-field">
               <span>图片提示词</span>
               <textarea
@@ -314,6 +341,7 @@ export function DramaAssetBoard({ series, episode }) {
   const episodeId = episode?.id;
   const seriesId = series?.id;
   const fileRef = useRef(null);
+  const voiceFileRef = useRef(null);
   const [type, setType] = useState("角色");
   const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -322,6 +350,7 @@ export function DramaAssetBoard({ series, episode }) {
   const [nameDraft, setNameDraft] = useState("");
   const [summaryDraft, setSummaryDraft] = useState("");
   const [promptDraft, setPromptDraft] = useState("");
+  const [voiceLockDraft, setVoiceLockDraft] = useState("");
   const [promptDirty, setPromptDirty] = useState(false);
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
@@ -369,6 +398,7 @@ export function DramaAssetBoard({ series, episode }) {
     setNameDraft(selected?.name || "");
     setSummaryDraft(identityOf(selected));
     setPromptDraft(promptOf(selected));
+    setVoiceLockDraft(selected?.voiceLock || "");
   }, [selected?.id]);
 
   useEffect(() => {
@@ -496,6 +526,28 @@ export function DramaAssetBoard({ series, episode }) {
       invalidate();
     } finally {
       markBusy(selected.id, "upload", false);
+    }
+  }
+
+  async function saveVoice() {
+    if (!selected) return;
+    markBusy(selected.id, "voice", true);
+    try {
+      await updateDramaAsset(selected.id, { voiceLock: voiceLockDraft.trim() });
+      invalidate();
+    } finally {
+      markBusy(selected.id, "voice", false);
+    }
+  }
+
+  async function onVoiceUpload(file) {
+    if (!file || !selected) return;
+    markBusy(selected.id, "voice", true);
+    try {
+      await uploadDramaAssetVoiceReference(selected.id, file);
+      invalidate();
+    } finally {
+      markBusy(selected.id, "voice", false);
     }
   }
 
@@ -697,11 +749,28 @@ export function DramaAssetBoard({ series, episode }) {
         onResolution={setResolution}
         onGenerate={() => selected && generate(selected).catch((err) => setActionError(err.message))}
         onUploadClick={() => fileRef.current?.click()}
+        voiceLock={voiceLockDraft}
+        voiceBusy={isBusy(selected?.id, "voice")}
+        onVoiceLockChange={(event) => setVoiceLockDraft(event.target.value)}
+        onVoiceSave={() => saveVoice().catch((err) => setActionError(err.message))}
+        onVoiceUploadClick={() => voiceFileRef.current?.click()}
         onZoom={() => selected && setPreview({
           src: mediaUrl(selected.imageStorageKey || selected.imageUrl),
           title: selected.name,
         })}
         onLock={() => selected && confirm(selected).catch((err) => setActionError(err.message))}
+      />
+
+      <input
+        ref={voiceFileRef}
+        type="file"
+        accept="audio/*,.mp3,.wav,.m4a,.aac"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          onVoiceUpload(file).catch((err) => setActionError(err.message));
+        }}
       />
 
       <input
