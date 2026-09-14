@@ -666,10 +666,10 @@ export function DramaStoryboard({ series, episode }) {
                 ))}
               </select>
             </label>
-            {selectedVideoModel?.supportsNativeAudio && (
+            {(selectedVideoModel?.supportsNativeAudio || selectedVideoModel?.supportsAudioReference) && (
               <span className="youxi-native-audio-badge">
-                <AudioLines size={13} /> 视频与声音一次生成
-                {selectedVideoModel.supportsAudioReference ? " · 支持角色音色参考" : ""}
+                <AudioLines size={13} /> {selectedVideoModel.supportsNativeAudio ? "视频与声音一次生成" : "支持参考音频"}
+                {selectedVideoModel.supportsAudioReference ? ` · 最多 ${selectedVideoModel.maxAudioReferences || 1} 段${selectedVideoModel.supportsAudioOnlyReference ? " · 可仅音频" : ""}` : ""}
               </span>
             )}
             <label className="youxi-shot-model">

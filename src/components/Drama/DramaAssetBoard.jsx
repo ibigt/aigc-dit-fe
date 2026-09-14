@@ -22,6 +22,7 @@ import {
   extractDramaAssets,
   fetchDramaAssets,
   fetchDramaImageModels,
+  fetchDramaVideoModels,
   generateDramaAssetImage,
   lockDramaAsset,
   lockDramaScript,
@@ -190,6 +191,7 @@ function SubjectInspector({
   onVoiceLockChange,
   onVoiceSave,
   onVoiceUploadClick,
+  supportsVoiceReference,
   onZoom,
 }) {
   const src = mediaUrl(asset?.imageStorageKey || asset?.imageUrl);
@@ -227,11 +229,13 @@ function SubjectInspector({
                   <span>音色描述</span>
                   <input value={voiceLock} onChange={onVoiceLockChange} placeholder="例：30岁低沉男声，普通话，克制冷静" />
                 </label>
-                {asset.voiceReferenceUrl && <audio controls preload="metadata" src={mediaUrl(asset.voiceReferenceUrl) || asset.voiceReferenceUrl} />}
+                {supportsVoiceReference && asset.voiceReferenceUrl && <audio controls preload="metadata" src={mediaUrl(asset.voiceReferenceUrl) || asset.voiceReferenceUrl} />}
                 <div className="drama-native-voice__actions">
-                  <button className="drama-voice-action drama-voice-action--secondary" type="button" onClick={onVoiceUploadClick} disabled={voiceBusy}>
-                    <Upload size={13} /> {asset.voiceReferenceUrl ? "更换参考音频" : "上传参考音频"}
-                  </button>
+                  {supportsVoiceReference && (
+                    <button className="drama-voice-action drama-voice-action--secondary" type="button" onClick={onVoiceUploadClick} disabled={voiceBusy}>
+                      <Upload size={13} /> {asset.voiceReferenceUrl ? "更换参考音频" : "上传参考音频"}
+                    </button>
+                  )}
                   <button
                     className="drama-voice-action drama-voice-action--primary"
                     type="button"
@@ -241,7 +245,7 @@ function SubjectInspector({
                     <Save size={13} /> 保存声音描述
                   </button>
                 </div>
-                <small>对白、环境声和音效随视频一次生成；参考音频只锁定音色身份。</small>
+                <small>{supportsVoiceReference ? "对白、环境声和音效随视频一次生成；参考音频只锁定音色身份。" : "当前视频模型不支持上传参考音频，可使用文字描述锁定音色。"}</small>
               </section>
             )}
             <label className="youxi-field">
@@ -349,6 +353,10 @@ export function DramaAssetBoard({ series, episode }) {
     queryKey: ["drama-image-models"],
     queryFn: fetchDramaImageModels,
   });
+  const videoModelsQuery = useQuery({
+    queryKey: ["drama-video-models"],
+    queryFn: fetchDramaVideoModels,
+  });
   const assetsQuery = useQuery({
     queryKey: ["drama-assets", episodeId],
     queryFn: () => fetchDramaAssets(episodeId),
@@ -356,6 +364,9 @@ export function DramaAssetBoard({ series, episode }) {
   });
 
   const imageModels = imageModelsQuery.data || [];
+  const videoModels = videoModelsQuery.data || [];
+  const selectedVideoModel = videoModels.find((item) => String(item.id) === String(series?.videoModelId));
+  const supportsVoiceReference = Boolean(selectedVideoModel?.supportsAudioReference);
   const assets = assetsQuery.data || [];
   const scriptLocked = episode?.status === "已锁定";
 
@@ -780,23 +791,26 @@ export function DramaAssetBoard({ series, episode }) {
         onVoiceLockChange={(event) => setVoiceLockDraft(event.target.value)}
         onVoiceSave={() => saveVoice().catch((err) => showToast(err.message))}
         onVoiceUploadClick={() => voiceFileRef.current?.click()}
+        supportsVoiceReference={supportsVoiceReference}
         onZoom={() => selected && setPreview({
           src: mediaUrl(selected.imageStorageKey || selected.imageUrl),
           title: selected.name,
         })}
       />
 
-      <input
-        ref={voiceFileRef}
-        type="file"
-        accept="audio/*,.mp3,.wav,.m4a,.aac"
-        hidden
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          event.target.value = "";
-          onVoiceUpload(file).catch((err) => showToast(err.message));
-        }}
-      />
+      {supportsVoiceReference && (
+        <input
+          ref={voiceFileRef}
+          type="file"
+          accept="audio/*,.mp3,.wav,.m4a,.aac"
+          hidden
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            onVoiceUpload(file).catch((err) => showToast(err.message));
+          }}
+        />
+      )}
 
       <input
         ref={fileRef}

@@ -446,6 +446,8 @@ a { color: inherit; text-decoration: none; }
 .creation-upload.has-preview { background: #20262f; }
 .creation-upload.has-preview > button:first-child { padding: 0; }
 .creation-upload img, .creation-upload video { width: 100%; height: 100%; display: block; object-fit: cover; border-radius: 13px; pointer-events: none; }
+.creation-upload__audio { width: 100%; height: 100%; padding: 12px 6px; border-radius: 13px; color: #dce5f1 !important; background: linear-gradient(145deg, #313b49, #1c222b); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; pointer-events: none; }
+.creation-upload__audio small { width: 100%; color: #dce5f1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .creation-upload__remove { position: absolute; right: 5px; top: 5px; width: 21px; height: 21px; padding: 0; border: 1px solid rgba(255,255,255,.45); border-radius: 50%; color: white; background: rgba(17,23,31,.68); display: grid; place-items: center; backdrop-filter: blur(4px); }
 .creation-upload__type { position: absolute; left: 6px; bottom: 6px; width: 20px; height: 20px; border: 1px solid rgba(255,255,255,.4); border-radius: 6px; color: #fff !important; background: rgba(17,23,31,.7); display: grid; place-items: center; backdrop-filter: blur(5px); pointer-events: none; }
 .creation-upload__count { position: absolute; left: 6px; bottom: 6px; padding: 4px 6px; border-radius: 6px; color: #fff !important; background: rgba(17,23,31,.76); font-size: 9px !important; font-weight: 600; backdrop-filter: blur(5px); pointer-events: none; }
