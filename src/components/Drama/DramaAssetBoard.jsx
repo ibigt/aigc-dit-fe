@@ -1,4 +1,5 @@
 import {
+  CircleAlert,
   Clapperboard,
   AudioLines,
   Image as ImageIcon,
@@ -134,20 +135,46 @@ function SubjectCreateDialog({ type, pending, error, onClose, onCreate }) {
   );
 }
 
-function SubjectInspector({
-  asset,
-  type,
+function ImageModelSelect({
   imageModels,
   imageModelId,
   seriesImageModelId,
   seriesImageModelName,
+  disabled,
+  onBindModel,
+}) {
+  return (
+    <label className="youxi-shot-model youxi-asset-model">
+      图像模型
+      <select
+        aria-label="全局图片生成模型"
+        value={imageModelId}
+        disabled={disabled}
+        onChange={(event) => onBindModel(event.target.value)}
+      >
+        <option value="">{imageModels.length ? "请选择图像模型" : "暂无已启用图像模型"}</option>
+        {seriesImageModelId && !imageModels.some((item) => String(item.id) === String(seriesImageModelId)) && (
+          <option value={seriesImageModelId}>{seriesImageModelName || "已绑定（当前已停用）"}</option>
+        )}
+        {imageModels.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.name}{item.provider ? ` · ${item.provider}` : ""}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function SubjectInspector({
+  asset,
+  type,
   resolution,
   prompt,
   nameDraft,
   summaryDraft,
   generating,
   busy,
-  actionError,
   onNameChange,
   onNameBlur,
   onSummaryChange,
@@ -156,7 +183,6 @@ function SubjectInspector({
   onPromptSave,
   promptChanged,
   promptSaving,
-  onBindModel,
   onResolution,
   onUploadClick,
   voiceLock,
@@ -234,23 +260,6 @@ function SubjectInspector({
                 {RESOLUTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
               </select>
             </label>
-            <div className="youxi-model-row">
-              <select
-                aria-label="图片生成模型"
-                value={imageModelId}
-                onChange={(event) => onBindModel(event.target.value)}
-              >
-                <option value="">{imageModels.length ? "请选择图像模型" : "暂无已启用图像模型"}</option>
-                {seriesImageModelId && !imageModels.some((item) => String(item.id) === String(seriesImageModelId)) && (
-                  <option value={seriesImageModelId}>{seriesImageModelName || "已绑定（当前已停用）"}</option>
-                )}
-                {imageModels.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}{item.provider ? ` · ${item.provider}` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
             {asset.genErrorMessage && <p className="drama-form-error">{asset.genErrorMessage}</p>}
             <section className="youxi-material-block">
               <header>
@@ -290,27 +299,9 @@ function SubjectInspector({
           </>
         ) : (
           <>
-            <p className="youxi-story-side-empty">选中{type}后，可在此改提示词、选全局图像模型并生图。</p>
-            <div className="youxi-model-row">
-              <select
-                aria-label="图片生成模型"
-                value={imageModelId}
-                onChange={(event) => onBindModel(event.target.value)}
-              >
-                <option value="">{imageModels.length ? "请选择图像模型" : "暂无已启用图像模型"}</option>
-                {seriesImageModelId && !imageModels.some((item) => String(item.id) === String(seriesImageModelId)) && (
-                  <option value={seriesImageModelId}>{seriesImageModelName || "已绑定（当前已停用）"}</option>
-                )}
-                {imageModels.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}{item.provider ? ` · ${item.provider}` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <p className="youxi-story-side-empty">选中{type}后，可在此改提示词并生图。</p>
           </>
         )}
-        {actionError && <p className="drama-form-error">{actionError}</p>}
       </div>
     </aside>
   );
@@ -335,6 +326,16 @@ export function DramaAssetBoard({ series, episode }) {
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
   const [preview, setPreview] = useState(null);
+  const toastTimer = useRef(0);
+
+  function showToast(message) {
+    if (!message) return;
+    setActionError(message);
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setActionError(""), 2400);
+  }
+
+  useEffect(() => () => window.clearTimeout(toastTimer.current), []);
 
   const imageModelsQuery = useQuery({
     queryKey: ["drama-image-models"],
@@ -407,6 +408,7 @@ export function DramaAssetBoard({ series, episode }) {
   const bindMutation = useMutation({
     mutationFn: (id) => bindDramaImageModel(seriesId, Number(id)),
     onSuccess: invalidate,
+    onError: (err) => showToast(err.message),
   });
   const extractMutation = useMutation({
     mutationFn: () => extractDramaAssets(episodeId),
@@ -414,10 +416,12 @@ export function DramaAssetBoard({ series, episode }) {
       setPromptDirty(false);
       invalidate();
     },
+    onError: (err) => showToast(err.message),
   });
   const lockScriptMutation = useMutation({
     mutationFn: () => lockDramaScript(episodeId),
     onSuccess: invalidate,
+    onError: (err) => showToast(err.message),
   });
   const createMutation = useMutation({
     mutationFn: (form) => createDramaAsset(episodeId, {
@@ -466,10 +470,9 @@ export function DramaAssetBoard({ series, episode }) {
       return imagePrompt && !item.imageStorageKey && !item.generating && !isBusy(item.id, "generate");
     }).slice(0, BATCH_LIMIT);
     if (!pending.length) {
-      setActionError("当前分类没有待生成的资产图");
+      showToast("当前分类没有待生成的资产图");
       return;
     }
-    setActionError("");
     await Promise.all(pending.map((item) => generate(item)));
   }
 
@@ -533,7 +536,6 @@ export function DramaAssetBoard({ series, episode }) {
   }
 
   const modelBound = Boolean(imageModelId);
-  const error = bindMutation.error || extractMutation.error || lockScriptMutation.error || createMutation.error;
   const selectedBusy = isBusy(selected?.id, "lock") || isBusy(selected?.id, "save") || isBusy(selected?.id, "upload");
   const selectedGenerating = Boolean(selected?.generating) || isBusy(selected?.id, "generate");
   const promptChanged = Boolean(selected) && promptDraft.trim() !== promptOf(selected).trim();
@@ -551,6 +553,11 @@ export function DramaAssetBoard({ series, episode }) {
 
   return (
     <div className="drama-asset-board youxi-subject-layout">
+      {actionError && (
+        <div className="drama-toast drama-toast--error" role="status">
+          <CircleAlert size={16} />{actionError}
+        </div>
+      )}
       <aside className="youxi-subject-nav">
         <header>
           <strong>资产分类</strong>
@@ -599,11 +606,22 @@ export function DramaAssetBoard({ series, episode }) {
               <strong>{lockScriptMutation.isPending ? "锁定中" : "未锁定"}</strong>
             </button>
           )}
+          <ImageModelSelect
+            imageModels={imageModels}
+            imageModelId={imageModelId}
+            seriesImageModelId={series?.imageModelId}
+            seriesImageModelName={series?.imageModelName}
+            disabled={bindMutation.isPending}
+            onBindModel={(value) => {
+              setImageModelId(value);
+              if (value) bindMutation.mutate(value);
+            }}
+          />
           <div>
             <button
               type="button"
               disabled={!modelBound || extractMutation.isPending}
-              onClick={() => generateBatch().catch((err) => setActionError(err.message))}
+              onClick={() => generateBatch().catch((err) => showToast(err.message))}
             >
               <Sparkles size={15} /> 批量生图
             </button>
@@ -622,10 +640,6 @@ export function DramaAssetBoard({ series, episode }) {
                 <p>锁定后可从剧本当中提取角色、场景、道具。未锁定资产不能进分镜。</p>
               </div>
             </div>
-          )}
-
-          {(error || actionError) && (
-            <p className="drama-form-error youxi-subject-error">{error?.message || actionError}</p>
           )}
 
           {filtered.length === 0 ? (
@@ -651,11 +665,11 @@ export function DramaAssetBoard({ series, episode }) {
                           className="youxi-subject-card__gen"
                           aria-label={generating ? "生成中" : item.imageStorageKey ? `重新生成${item.name}` : `生成${item.name}图片`}
                           disabled={!modelBound || generating || !cardPrompt || isBusy(item.id, "lock") || isBusy(item.id, "delete")}
-                          title={!modelBound ? "先在右侧选择图像模型" : !cardPrompt ? "先填写图片提示词" : (item.imageStorageKey ? "按当前提示词重新生成设定图" : "生成设定图")}
+                          title={!modelBound ? "先选择顶部图像模型" : !cardPrompt ? "先填写图片提示词" : (item.imageStorageKey ? "按当前提示词重新生成设定图" : "生成设定图")}
                           onClick={(event) => {
                             event.stopPropagation();
                             setSelectedId(item.id);
-                            generate(item).catch((err) => setActionError(err.message));
+                            generate(item).catch((err) => showToast(err.message));
                           }}
                         >
                           <Sparkles size={13} />
@@ -670,7 +684,7 @@ export function DramaAssetBoard({ series, episode }) {
                           onClick={(event) => {
                             event.stopPropagation();
                             setSelectedId(item.id);
-                            confirm(item).catch((err) => setActionError(err.message));
+                            confirm(item).catch((err) => showToast(err.message));
                           }}
                         >
                           <Lock size={13} />
@@ -683,7 +697,7 @@ export function DramaAssetBoard({ series, episode }) {
                           disabled={generating || isBusy(item.id, "delete")}
                           onClick={(event) => {
                             event.stopPropagation();
-                            remove(item).catch((err) => setActionError(err.message));
+                            remove(item).catch((err) => showToast(err.message));
                           }}
                         >
                           <Trash2 size={14} />
@@ -728,10 +742,6 @@ export function DramaAssetBoard({ series, episode }) {
       <SubjectInspector
         asset={selected}
         type={type}
-        imageModels={imageModels}
-        imageModelId={imageModelId}
-        seriesImageModelId={series?.imageModelId}
-        seriesImageModelName={series?.imageModelName}
         resolution={resolution}
         prompt={promptDraft}
         nameDraft={nameDraft}
@@ -740,32 +750,27 @@ export function DramaAssetBoard({ series, episode }) {
         busy={selectedBusy}
         promptChanged={promptChanged}
         promptSaving={isBusy(selected?.id, "save")}
-        actionError=""
         onNameChange={(event) => setNameDraft(event.target.value)}
         onNameBlur={() => {
           if (!selected || nameDraft.trim() === selected.name) return;
-          saveFields(selected, { name: nameDraft }).then(invalidate).catch((err) => setActionError(err.message));
+          saveFields(selected, { name: nameDraft }).then(invalidate).catch((err) => showToast(err.message));
         }}
         onSummaryChange={(event) => setSummaryDraft(event.target.value)}
         onSummaryBlur={() => {
           if (!selected || summaryDraft.trim() === identityOf(selected)) return;
-          saveFields(selected).then(invalidate).catch((err) => setActionError(err.message));
+          saveFields(selected).then(invalidate).catch((err) => showToast(err.message));
         }}
         onPromptChange={(event) => {
           setPromptDirty(true);
           setPromptDraft(event.target.value);
         }}
-        onPromptSave={() => savePrompt().catch((err) => setActionError(err.message))}
-        onBindModel={(value) => {
-          setImageModelId(value);
-          if (value) bindMutation.mutate(value);
-        }}
+        onPromptSave={() => savePrompt().catch((err) => showToast(err.message))}
         onResolution={setResolution}
         onUploadClick={() => fileRef.current?.click()}
         voiceLock={voiceLockDraft}
         voiceBusy={isBusy(selected?.id, "voice")}
         onVoiceLockChange={(event) => setVoiceLockDraft(event.target.value)}
-        onVoiceSave={() => saveVoice().catch((err) => setActionError(err.message))}
+        onVoiceSave={() => saveVoice().catch((err) => showToast(err.message))}
         onVoiceUploadClick={() => voiceFileRef.current?.click()}
         onZoom={() => selected && setPreview({
           src: mediaUrl(selected.imageStorageKey || selected.imageUrl),
@@ -781,7 +786,7 @@ export function DramaAssetBoard({ series, episode }) {
         onChange={(event) => {
           const file = event.target.files?.[0];
           event.target.value = "";
-          onVoiceUpload(file).catch((err) => setActionError(err.message));
+          onVoiceUpload(file).catch((err) => showToast(err.message));
         }}
       />
 
@@ -793,7 +798,7 @@ export function DramaAssetBoard({ series, episode }) {
         onChange={(event) => {
           const file = event.target.files?.[0];
           event.target.value = "";
-          onUpload(file).catch((err) => setActionError(err.message));
+          onUpload(file).catch((err) => showToast(err.message));
         }}
       />
 

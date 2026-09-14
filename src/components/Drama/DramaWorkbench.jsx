@@ -49,6 +49,10 @@ export function DramaWorkbench({ seriesId }) {
     queryFn: () => fetchDramaSeriesDetail(id),
     enabled: Boolean(id),
     placeholderData: (previousData) => previousData,
+    refetchInterval: (query) => {
+      const episodes = query.state.data?.episodes || [];
+      return episodes.some((item) => item.analyzing) ? 3000 : false;
+    },
   });
   const series = seriesQuery.data;
   const episode = series?.episodes?.[0];
@@ -184,6 +188,9 @@ export function DramaWorkbench({ seriesId }) {
         </div>
       </header>
       {notice && <div className="drama-toast"><CircleCheck size={16} />{notice}</div>}
+      {episode?.analyzing && step !== "script" && (
+        <p className="drama-script__hint">剧本正在分析，可回到「剧本」查看进度。</p>
+      )}
       {step === "script" && (
         <div className="drama-step drama-step--slot">
           <DramaScriptPanel episode={episode} series={series} />

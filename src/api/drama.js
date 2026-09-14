@@ -122,7 +122,7 @@ export function fetchDramaStoryboard(episodeId) {
 export function draftDramaStoryboard(episodeId, durationSec) {
   return api.post(`/drama/episodes/${episodeId}/storyboard/draft`, null, {
     timeout: SCRIPT_LLM_TIMEOUT_MS,
-    params: { durationSec: durationSec || 15 },
+    params: durationSec ? { durationSec } : {},
   });
 }
 

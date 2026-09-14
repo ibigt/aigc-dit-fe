@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, RectangleHorizontal, RectangleVertical, Save, Square, Sparkles } from "lucide-react";
 import { analyzeDramaScript, bindDramaTextModel, fetchDramaTextModels, fetchDramaVideoModels, updateDramaSeries } from "../../api/drama.js";
@@ -80,19 +80,17 @@ function sameSettings(left, right) {
 }
 
 const ANALYSIS_STAGES = [
-  { label: "读取剧本", detail: "正在识别人物、场景和剧情结构…", progress: 12 },
-  { label: "生成分场", detail: "正在把原文整理为可编辑的分场剧本…", progress: 30 },
-  { label: "抽取资产", detail: "正在整理角色、场景和道具…", progress: 55 },
-  { label: "生成分镜", detail: "正在为每个场景生成分镜草稿…", progress: 78 },
-  { label: "质量检查", detail: "正在检查分镜与资产的关联关系…", progress: 92 },
+  { label: "读取剧本", detail: "正在识别人物、场景和剧情结构…", progress: 18 },
+  { label: "生成分场", detail: "正在把原文整理为可编辑的分场剧本…", progress: 48 },
+  { label: "抽取资产", detail: "正在整理角色、场景和道具…", progress: 78 },
+  { label: "收尾", detail: "正在锁定分场并准备后台拆镜…", progress: 92 },
 ];
 
 function analysisStage(elapsed) {
   if (elapsed < 8) return ANALYSIS_STAGES[0];
   if (elapsed < 22) return ANALYSIS_STAGES[1];
-  if (elapsed < 48) return ANALYSIS_STAGES[2];
-  if (elapsed < 90) return ANALYSIS_STAGES[3];
-  return ANALYSIS_STAGES[4];
+  if (elapsed < 55) return ANALYSIS_STAGES[2];
+  return ANALYSIS_STAGES[3];
 }
 
 function sceneTitle(scene, index) {
@@ -112,6 +110,7 @@ export function DramaScriptPanel({ episode, series }) {
   const [draft, setDraft] = useState(() => settingsDraftFrom(series));
   const [savedDraft, setSavedDraft] = useState(() => settingsDraftFrom(series));
   const [justSaved, setJustSaved] = useState(false);
+  const wasAnalyzing = useRef(false);
 
   useEffect(() => {
     if (episode) setRaw(episode.sourceText || "");
@@ -153,6 +152,12 @@ export function DramaScriptPanel({ episode, series }) {
         sourceText: raw,
       });
     },
+    onMutate: () => {
+      window.setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["drama-series"] });
+        queryClient.invalidateQueries({ queryKey: ["drama-series", series?.id || episode?.seriesId] });
+      }, 400);
+    },
     onSuccess: (result) => {
       setAnalysis(result);
       setAnalysisStartedAt(null);
@@ -164,11 +169,27 @@ export function DramaScriptPanel({ episode, series }) {
     },
   });
 
+  const serverStartedAt = episode?.analyzingAt ? Date.parse(episode.analyzingAt) : NaN;
+  const analyzing = Boolean(episode?.analyzing) || analyze.isPending;
+  const progressStartedAt = Number.isFinite(serverStartedAt) ? serverStartedAt : analysisStartedAt;
+
   useEffect(() => {
-    if (!analysisStartedAt) return undefined;
+    if (episode?.analyzing) wasAnalyzing.current = true;
+  }, [episode?.analyzing]);
+
+  useEffect(() => {
+    if (!episode?.id || episode.analyzing || !wasAnalyzing.current) return;
+    wasAnalyzing.current = false;
+    queryClient.invalidateQueries({ queryKey: ["drama-assets", episode.id] });
+    queryClient.invalidateQueries({ queryKey: ["drama-storyboard", episode.id] });
+  }, [episode?.analyzing, episode?.id, queryClient]);
+
+  useEffect(() => {
+    if (!analyzing) return undefined;
+    setAnalysisNow(Date.now());
     const timer = window.setInterval(() => setAnalysisNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [analysisStartedAt]);
+  }, [analyzing]);
 
   const settings = useMutation({
     mutationFn: persistSettings,
@@ -211,8 +232,6 @@ export function DramaScriptPanel({ episode, series }) {
       defaultResolution: resolutionOptions[resolutionOptions.length - 1],
     }));
   }, [series?.id, draft.defaultResolution, resolutionOptions]);
-  const analyzing = analyze.isPending;
-  const progressStartedAt = analysisStartedAt;
   const elapsed = progressStartedAt ? Math.max(0, Math.floor((analysisNow - progressStartedAt) / 1000)) : 0;
   const currentStage = analysisStage(elapsed);
   const elapsedLabel = `${Math.floor(elapsed / 60)}分${String(elapsed % 60).padStart(2, "0")}秒`;
@@ -237,6 +256,7 @@ export function DramaScriptPanel({ episode, series }) {
           <textarea
             value={raw}
             rows={10}
+            disabled={analyzing}
             placeholder={"第一场 幻梦侦探社 日 内\n人物：洛白、夏安、局长\n道具：古铜怀表\n洛白：开始了。"}
             onChange={(event) => setRaw(event.target.value)}
           />
@@ -249,8 +269,6 @@ export function DramaScriptPanel({ episode, series }) {
               : "该项目未绑定可用文本模型。"}
           </p>
         )}
-        {analyze.isError && <p className="drama-form-error">{analyze.error.message}</p>}
-
         <div className="drama-script__actions">
           <label className="drama-script__model-select">
             <span>文本模型</span>
@@ -286,27 +304,25 @@ export function DramaScriptPanel({ episode, series }) {
             </div>
             <div className="drama-progress-track"><i style={{ width: `${currentStage.progress}%` }} /></div>
             <div className="drama-analysis-progress__steps">
-              {ANALYSIS_STAGES.slice(0, 4).map((stage) => (
+              {ANALYSIS_STAGES.map((stage) => (
                 <span key={stage.label} className={currentStage.progress >= stage.progress ? "done" : ""}>{stage.label}</span>
               ))}
             </div>
             <p>
               {elapsed >= 90
-                ? "模型响应时间较长，请耐心等待。关闭页面不会取消服务器任务。"
-                : series?.textModelId
-                  ? "正在调用文本模型生成剧本，通常需要几十秒。"
-                  : "系统会依次完成分场、资产抽取和分镜生成，通常需要几十秒。"}
+                ? "模型响应较慢，请耐心等待。离开页面不会取消分析，回来后仍会显示进度。"
+                : "离开页面不会取消分析。分场完成后会在后台自动拆镜，可到「分镜」页查看进度。"}
             </p>
           </section>
         )}
 
-        {analyze.isError && <p className="drama-form-error">{analyze.error.message || "剧本分析失败"}</p>}
+        {analyze.isError && !analyzing && <p className="drama-form-error">{analyze.error.message || "剧本分析失败"}</p>}
         {analysis && (
           <section className="drama-analysis-summary">
             <header><strong>分析结果</strong><span>{analysis.engine === "llm" ? "文本模型" : "规则引擎"}</span></header>
             <div className="drama-analysis-stats">
               <span><b>{analysis.actualSceneCount ?? 0}</b> 场景</span>
-              <span><b>{analysis.actualShotCount ?? 0}</b> 分镜</span>
+              <span><b>{analysis.storyboard?.drafting ? "…" : (analysis.actualShotCount ?? 0)}</b>{analysis.storyboard?.drafting ? "拆镜中" : "分镜"}</span>
               <span><b>{analysis.assets?.length ?? 0}</b> 个资产</span>
             </div>
             {(analysis.warnings || []).map((warning) => <p key={warning} className="drama-script__hint">提示：{warning}</p>)}
@@ -346,7 +362,7 @@ export function DramaScriptPanel({ episode, series }) {
             })}
           </ol>
         ) : (
-          <p className="drama-script__empty">还没有分场结果。粘贴原文后点「导入并分场」。</p>
+          <p className="drama-script__empty">{analyzing ? "正在分析，分场结果出来后会显示在这里。" : "还没有分场结果。粘贴原文后点「一键分析剧本」。"}</p>
         )}
       </section>
 

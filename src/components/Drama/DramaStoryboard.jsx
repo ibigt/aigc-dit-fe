@@ -371,9 +371,11 @@ export function DramaStoryboard({ series, episode }) {
     queryFn: () => fetchDramaStoryboard(activeEpisodeId),
     enabled: Boolean(activeEpisodeId),
     refetchInterval: (query) => {
-      const chapters = query.state.data?.chapters || [];
+      const data = query.state.data;
+      const chapters = data?.chapters || [];
       const list = chapters.flatMap((item) => item.shots || []);
-      return inFlightShots(list).length ? 3000 : false;
+      if (data?.drafting || activeEpisode?.analyzing || inFlightShots(list).length) return 3000;
+      return false;
     },
   });
 
@@ -383,6 +385,7 @@ export function DramaStoryboard({ series, episode }) {
   const lockedAssets = board?.lockedAssets || [];
   const selected = shots.find((item) => item.id === shotId) || shots[0];
   const scriptLocked = activeEpisode?.status === "已锁定";
+  const autoDrafting = Boolean(board?.drafting);
   const videoModels = videoModelsQuery.data || [];
   const selectedVideoModel = videoModels.find((item) => String(item.id) === String(videoModelId));
   const durationOptions = useMemo(
@@ -465,7 +468,7 @@ export function DramaStoryboard({ series, episode }) {
   }
 
   function deleteBlockedReason(shot) {
-    if (draftMutation.isPending) return "正在拆镜，请稍候";
+    if (autoDrafting || draftMutation.isPending) return "正在拆镜，请稍候";
     if (shots.length <= 1) return "至少保留一个分镜";
     if (isShotGenerating(shot, busy)) return "该镜正在生成，请等任务结束再删除";
     return "";
@@ -606,7 +609,7 @@ export function DramaStoryboard({ series, episode }) {
   }, [inflightKey]);
 
   const generating = Boolean(selected && isShotGenerating(selected, busy));
-  const drafting = draftMutation.isPending;
+  const drafting = autoDrafting || draftMutation.isPending;
   const error = boardQuery.error || bindMutation.error || (actionError ? { message: actionError } : null);
   const videoSrc = mediaUrl(selected?.videoUrl || selected?.videoKey);
 
@@ -670,11 +673,11 @@ export function DramaStoryboard({ series, episode }) {
               </span>
             )}
             <label className="youxi-shot-model">
-              时长
+              当前镜头
               <select
-                aria-label="分镜时长"
+                aria-label="当前分镜时长"
                 value={clampDuration(durationOptions, selected?.durationSec ?? draftDurationSec)}
-                disabled={generating || drafting}
+                disabled={generating || drafting || !selected}
                 onChange={(event) => {
                   const next = Number(event.target.value);
                   setDraftDurationSec(next);
@@ -699,10 +702,10 @@ export function DramaStoryboard({ series, episode }) {
             </button>
             <button
               type="button"
-              disabled={draftMutation.isPending || !scriptLocked}
+              disabled={drafting || !scriptLocked}
               onClick={() => draftMutation.mutate()}
             >
-              <Wand2 size={14} /> {draftMutation.isPending ? "拆镜中…" : shots.length ? "重新拆镜" : "智能分镜"}
+              <Wand2 size={14} /> {drafting ? "拆镜中…" : shots.length ? "重新拆镜" : "智能分镜"}
             </button>
             <button
               className="youxi-toolbar-primary"
@@ -742,6 +745,18 @@ export function DramaStoryboard({ series, episode }) {
 
         {boardQuery.isLoading ? (
           <p className="drama-asset-empty">正在读取分镜…</p>
+        ) : autoDrafting ? (
+          <div className="youxi-storyboard-main">
+            <div className="youxi-story-preview">
+              <div className="youxi-story-empty-preview" data-ratio={ratio}>
+                <div className="youxi-story-empty-state">
+                  <Wand2 size={24} />
+                  <strong>正在自动拆镜中</strong>
+                  <span>分析已完成。正在按对白和动作给每镜估时长并拆镜头，请稍候。</span>
+                </div>
+              </div>
+            </div>
+          </div>
         ) : !shots.length ? (
           <div className="youxi-storyboard-main">
             <div className="youxi-story-preview">
@@ -750,8 +765,8 @@ export function DramaStoryboard({ series, episode }) {
                   <Film size={24} />
                   <strong>还没有分镜</strong>
                   <span>锁定剧本后点「智能分镜」，按场排出本集镜头</span>
-                  <button type="button" disabled={draftMutation.isPending || !scriptLocked} onClick={() => draftMutation.mutate()}>
-                    <Wand2 size={14} /> {draftMutation.isPending ? "拆镜中…" : "智能分镜"}
+                  <button type="button" disabled={drafting || !scriptLocked} onClick={() => draftMutation.mutate()}>
+                    <Wand2 size={14} /> {drafting ? "拆镜中…" : "智能分镜"}
                   </button>
                 </div>
               </div>
@@ -881,8 +896,8 @@ export function DramaStoryboard({ series, episode }) {
         </div>
       </div>
       <ShotInspector
-        key={selected?.id || "none"}
-        selected={shots.length ? selected : null}
+        key={autoDrafting ? "drafting" : (selected?.id || "none")}
+        selected={autoDrafting || !shots.length ? null : selected}
         generating={generating}
         readOnly={drafting}
         lockedAssets={lockedAssets}
