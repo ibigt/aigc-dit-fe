@@ -2,12 +2,13 @@ import { ChevronRight, MoreHorizontal, Pencil, Plus, Trash2, X } from "lucide-re
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { createDramaSeries, deleteDramaSeries, fetchDramaSeries, updateDramaSeries } from "../../api/drama.js";
+import { createDramaSeries, deleteDramaSeries, fetchDramaSeries, fetchDramaTextModels, updateDramaSeries } from "../../api/drama.js";
 import { formatDateTime, mediaUrl } from "../../lib/media.js";
 
 const emptyForm = {
   name: "",
   summary: "",
+  textModelId: "",
 };
 
 function DramaDialog({ title, eyebrow, onClose, children }) {
@@ -39,7 +40,18 @@ export function DramaHome() {
     queryKey: ["drama-series"],
     queryFn: fetchDramaSeries,
   });
+  const textModelsQuery = useQuery({
+    queryKey: ["drama-text-models"],
+    queryFn: fetchDramaTextModels,
+    enabled: creating,
+  });
+  const textModels = textModelsQuery.data || [];
   const series = listQuery.data || [];
+
+  useEffect(() => {
+    if (!creating || !textModels.length) return;
+    setForm((current) => (current.textModelId ? current : { ...current, textModelId: String(textModels[0].id) }));
+  }, [creating, textModels]);
 
   useEffect(() => {
     if (menu == null) return undefined;
@@ -75,6 +87,7 @@ export function DramaHome() {
     event.preventDefault();
     createMutation.mutate({
       name: form.name.trim(),
+      textModelId: Number(form.textModelId),
     });
   }
 
@@ -186,13 +199,31 @@ export function DramaHome() {
                 placeholder="用一两句话描述核心人物与冲突（可选，风格与画幅稍后在剧本步设定）"
               />
             </label>
+            <label>
+              文本模型
+              <select
+                value={form.textModelId}
+                onChange={(event) => setForm({ ...form, textModelId: event.target.value })}
+                disabled={textModelsQuery.isLoading || textModelsQuery.isError}
+                required
+              >
+                {textModelsQuery.isLoading && <option value="">正在加载文本模型…</option>}
+                {textModelsQuery.isError && <option value="">文本模型加载失败</option>}
+                {!textModelsQuery.isLoading && !textModelsQuery.isError && textModels.length === 0 && (
+                  <option value="">暂无已启用文本模型</option>
+                )}
+                {textModels.map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}{item.provider ? ` · ${item.provider}` : ""}</option>
+                ))}
+              </select>
+            </label>
             {createMutation.isError && <p className="drama-form-error">{createMutation.error.message}</p>}
             <footer>
               <button type="button" onClick={() => { setCreating(false); setForm(emptyForm); }}>取消</button>
               <button
                 className="button button--primary"
                 type="submit"
-                disabled={createMutation.isPending || !form.name.trim()}
+                disabled={createMutation.isPending || !form.name.trim() || !form.textModelId}
               >
                 {createMutation.isPending ? "创建中…" : "创建并进入"} <ChevronRight size={16} />
               </button>
