@@ -2,7 +2,7 @@ import { ArrowLeft, ChevronRight, CircleCheck, Download, Film, Pencil, X } from 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { fetchDramaFilm, fetchDramaSeriesDetail, updateDramaSeries } from "../../api/drama.js";
+import { fetchDramaFilm, fetchDramaSeriesDetail, createDramaEpisode, updateDramaSeries } from "../../api/drama.js";
 import { DramaAssetBoard } from "./DramaAssetBoard.jsx";
 import { DramaFilmPanel, downloadDramaFilm } from "./DramaFilmPanel.jsx";
 import { DramaScriptPanel } from "./DramaScriptPanel.jsx";
@@ -55,8 +55,20 @@ export function DramaWorkbench({ seriesId }) {
     },
   });
   const series = seriesQuery.data;
-  const episode = series?.episodes?.[0];
+  const episodes = series?.episodes || [];
+  const [episodeId, setEpisodeId] = useState(null);
+  const episode = episodes.find((item) => item.id === episodeId) || episodes[0];
   const step = stepFromSearch(searchParams);
+
+  const addEpisodeMutation = useMutation({
+    mutationFn: () => createDramaEpisode(id),
+    onSuccess: (resp) => {
+      queryClient.setQueryData(["drama-series", id], resp);
+      queryClient.invalidateQueries({ queryKey: ["drama-series"] });
+      const latest = resp?.latestEpisode || resp?.episodes?.[resp.episodes.length - 1];
+      if (latest?.id) setEpisodeId(latest.id);
+    },
+  });
 
   function setStep(next) {
     const nextStep = STEP_IDS.includes(next) ? next : "script";
@@ -193,7 +205,15 @@ export function DramaWorkbench({ seriesId }) {
       )}
       {step === "script" && (
         <div className="drama-step drama-step--slot">
-          <DramaScriptPanel episode={episode} series={series} />
+          <DramaScriptPanel
+            episode={episode}
+            series={series}
+            episodes={episodes}
+            activeEpisodeId={episode?.id}
+            onSelectEpisode={setEpisodeId}
+            onAddEpisode={() => addEpisodeMutation.mutate()}
+            addingEpisode={addEpisodeMutation.isPending}
+          />
         </div>
       )}
       {step === "subjects" && (

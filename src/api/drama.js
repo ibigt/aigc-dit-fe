@@ -16,6 +16,10 @@ export function createDramaSeries(payload) {
   return api.post("/drama/series", payload);
 }
 
+export function createDramaEpisode(seriesId) {
+  return api.post(`/drama/series/${seriesId}/episodes`);
+}
+
 export function updateDramaSeries(id, payload) {
   return api.put(`/drama/series/${id}`, payload);
 }

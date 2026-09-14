@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, RectangleHorizontal, RectangleVertical, Save, Square, Sparkles } from "lucide-react";
+import { FileText, Plus, RectangleHorizontal, RectangleVertical, Save, Square, Sparkles } from "lucide-react";
 import { analyzeDramaScript, bindDramaTextModel, fetchDramaTextModels, fetchDramaVideoModels, updateDramaSeries } from "../../api/drama.js";
 import { DramaStylePicker } from "./DramaStylePicker.jsx";
 import { DEFAULT_DRAMA_STYLE_KEY } from "./dramaStyles.js";
@@ -97,11 +97,23 @@ function sceneTitle(scene, index) {
   return scene.heading || `第${scene.index ?? index + 1}场`;
 }
 
+function chapterWordCount(episode) {
+  return (episode?.sourceText || "").trim().length;
+}
+
 /**
- * 剧本步骤：导入原文 → 分场渲染 → 锁定；右侧可选风格、视频比例与清晰度。
+ * 剧本步骤：左侧章节列表（可添加集数）、中间剧本原文 + 分析、右侧风格与比例设置。
  * 分场结果由后端 DramaTextService 产出，这里只渲染与触发，不组装字段。
  */
-export function DramaScriptPanel({ episode, series }) {
+export function DramaScriptPanel({
+  episode,
+  series,
+  episodes = [],
+  activeEpisodeId,
+  onSelectEpisode,
+  onAddEpisode,
+  addingEpisode,
+}) {
   const queryClient = useQueryClient();
   const [raw, setRaw] = useState("");
   const [analysis, setAnalysis] = useState(null);
@@ -113,7 +125,10 @@ export function DramaScriptPanel({ episode, series }) {
   const wasAnalyzing = useRef(false);
 
   useEffect(() => {
-    if (episode) setRaw(episode.sourceText || "");
+    if (episode) {
+      setRaw(episode.sourceText || "");
+      setAnalysis(null);
+    }
   }, [episode?.id, episode?.sourceText]);
 
   useEffect(() => {
@@ -238,6 +253,40 @@ export function DramaScriptPanel({ episode, series }) {
 
   return (
     <div className="drama-script-layout">
+      <aside className="drama-chapters">
+        <header className="drama-chapters__head">
+          <strong>章节列表</strong>
+          <button
+            type="button"
+            className="drama-chapters__add"
+            aria-label="添加集数"
+            title="添加集数"
+            disabled={!series?.id || addingEpisode}
+            onClick={() => onAddEpisode?.()}
+          >
+            <Plus size={15} />
+          </button>
+        </header>
+        <div className="drama-chapters__list" role="list">
+          {episodes.map((item) => {
+            const active = item.id === activeEpisodeId;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                role="listitem"
+                className={`drama-chapter${active ? " active" : ""}`}
+                onClick={() => onSelectEpisode?.(item.id)}
+              >
+                <span className="drama-chapter__no">第{item.episodeNumber ?? 1}章</span>
+                <span className="drama-chapter__count">{chapterWordCount(item)} 字</span>
+              </button>
+            );
+          })}
+          {!episodes.length && <p className="drama-chapters__empty">还没有章节</p>}
+        </div>
+      </aside>
+
       <section className="drama-script">
         <div className="drama-script__head">
           <h2><FileText size={16} /> 剧本</h2>
@@ -249,6 +298,30 @@ export function DramaScriptPanel({ episode, series }) {
               {episode?.status || "未开始"}
             </em>
           </div>
+        </div>
+
+        <div className="drama-script__toolbar">
+          <label className="drama-script__model-select">
+            <span>文本模型</span>
+            <select
+              value={textModelId}
+              disabled={!series?.id || analyzing || bindTextModel.isPending}
+              onChange={(event) => bindTextModel.mutate(event.target.value)}
+            >
+              <option value="">{textModels.length ? "不绑定（走规则分场）" : "暂无已启用文本模型"}</option>
+              {textModels.map((item) => (
+                <option key={item.id} value={item.id}>{item.name}{item.provider ? ` · ${item.provider}` : ""}</option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="button button--primary drama-analyze-btn"
+            type="button"
+            disabled={!raw.trim() || analyzing}
+            onClick={() => { setAnalysis(null); setAnalysisStartedAt(Date.now()); setAnalysisNow(Date.now()); analyze.mutate(); }}
+          >
+            <Sparkles size={15} /> {analyzing ? "分析中…" : "一键分析剧本"}
+          </button>
         </div>
 
         <label className="drama-script__raw">
@@ -269,29 +342,6 @@ export function DramaScriptPanel({ episode, series }) {
               : "该项目未绑定可用文本模型。"}
           </p>
         )}
-        <div className="drama-script__actions">
-          <label className="drama-script__model-select">
-            <span>文本模型</span>
-            <select
-              value={textModelId}
-              disabled={!series?.id || analyzing || bindTextModel.isPending}
-              onChange={(event) => bindTextModel.mutate(event.target.value)}
-            >
-              <option value="">{textModels.length ? "不绑定（走规则分场）" : "暂无已启用文本模型"}</option>
-              {textModels.map((item) => (
-                <option key={item.id} value={item.id}>{item.name}{item.provider ? ` · ${item.provider}` : ""}</option>
-              ))}
-            </select>
-          </label>
-          <button
-            className="button button--primary"
-            type="button"
-            disabled={!raw.trim() || analyzing}
-            onClick={() => { setAnalysis(null); setAnalysisStartedAt(Date.now()); setAnalysisNow(Date.now()); analyze.mutate(); }}
-          >
-            <Sparkles size={15} /> {analyzing ? "分析中…" : "一键分析剧本"}
-          </button>
-        </div>
 
         {analyzing && (
           <section className="drama-analysis-progress" aria-live="polite">
