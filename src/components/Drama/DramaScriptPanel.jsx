@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, RectangleHorizontal, RectangleVertical, Save, Square, Sparkles } from "lucide-react";
-import { analyzeDramaScript, fetchDramaVideoModels, updateDramaSeries } from "../../api/drama.js";
+import { analyzeDramaScript, bindDramaTextModel, fetchDramaTextModels, fetchDramaVideoModels, updateDramaSeries } from "../../api/drama.js";
 import { DramaStylePicker } from "./DramaStylePicker.jsx";
 import { DEFAULT_DRAMA_STYLE_KEY } from "./dramaStyles.js";
 
@@ -185,6 +185,18 @@ export function DramaScriptPanel({ episode, series }) {
     queryFn: fetchDramaVideoModels,
   });
 
+  const textModelsQuery = useQuery({
+    queryKey: ["drama-text-models"],
+    queryFn: fetchDramaTextModels,
+  });
+  const textModels = textModelsQuery.data || [];
+  const textModelId = series?.textModelId ? String(series.textModelId) : "";
+
+  const bindTextModel = useMutation({
+    mutationFn: (value) => bindDramaTextModel(series.id, value ? Number(value) : null),
+    onSuccess: refreshSeries,
+  });
+
   const scenes = episode?.script?.scenes || [];
   const dirty = !sameSettings(draft, savedDraft);
   const resolutionOptions = useMemo(
@@ -240,6 +252,19 @@ export function DramaScriptPanel({ episode, series }) {
         {analyze.isError && <p className="drama-form-error">{analyze.error.message}</p>}
 
         <div className="drama-script__actions">
+          <label className="drama-script__model-select">
+            <span>文本模型</span>
+            <select
+              value={textModelId}
+              disabled={!series?.id || analyzing || bindTextModel.isPending}
+              onChange={(event) => bindTextModel.mutate(event.target.value)}
+            >
+              <option value="">{textModels.length ? "不绑定（走规则分场）" : "暂无已启用文本模型"}</option>
+              {textModels.map((item) => (
+                <option key={item.id} value={item.id}>{item.name}{item.provider ? ` · ${item.provider}` : ""}</option>
+              ))}
+            </select>
+          </label>
           <button
             className="button button--primary"
             type="button"

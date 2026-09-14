@@ -36,6 +36,10 @@ export function fetchDramaTextModels() {
   return api.get("/drama/text-models");
 }
 
+export function bindDramaTextModel(seriesId, textModelId) {
+  return api.put(`/drama/series/${seriesId}/text-model`, { textModelId });
+}
+
 export function fetchDramaImageModels() {
   return api.get("/drama/image-models");
 }
