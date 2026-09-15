@@ -1,5 +1,6 @@
-import { AudioLines, Film, Lock, Plus, RefreshCw, Save, Sparkles, Trash2, Video, Wand2, X, ZoomIn } from "lucide-react";
+import { AudioLines, CircleCheck, Film, Lock, Plus, RefreshCw, Save, Sparkles, Trash2, Video, Wand2, X, ZoomIn } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   bindDramaVideoModel,
@@ -366,6 +367,8 @@ export function DramaStoryboard({ series, episode }) {
   const [actionError, setActionError] = useState("");
   const [preview, setPreview] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [draftConfirmOpen, setDraftConfirmOpen] = useState(false);
+  const [compileNotice, setCompileNotice] = useState("");
 
   const activeEpisode = episodes.find((item) => item.id === episodeId) || episodes[0] || episode;
   const activeEpisodeId = activeEpisode?.id;
@@ -379,6 +382,17 @@ export function DramaStoryboard({ series, episode }) {
   useEffect(() => {
     setVideoModelId(series?.videoModelId || "");
   }, [series?.videoModelId]);
+
+  useEffect(() => {
+    setCompileNotice("");
+    setDraftConfirmOpen(false);
+  }, [activeEpisodeId]);
+
+  useEffect(() => {
+    if (!compileNotice) return undefined;
+    const timer = window.setTimeout(() => setCompileNotice(""), 3200);
+    return () => window.clearTimeout(timer);
+  }, [compileNotice]);
 
   const videoModelsQuery = useQuery({
     queryKey: ["drama-video-models"],
@@ -426,7 +440,9 @@ export function DramaStoryboard({ series, episode }) {
     onSuccess: (data) => {
       queryClient.setQueryData(["drama-storyboard", activeEpisodeId], data);
       queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+      queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
       setShotId(data?.chapters?.[0]?.shots?.[0]?.id || null);
+      setDraftConfirmOpen(false);
       setActionError("");
     },
     onError: (error) => setActionError(error.message || "拆镜失败"),
@@ -434,11 +450,19 @@ export function DramaStoryboard({ series, episode }) {
 
   const compileAllMutation = useMutation({
     mutationFn: () => compileDramaStoryboard(activeEpisodeId),
+    onMutate: () => setCompileNotice(""),
     onSuccess: (data) => {
       queryClient.setQueryData(["drama-storyboard", activeEpisodeId], data);
       setActionError("");
+      const count = (data?.chapters || []).reduce((sum, chapter) => sum + (chapter.shots?.length || 0), 0);
+      setCompileNotice(count > 0
+        ? `已重新编译本集 ${count} 个分镜的视频提示词`
+        : "本集分镜已重新编译");
     },
-    onError: (error) => setActionError(error.message || "编译失败"),
+    onError: (error) => {
+      setCompileNotice("");
+      setActionError(error.message || "编译失败");
+    },
   });
 
   const createShotMutation = useMutation({
@@ -717,6 +741,7 @@ export function DramaStoryboard({ series, episode }) {
           <div>
             <button
               type="button"
+              title="按当前动作、台词和锁定资产，重算本集所有分镜的视频提示词，不会生成视频"
               disabled={compileAllMutation.isPending || !shots.length || drafting}
               onClick={() => compileAllMutation.mutate()}
             >
@@ -725,7 +750,13 @@ export function DramaStoryboard({ series, episode }) {
             <button
               type="button"
               disabled={drafting || !scriptLocked}
-              onClick={() => draftMutation.mutate()}
+              onClick={() => {
+                if (shots.length) {
+                  setDraftConfirmOpen(true);
+                  return;
+                }
+                draftMutation.mutate();
+              }}
             >
               <Wand2 size={14} /> {drafting ? "拆镜中…" : shots.length ? "重新拆镜" : "智能分镜"}
             </button>
@@ -926,40 +957,85 @@ export function DramaStoryboard({ series, episode }) {
         onSave={saveShot}
         onZoom={setPreview}
       />
-      {deleteTarget && (
-        <div
-          className="drama-dialog-backdrop"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !deleteShotMutation.isPending) setDeleteTarget(null);
-          }}
-        >
-          <section className="drama-dialog drama-dialog--confirm" role="dialog" aria-modal="true" aria-labelledby="drama-shot-delete-title">
-            <header>
-              <div>
-                <span>分镜</span>
-                <h2 id="drama-shot-delete-title">删除这一镜？</h2>
-              </div>
-              <button type="button" aria-label="关闭" disabled={deleteShotMutation.isPending} onClick={() => setDeleteTarget(null)}>
-                <X size={18} />
-              </button>
-            </header>
-            <p className="drama-dialog__copy">
-              确定删除镜 {deleteTarget.shotIndex}
-              {deleteTarget.title ? `「${deleteTarget.title}」` : ""}？
-              剩余分镜会重新编号。若本集已拼接成片，成片将作废并删除，需重新拼接。不可撤销。
-            </p>
-            <footer className="drama-dialog__actions">
-              <button type="button" disabled={deleteShotMutation.isPending} onClick={() => setDeleteTarget(null)}>取消</button>
-              <button
-                type="button"
-                className="button button--danger"
-                disabled={deleteShotMutation.isPending}
-                onClick={confirmRemoveShot}
-              >
-                {deleteShotMutation.isPending ? "删除中…" : "删除"}
-              </button>
-            </footer>
-          </section>
+      {(deleteTarget || draftConfirmOpen) && createPortal(
+        <>
+          {deleteTarget && (
+            <div
+              className="drama-dialog-backdrop"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget && !deleteShotMutation.isPending) setDeleteTarget(null);
+              }}
+            >
+              <section className="drama-dialog drama-dialog--confirm" role="dialog" aria-modal="true" aria-labelledby="drama-shot-delete-title">
+                <header>
+                  <div>
+                    <span>分镜</span>
+                    <h2 id="drama-shot-delete-title">删除这一镜？</h2>
+                  </div>
+                  <button type="button" aria-label="关闭" disabled={deleteShotMutation.isPending} onClick={() => setDeleteTarget(null)}>
+                    <X size={18} />
+                  </button>
+                </header>
+                <p className="drama-dialog__copy">
+                  确定删除镜 {deleteTarget.shotIndex}
+                  {deleteTarget.title ? `「${deleteTarget.title}」` : ""}？
+                  剩余分镜会重新编号。若本集已拼接成片，成片将作废并删除，需重新拼接。不可撤销。
+                </p>
+                <footer className="drama-dialog__actions">
+                  <button type="button" disabled={deleteShotMutation.isPending} onClick={() => setDeleteTarget(null)}>取消</button>
+                  <button
+                    type="button"
+                    className="button button--danger"
+                    disabled={deleteShotMutation.isPending}
+                    onClick={confirmRemoveShot}
+                  >
+                    {deleteShotMutation.isPending ? "删除中…" : "删除"}
+                  </button>
+                </footer>
+              </section>
+            </div>
+          )}
+          {draftConfirmOpen && (
+            <div
+              className="drama-dialog-backdrop"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget && !draftMutation.isPending) setDraftConfirmOpen(false);
+              }}
+            >
+              <section className="drama-dialog drama-dialog--confirm" role="dialog" aria-modal="true" aria-labelledby="drama-redraft-title">
+                <header>
+                  <div>
+                    <span>分镜</span>
+                    <h2 id="drama-redraft-title">重新拆镜？</h2>
+                  </div>
+                  <button type="button" aria-label="关闭" disabled={draftMutation.isPending} onClick={() => setDraftConfirmOpen(false)}>
+                    <X size={18} />
+                  </button>
+                </header>
+                <p className="drama-dialog__copy">
+                  重新拆镜会删除本集全部 {shots.length} 个已生成分镜（含已出片镜头和手动修改的提示词），然后按当前剧本重新拆分。已拼接成片也会作废。此操作不可撤销。
+                </p>
+                <footer className="drama-dialog__actions">
+                  <button type="button" disabled={draftMutation.isPending} onClick={() => setDraftConfirmOpen(false)}>取消</button>
+                  <button
+                    type="button"
+                    className="button button--danger"
+                    disabled={draftMutation.isPending}
+                    onClick={() => draftMutation.mutate()}
+                  >
+                    {draftMutation.isPending ? "拆镜中…" : "确认重新拆镜"}
+                  </button>
+                </footer>
+              </section>
+            </div>
+          )}
+        </>,
+        document.body
+      )}
+      {compileNotice && (
+        <div className="drama-toast" role="status">
+          <CircleCheck size={16} />
+          {compileNotice}
         </div>
       )}
       <ImageLightbox preview={preview} onClose={() => setPreview(null)} />
