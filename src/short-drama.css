@@ -1182,12 +1182,19 @@
 .drama-chapters__add:hover:not(:disabled) { background: #eef0ff; border-color: #cfd4e9; }
 .drama-chapters__add:disabled { opacity: .5; cursor: not-allowed; }
 .drama-chapters__list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
-.drama-chapter { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 11px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: #2d3745; font-size: 13px; text-align: left; cursor: pointer; }
+.drama-chapter { display: flex; align-items: center; gap: 4px; padding: 9px 11px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: #2d3745; font-size: 13px; }
 .drama-chapter:hover { background: #f4f6fb; }
 .drama-chapter.active { background: #eef0ff; border-color: #cdd4f5; color: #3a49b8; font-weight: 600; }
+.drama-chapter__main { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .drama-chapter__no { white-space: nowrap; }
 .drama-chapter__count { font-size: 11px; color: #8b929c; font-weight: 400; }
 .drama-chapter.active .drama-chapter__count { color: #6b78c8; }
+.drama-chapter__del { flex: 0 0 auto; width: 26px; height: 26px; display: grid; place-items: center; color: #b0b7c1; background: transparent; border: 0; border-radius: 7px; cursor: pointer; opacity: 0; transition: opacity .15s ease, background .15s ease, color .15s ease; }
+.drama-chapter:hover .drama-chapter__del,
+.drama-chapter.active .drama-chapter__del,
+.drama-chapter__del:focus-visible { opacity: 1; }
+.drama-chapter__del:hover:not(:disabled) { color: #d1435b; background: #fdecef; }
+.drama-chapter__del:disabled { cursor: not-allowed; }
 .drama-chapters__empty { margin: 6px 4px; color: #98a1ad; font-size: 12px; }
 .drama-script__toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); }
 .drama-analyze-btn { height: 40px; padding: 0 16px; border-radius: 11px; }

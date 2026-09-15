@@ -639,7 +639,7 @@ export function DramaStoryboard({ series, episode }) {
     <section className="youxi-storyboard-layout youxi-storyboard-layout--board">
       <aside className="youxi-chapters" aria-label="集数">
         <header>
-          <strong>集数</strong>
+          <strong>章节列表</strong>
         </header>
         <div>
           {episodes.map((item) => (

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Plus, RectangleHorizontal, RectangleVertical, Save, Square, Sparkles } from "lucide-react";
+import { FileText, Plus, RectangleHorizontal, RectangleVertical, Save, Square, Sparkles, Trash2 } from "lucide-react";
 import { analyzeDramaScript, bindDramaTextModel, fetchDramaTextModels, fetchDramaVideoModels, updateDramaSeries } from "../../api/drama.js";
 import { DramaStylePicker } from "./DramaStylePicker.jsx";
 import { DEFAULT_DRAMA_STYLE_KEY } from "./dramaStyles.js";
@@ -113,6 +113,8 @@ export function DramaScriptPanel({
   onSelectEpisode,
   onAddEpisode,
   addingEpisode,
+  onDeleteEpisode,
+  deletingEpisodeId,
 }) {
   const queryClient = useQueryClient();
   const [raw, setRaw] = useState("");
@@ -270,17 +272,28 @@ export function DramaScriptPanel({
         <div className="drama-chapters__list" role="list">
           {episodes.map((item) => {
             const active = item.id === activeEpisodeId;
+            const label = `第${item.episodeNumber ?? 1}章`;
             return (
-              <button
-                key={item.id}
-                type="button"
-                role="listitem"
-                className={`drama-chapter${active ? " active" : ""}`}
-                onClick={() => onSelectEpisode?.(item.id)}
-              >
-                <span className="drama-chapter__no">第{item.episodeNumber ?? 1}章</span>
-                <span className="drama-chapter__count">{chapterWordCount(item)} 字</span>
-              </button>
+              <div key={item.id} className={`drama-chapter${active ? " active" : ""}`} role="listitem">
+                <button type="button" className="drama-chapter__main" onClick={() => onSelectEpisode?.(item.id)}>
+                  <span className="drama-chapter__no">{label}</span>
+                  <span className="drama-chapter__count">{chapterWordCount(item)} 字</span>
+                </button>
+                <button
+                  type="button"
+                  className="drama-chapter__del"
+                  aria-label={`删除${label}`}
+                  title={episodes.length <= 1 ? "至少保留一集，无法删除" : "删除章节"}
+                  disabled={episodes.length <= 1 || deletingEpisodeId === item.id}
+                  onClick={() => {
+                    if (window.confirm(`删除${label}？该集的资产、分镜与成片会一并删除，且不可恢复。`)) {
+                      onDeleteEpisode?.(item.id);
+                    }
+                  }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
             );
           })}
           {!episodes.length && <p className="drama-chapters__empty">还没有章节</p>}

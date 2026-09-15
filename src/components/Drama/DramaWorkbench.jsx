@@ -2,7 +2,7 @@ import { ArrowLeft, ChevronRight, CircleCheck, Download, Film, Pencil, X } from 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { fetchDramaFilm, fetchDramaSeriesDetail, createDramaEpisode, updateDramaSeries } from "../../api/drama.js";
+import { fetchDramaFilm, fetchDramaSeriesDetail, createDramaEpisode, deleteDramaEpisode, updateDramaSeries } from "../../api/drama.js";
 import { DramaAssetBoard } from "./DramaAssetBoard.jsx";
 import { DramaFilmPanel, downloadDramaFilm } from "./DramaFilmPanel.jsx";
 import { DramaScriptPanel } from "./DramaScriptPanel.jsx";
@@ -68,6 +68,22 @@ export function DramaWorkbench({ seriesId }) {
       const latest = resp?.latestEpisode || resp?.episodes?.[resp.episodes.length - 1];
       if (latest?.id) setEpisodeId(latest.id);
     },
+  });
+
+  const deleteEpisodeMutation = useMutation({
+    mutationFn: (targetId) => deleteDramaEpisode(targetId),
+    onSuccess: (resp, deletedId) => {
+      queryClient.setQueryData(["drama-series", id], resp);
+      queryClient.invalidateQueries({ queryKey: ["drama-series"] });
+      const list = resp?.episodes || [];
+      setEpisodeId((current) => {
+        if (current && list.some((item) => item.id === current)) return current;
+        const fallback = list.find((item) => item.id !== deletedId) || list[0];
+        return fallback?.id || null;
+      });
+      showNotice("章节已删除");
+    },
+    onError: (error) => showNotice(error.message || "删除章节失败"),
   });
 
   function setStep(next) {
@@ -213,6 +229,8 @@ export function DramaWorkbench({ seriesId }) {
             onSelectEpisode={setEpisodeId}
             onAddEpisode={() => addEpisodeMutation.mutate()}
             addingEpisode={addEpisodeMutation.isPending}
+            onDeleteEpisode={(targetId) => deleteEpisodeMutation.mutate(targetId)}
+            deletingEpisodeId={deleteEpisodeMutation.isPending ? deleteEpisodeMutation.variables : null}
           />
         </div>
       )}

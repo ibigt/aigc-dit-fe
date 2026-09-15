@@ -20,6 +20,10 @@ export function createDramaEpisode(seriesId) {
   return api.post(`/drama/series/${seriesId}/episodes`);
 }
 
+export function deleteDramaEpisode(episodeId) {
+  return api.delete(`/drama/episodes/${episodeId}`);
+}
+
 export function updateDramaSeries(id, payload) {
   return api.put(`/drama/series/${id}`, payload);
 }
