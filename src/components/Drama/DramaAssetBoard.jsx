@@ -176,7 +176,7 @@ function ImageModelSelect({
   onBindModel,
 }) {
   return (
-    <label className="youxi-shot-model youxi-asset-model">
+    <label className="youxi-shot-model">
       图像模型
       <select
         aria-label="全局图片生成模型"
@@ -659,6 +659,17 @@ export function DramaAssetBoard({ series, episode }) {
 
       <section className="youxi-subject-main">
         <div className="youxi-subject-narration">
+          <ImageModelSelect
+            imageModels={imageModels}
+            imageModelId={imageModelId}
+            seriesImageModelId={series?.imageModelId}
+            seriesImageModelName={series?.imageModelName}
+            disabled={bindMutation.isPending}
+            onBindModel={(value) => {
+              setImageModelId(value);
+              if (value) bindMutation.mutate(value);
+            }}
+          />
           {scriptLocked ? (
             <button type="button" disabled={!episodeId || extractMutation.isPending} onClick={() => extractMutation.mutate()}>
               <RefreshCw size={16} />
@@ -676,17 +687,6 @@ export function DramaAssetBoard({ series, episode }) {
               <strong>{lockScriptMutation.isPending ? "锁定中" : "未锁定"}</strong>
             </button>
           )}
-          <ImageModelSelect
-            imageModels={imageModels}
-            imageModelId={imageModelId}
-            seriesImageModelId={series?.imageModelId}
-            seriesImageModelName={series?.imageModelName}
-            disabled={bindMutation.isPending}
-            onBindModel={(value) => {
-              setImageModelId(value);
-              if (value) bindMutation.mutate(value);
-            }}
-          />
           <div>
             <button
               type="button"
