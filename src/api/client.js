@@ -41,3 +41,13 @@ function makeApiError(message, code) {
   err.code = code;
   return err;
 }
+
+/** 网关重启、超时等瞬时失败，轮询应继续而不是当成出片失败。 */
+export function isRetryableRequestError(error) {
+  const code = Number(error?.code);
+  if ([408, 425, 502, 503, 504].includes(code)) {
+    return true;
+  }
+  const msg = String(error?.message || "");
+  return /status code 50[234]|Network Error|ECONNABORTED|timeout|请求超时/i.test(msg);
+}
