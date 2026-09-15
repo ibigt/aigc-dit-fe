@@ -548,6 +548,10 @@ export function DramaStoryboard({ series, episode }) {
       payload.promptOverride = patch.promptOverride;
     }
     const result = await runShot(shot.id, "save", () => updateDramaShot(shot.id, payload));
+    // 后端把清空的 promptOverride 置 null，Jackson 省略该字段，patchShot 浅合并会残留旧值；这里权威回写，保证「恢复自动编译」即时生效。
+    if (Object.prototype.hasOwnProperty.call(patch, "promptOverride")) {
+      patchShot({ id: shot.id, promptOverride: (patch.promptOverride || "").trim() || null });
+    }
     queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
     queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
     if (shot.videoKey && patch.durationSec != null && Number(patch.durationSec) !== Number(shot.durationSec)) {
