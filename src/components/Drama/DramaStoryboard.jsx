@@ -267,7 +267,7 @@ function ShotInspector({
             <strong>本镜出片</strong>
           </header>
           <label className="youxi-shot-model">
-            生成方式
+            <span className="youxi-shot-model-label">生成方式</span>
             <select
               aria-label="本镜生成方式"
               value={generateMode === "i2v" ? "i2v" : "r2v"}
@@ -289,7 +289,7 @@ function ShotInspector({
             </select>
           </label>
           <label className="youxi-shot-model">
-            时长
+            <span className="youxi-shot-model-label">分镜时长</span>
             <select
               aria-label="本镜时长"
               value={clampDuration(durationOptions, selected.durationSec)}
