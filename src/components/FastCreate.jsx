@@ -19,6 +19,26 @@ const videoResolutionMultipliers = { "480P": 0.5, "720P": 0.75, "768P": 0.8, "10
 const qualityLevels = ["Low", "Medium", "High"];
 const DEFAULT_SESSION_ID = "new-creation-default";
 const MODE_CAPS = ["t2i", "i2i", "t2v", "r2v", "i2v", "t2a"];
+const voiceLabels = {
+  "male-qn-qingse": "青涩青年男声",
+  "male-qn-jingying": "精英青年男声",
+  "male-qn-badao": "霸道青年男声",
+  "male-qn-daxuesheng": "青年大学生",
+  "female-shaonv": "少女音",
+  "female-yujie": "御姐音",
+  "female-chengshu": "成熟女声",
+  "female-tianmei": "甜美女声",
+};
+function voiceLabel(voice) {
+  if (voice && typeof voice === "object") return voice.name || voice.label || voice.id;
+  return voiceLabels[voice] || voice;
+}
+function voiceIdOf(voice) {
+  return voice && typeof voice === "object" ? voice.id : voice;
+}
+function voiceLanguage(voice) {
+  return voice && typeof voice === "object" ? voice.language || "其他" : "其他";
+}
 function canonicalCap(cap) {
   if (cap === "frames" || cap === "frame" || cap === "v2v") return "i2v";
   return cap;
@@ -345,7 +365,7 @@ function ResultMessage({ message, onReuse, onSave, savedIds = [], savingId }) {
             {items.map((media) => media.type === "video"
               ? <video key={media.id || media.src} src={media.src} poster={media.poster} controls playsInline><track kind="captions" src="/media/demo-captions.vtt" srcLang="zh" label="中文" /></video>
               : media.type === "audio"
-                ? <div className="asset-audio-player" key={media.id || media.src}><AudioLines size={36} /><strong>{media.title || "语音作品"}</strong><audio src={media.src} controls preload="metadata" /></div>
+                ? <div className="creation-audio-result" key={media.id || media.src}><span><AudioLines size={24} /></span><div><small>语音作品</small><strong>{media.title || "语音作品"}</strong><audio src={media.src} controls preload="metadata" /></div></div>
                 : <img key={media.id || media.src} src={media.src} alt={media.title || ""} />)}
             {message.creationType !== "语音" && <span className="media-spec-badge">{message.ratio} · {message.resolution}{message.creationType === "视频" ? ` · ${message.duration}` : ""}</span>}
           </div>
@@ -413,10 +433,19 @@ function ParameterPanel({ generationType, ratio, setRatio, resolution, setResolu
 }
 
 function AudioParameterPanel({ voices, formats, voiceId, setVoiceId, audioFormat, setAudioFormat, speed, setSpeed, minSpeed, maxSpeed }) {
+  const [voiceKeyword, setVoiceKeyword] = useState("");
+  const [voiceLanguageFilter, setVoiceLanguageFilter] = useState("全部");
+  const languages = [...new Set(voices.map(voiceLanguage))];
+  const normalizedKeyword = voiceKeyword.trim().toLowerCase();
+  const visibleVoices = voices.filter((voice) => {
+    const matchesLanguage = voiceLanguageFilter === "全部" || voiceLanguage(voice) === voiceLanguageFilter;
+    const matchesKeyword = !normalizedKeyword || `${voiceLabel(voice)} ${voiceIdOf(voice)}`.toLowerCase().includes(normalizedKeyword);
+    return matchesLanguage && matchesKeyword;
+  });
   return <div className="creation-popover creation-parameter-popover is-audio">
-    <section><label>音色</label><SegmentedOptions options={voices} value={voiceId} onChange={setVoiceId} /></section>
+    <section className="creation-voice-section"><label><span>音色</span><small>共 {voices.length} 个</small></label><div className="creation-voice-tools"><input value={voiceKeyword} onChange={(event) => setVoiceKeyword(event.target.value)} placeholder="搜索音色名称或 Voice ID" /><select value={voiceLanguageFilter} onChange={(event) => setVoiceLanguageFilter(event.target.value)}><option value="全部">全部语言</option>{languages.map((language) => <option key={language} value={language}>{language}</option>)}</select></div><div className="creation-voice-grid">{visibleVoices.map((voice) => { const id = voiceIdOf(voice); return <button type="button" className={voiceId === id ? "active" : ""} key={id} onClick={() => setVoiceId(id)}><span>{voiceLabel(voice)}</span><small>{voiceLanguage(voice)} · {id}</small>{voiceId === id && <Check size={12} />}</button>; })}</div>{!visibleVoices.length && <div className="creation-voice-empty">没有匹配的音色</div>}</section>
     <section><label>格式</label><SegmentedOptions options={formats} value={audioFormat} onChange={setAudioFormat} formatter={(item) => item.toUpperCase()} /></section>
-    <section><label>语速 · {speed.toFixed(2)}x</label><input type="range" min={minSpeed} max={maxSpeed} step="0.05" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} /></section>
+    <section className="creation-speed-control"><label><span>语速</span><b>{speed.toFixed(2)}x</b></label><input type="range" min={minSpeed} max={maxSpeed} step="0.05" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} /><div><small>{minSpeed}x</small><small>{maxSpeed}x</small></div></section>
   </div>;
 }
 
@@ -499,7 +528,8 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const sessionGenerating = isSessionGenerating(activeSession, generatingSessionIds);
   const selectedModel = useMemo(() => availableModels.find((item) => String(item.id) === String(model)) || availableModels[0], [availableModels, model]);
   const audioOptions = selectedModel?.audioOptions || {};
-  const voices = (audioOptions.voices?.length ? audioOptions.voices : [audioOptions.defaultVoice || "alloy"]).map((item) => typeof item === "string" ? item : item.id).filter(Boolean);
+  const voices = (audioOptions.voices?.length ? audioOptions.voices : [audioOptions.defaultVoice || "alloy"]).filter((item) => voiceIdOf(item));
+  const voiceIds = voices.map(voiceIdOf);
   const audioFormats = audioOptions.formats?.length ? audioOptions.formats : [audioOptions.defaultFormat || "mp3"];
   const minSpeed = Number(audioOptions.minSpeed ?? 0.25);
   const maxSpeed = Number(audioOptions.maxSpeed ?? 4);
@@ -528,9 +558,9 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   useEffect(() => { if (availableModels.length && !availableModels.some((item) => String(item.id) === String(model))) setModel(String(availableModels[0].id)); }, [availableModels, model]);
   useEffect(() => {
     if (generationType !== "audio") return;
-    const nextVoice = audioOptions.defaultVoice || voices[0] || "alloy";
+    const nextVoice = audioOptions.defaultVoice || voiceIds[0] || "alloy";
     const nextFormat = audioOptions.defaultFormat || audioFormats[0] || "mp3";
-    setVoiceId((current) => voices.includes(current) ? current : nextVoice);
+    setVoiceId((current) => voiceIds.includes(current) ? current : nextVoice);
     setAudioFormat((current) => audioFormats.includes(current) ? current : nextFormat);
     setSpeed((current) => Math.min(maxSpeed, Math.max(minSpeed, current || 1)));
   }, [generationType, selectedModel?.id]);
@@ -1043,6 +1073,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
                 {generationType === "video" && videoMode === "frames" ? <><UploadTile label="首帧" detail="起始画面" material={firstFrame} onClick={() => firstFrameInputRef.current?.click()} onRemove={() => setFirstFrame(null)} /><ArrowLeftRight className="frame-bridge" size={15} /><UploadTile label="尾帧" detail="结束画面" material={lastFrame} onClick={() => lastFrameInputRef.current?.click()} onRemove={() => setLastFrame(null)} /></> : supportsLibrary ? <>{referenceImages.map((item, index) => <UploadTile key={item.storageKey || item.id || `${item.url}-${index}`} label={item.name || `参考 ${index + 1}`} material={item} onRemove={() => setReferenceImages((items) => items.filter((_, itemIndex) => itemIndex !== index))} />)}<UploadTile label="参考" detail={generationType === "video" ? (imageOnlyRefs(selectedModel) ? "图片" : supportsAudioReference ? `图片/视频/音频（音频≤${maxAudioReferences}）` : "图片/视频") : "支持多选"} onClick={() => referenceInputRef.current?.click()} /></> : null}
               </div>
               <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendPrompt(); } }} placeholder={generationType === "video" ? "描述您想要生成的视频内容，例如，“一个孩子在公园里放风筝，金色阳光，镜头上移。”" : generationType === "audio" ? "输入需要朗读的文本，例如，“欢迎使用同道智能语音创作平台。”" : "描述您想生成的图片，例如，“夕阳映照在海面上，鲜艳的色彩与汹涌的波涛交相辉映。”"} maxLength={generationType === "audio" ? 4096 : undefined} />
+              {generationType === "audio" && <span className="creation-character-count">{prompt.length} / 4096</span>}
             </div>
             <footer className="creation-composer__footer">
               <div className="creation-controls">
@@ -1056,7 +1087,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
                   })}</div>}
                 </div>
                 {showVideoModes && <div className="creation-control-wrap"><button type="button" className="creation-pill" aria-expanded={openPanel === "mode"} onClick={() => setOpenPanel(openPanel === "mode" ? null : "mode")}><Film size={14} />{videoMode === "reference" ? "参考生成" : "首/尾帧"}<ChevronDown size={13} /></button>{openPanel === "mode" && <div className="creation-popover creation-mode-popover"><button className={videoMode === "reference" ? "active" : ""} onClick={() => { setVideoMode("reference"); setOpenPanel(null); }}><Images size={14} /><span><strong>参考生成</strong><small>{imageOnlyRefs(selectedModel) ? "可用图片作为参考（不支持参考视频）" : "可用图片或视频作为参考"}</small></span>{videoMode === "reference" && <Check size={14} />}</button><button className={videoMode === "frames" ? "active" : ""} disabled={!supportsFrames} onClick={() => { if (!supportsFrames) return; setVideoMode("frames"); setOpenPanel(null); }}><Film size={14} /><span><strong>首/尾帧</strong><small>{supportsFrames ? "控制视频起始与结束画面" : "当前模型不支持首尾帧"}</small></span>{videoMode === "frames" && <Check size={14} />}</button></div>}</div>}
-                <div className="creation-control-wrap"><button type="button" className="creation-pill creation-spec-pill" aria-expanded={openPanel === "params"} onClick={() => setOpenPanel(openPanel === "params" ? null : "params")}>{generationType === "audio" ? <AudioLines size={14} /> : <Maximize2 size={14} />}{generationType === "video" ? `${resolution} · ${duration}s · ${ratio}` : generationType === "audio" ? `${voiceId} · ${speed}x · ${audioFormat.toUpperCase()}` : `${resolution} · ${quality} · ${ratio}`}<ChevronDown size={13} /></button>{openPanel === "params" && (generationType === "audio" ? <AudioParameterPanel voices={voices} formats={audioFormats} voiceId={voiceId} setVoiceId={setVoiceId} audioFormat={audioFormat} setAudioFormat={setAudioFormat} speed={speed} setSpeed={setSpeed} minSpeed={minSpeed} maxSpeed={maxSpeed} /> : <ParameterPanel generationType={generationType} ratio={ratio} setRatio={setRatio} resolution={resolution} setResolution={setResolution} duration={duration} setDuration={setDuration} quality={quality} setQuality={setQuality} durationOptions={durationOptionsFor(selectedModel)} resolutionOptions={generationType === "video" ? videoResolutionsFor(selectedModel) : ["1K", "2K", "4K"]} />)}</div>
+                <div className="creation-control-wrap"><button type="button" className={`creation-pill creation-spec-pill ${generationType === "audio" ? "is-audio" : ""}`} aria-expanded={openPanel === "params"} onClick={() => setOpenPanel(openPanel === "params" ? null : "params")}>{generationType === "audio" ? <AudioLines size={14} /> : <Maximize2 size={14} />}<span>{generationType === "video" ? `${resolution} · ${duration}s · ${ratio}` : generationType === "audio" ? `${voiceLabel(voices.find((voice) => voiceIdOf(voice) === voiceId) || voiceId)} · ${speed.toFixed(2)}x · ${audioFormat.toUpperCase()}` : `${resolution} · ${quality} · ${ratio}`}</span><ChevronDown size={13} /></button>{openPanel === "params" && (generationType === "audio" ? <AudioParameterPanel voices={voices} formats={audioFormats} voiceId={voiceId} setVoiceId={setVoiceId} audioFormat={audioFormat} setAudioFormat={setAudioFormat} speed={speed} setSpeed={setSpeed} minSpeed={minSpeed} maxSpeed={maxSpeed} /> : <ParameterPanel generationType={generationType} ratio={ratio} setRatio={setRatio} resolution={resolution} setResolution={setResolution} duration={duration} setDuration={setDuration} quality={quality} setQuality={setQuality} durationOptions={durationOptionsFor(selectedModel)} resolutionOptions={generationType === "video" ? videoResolutionsFor(selectedModel) : ["1K", "2K", "4K"]} />)}</div>
                 {generationType !== "audio" && <button type="button" className="creation-icon-action" title={supportsLibrary ? (generationType === "video" ? "从素材库引用图片或视频" : "从素材库引用") : "当前模型不支持参考素材"} aria-label="从素材库引用素材" disabled={!supportsLibrary} onClick={() => { if (supportsLibrary) openAssetPicker(); }}><AtSign size={16} /></button>}
                 <button type="button" className="creation-icon-action" title="重置输入" aria-label="重置输入内容与参数" onClick={resetComposer}><RotateCcw size={15} /></button>
               </div>
