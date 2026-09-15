@@ -801,6 +801,9 @@ a { color: inherit; text-decoration: none; }
 .asset-card__info > div { display: flex; flex-direction: column; min-width: 0; flex: 1; }.asset-card__info strong { font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.asset-card__info small { color: #9299a2; font-size: 8px; margin-top: 3px; }
 .asset-card__info > span { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; color: #2b8b5c; background: #e8f7ef; }
 .audio-preview { height: 100%; display: flex; align-items: center; justify-content: center; gap: 3px; color: #5363e4; background: linear-gradient(145deg,#eef0ff,#e6f8f2); }.audio-preview span { width: 3px; height: 25%; border-radius: 2px; background: currentColor; }.audio-preview span:nth-child(3) { height: 45%; }.audio-preview span:nth-child(4) { height: 30%; }
+.asset-audio-player { width: min(520px, 90%); display: flex; flex-direction: column; align-items: center; gap: 16px; color: #5962d9; }
+.asset-audio-player strong { color: var(--ink); font-size: 15px; }
+.asset-audio-player audio { width: 100%; }
 .asset-grid--list { grid-template-columns: 1fr; }.asset-grid--list .upload-card { min-height: 75px; flex-direction: row; }.asset-grid--list .asset-card { display: grid; grid-template-columns: 120px 1fr; }.asset-grid--list .asset-card__media { aspect-ratio: 1.5; }
 .library-summary { display: flex; align-items: center; gap: 7px; color: #8b929c; font-size: 9px; padding: 17px 2px; }.library-summary button { margin-left: auto; border: 0; background: none; color: #69727d; display: flex; gap: 5px; font-size: 9px; }
 

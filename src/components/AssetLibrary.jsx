@@ -1,4 +1,4 @@
-import { Check, Clock3, Download, Filter, Grid3X3, Image, List, Plus, Search, Trash2, Upload, Video, X } from "lucide-react";
+import { AudioLines, Check, Clock3, Download, Filter, Grid3X3, Image, List, Plus, Search, Trash2, Upload, Video, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteAsset, fetchAssets, uploadAsset } from "../api/assets.js";
@@ -53,12 +53,12 @@ export function AssetLibrary() {
   return (
     <div className="library-page">
       <header className="page-heading">
-        <div><h1>素材库</h1><p>集中管理你的图片与视频资产，快速创作可通过 @ 引用。</p></div>
+        <div><h1>素材库</h1><p>集中管理你的图片、视频与音频资产，创作和角色音色配置均可直接引用。</p></div>
         <button className="button button--primary" type="button" onClick={() => fileRef.current?.click()}><Upload size={17} /> 上传素材</button>
-        <input ref={fileRef} type="file" multiple accept="image/*,video/*" hidden onChange={onUpload} />
+        <input ref={fileRef} type="file" multiple accept="image/*,video/*,audio/*,.mp3,.wav,.m4a,.aac" hidden onChange={onUpload} />
       </header>
       <section className="library-toolbar">
-        <div className="filter-tabs">{[{ id: "all", label: "全部", icon: Grid3X3 }, { id: "image", label: "图片", icon: Image }, { id: "video", label: "视频", icon: Video }].map((item) => {
+        <div className="filter-tabs">{[{ id: "all", label: "全部", icon: Grid3X3 }, { id: "image", label: "图片", icon: Image }, { id: "video", label: "视频", icon: Video }, { id: "audio", label: "音频", icon: AudioLines }].map((item) => {
           const Icon = item.icon;
           return <button className={filter === item.id ? "active" : ""} type="button" key={item.id} onClick={() => setFilter(item.id)}><Icon size={15} />{item.label}</button>;
         })}</div>
@@ -71,13 +71,13 @@ export function AssetLibrary() {
         </div>
       </section>
       <section className={`asset-grid ${view === "list" ? "asset-grid--list" : ""}`}>
-        <button className="upload-card" type="button" onClick={() => fileRef.current?.click()}><span><Plus size={22} /></span><strong>上传新素材</strong><small>图片或视频</small></button>
+        <button className="upload-card" type="button" onClick={() => fileRef.current?.click()}><span><Plus size={22} /></span><strong>上传新素材</strong><small>图片、视频或音频</small></button>
         {assets.map((item) => (
           <article className="asset-card" key={item.id}>
             <div className="asset-card__media">
               <button className="asset-card__preview" type="button" onClick={() => setSelected(item)} aria-label={`查看素材：${item.title}`}>
                 <MediaCover item={item} />
-                <div className="asset-card__type">{item.type === "video" ? <><Video size={13} /> 视频</> : <><Image size={13} /> 图片</>}</div>
+                <div className="asset-card__type">{item.type === "audio" ? <><AudioLines size={13} /> 音频</> : item.type === "video" ? <><Video size={13} /> 视频</> : <><Image size={13} /> 图片</>}</div>
               </button>
               <button className="asset-menu" type="button" aria-label={`删除素材：${item.title}`} onClick={() => confirmDelete(item)}><Trash2 size={15} /></button>
             </div>
@@ -97,9 +97,11 @@ export function AssetLibrary() {
               <button className="modal-close" type="button" aria-label="关闭素材预览" onClick={() => setSelected(null)}><X size={19} /></button>
             </header>
             <div className="creation-viewer__media">
-              {selected.type === "video"
-                ? <video src={selected.src} poster={selected.poster} controls playsInline />
-                : <img src={selected.src} alt={selected.title} />}
+              {selected.type === "audio"
+                ? <div className="asset-audio-player"><AudioLines size={42} /><strong>{selected.title}</strong><audio src={selected.src} controls preload="metadata" /></div>
+                : selected.type === "video"
+                  ? <video src={selected.src} poster={selected.poster} controls playsInline />
+                  : <img src={selected.src} alt={selected.title} />}
             </div>
             <div className="creation-viewer__meta">
               <div><span>入库时间</span><p>{selected.createdAt}</p></div>

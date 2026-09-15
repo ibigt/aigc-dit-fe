@@ -111,6 +111,10 @@ export function uploadDramaAssetVoiceReference(assetId, file) {
   return api.post(`/drama/assets/${assetId}/voice-reference`, data);
 }
 
+export function bindDramaAssetVoiceReference(assetId, libraryAssetId) {
+  return api.post(`/drama/assets/${assetId}/voice-reference/library/${libraryAssetId}`);
+}
+
 export function generateDramaAssetImage(assetId, payload = {}) {
   return api.post(`/drama/assets/${assetId}/generate`, payload);
 }

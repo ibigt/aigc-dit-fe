@@ -15,7 +15,9 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { fetchAssets } from "../../api/assets.js";
 import {
+  bindDramaAssetVoiceReference,
   bindDramaImageModel,
   createDramaAsset,
   deleteDramaAsset,
@@ -43,6 +45,35 @@ const RESOLUTIONS = ["1K", "2K"];
 const PROMPT_MAX = 4000;
 const BATCH_LIMIT = 4;
 const emptyCreate = { name: "", meta: "", prompt: "" };
+
+function VoiceLibraryDialog({ assets, loading, busy, onClose, onSelect, onUpload }) {
+  return (
+    <div className="drama-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+      <section className="drama-dialog drama-voice-library" role="dialog" aria-modal="true" aria-labelledby="voice-library-title">
+        <header>
+          <div><span>参考音频</span><h2 id="voice-library-title">选择角色音色</h2></div>
+        </header>
+        <div className="drama-voice-library__body">
+          <button className="drama-voice-library__upload" type="button" disabled={busy} onClick={onUpload}>
+            <Upload size={18} /><span><strong>自定义上传</strong><small>上传后自动同步到音频素材库</small></span>
+          </button>
+          <div className="drama-voice-library__list">
+            {loading && <p>正在加载音频素材…</p>}
+            {!loading && !assets.length && <p>音频库暂无素材，可先自定义上传。</p>}
+            {assets.map((item) => (
+              <article key={item.id}>
+                <AudioLines size={18} />
+                <span><strong>{item.title || item.name}</strong><audio controls preload="metadata" src={mediaUrl(item.src || item.url || item.storageKey)} /></span>
+                <button type="button" disabled={busy} onClick={() => onSelect(item)}>{busy ? "绑定中…" : "选择"}</button>
+              </article>
+            ))}
+          </div>
+        </div>
+        <footer><button type="button" disabled={busy} onClick={onClose}>取消</button></footer>
+      </section>
+    </div>
+  );
+}
 
 function promptOf(asset) {
   return asset?.imagePrompt || asset?.description || "";
@@ -233,7 +264,7 @@ function SubjectInspector({
                 <div className="drama-native-voice__actions">
                   {supportsVoiceReference && (
                     <button className="drama-voice-action drama-voice-action--secondary" type="button" onClick={onVoiceUploadClick} disabled={voiceBusy}>
-                      <Upload size={13} /> {asset.voiceReferenceUrl ? "更换参考音频" : "上传参考音频"}
+                      <AudioLines size={13} /> {asset.voiceReferenceUrl ? "更换参考音频" : "配置参考音频"}
                     </button>
                   )}
                   <button
@@ -334,6 +365,7 @@ export function DramaAssetBoard({ series, episode }) {
   const [summaryDraft, setSummaryDraft] = useState("");
   const [promptDraft, setPromptDraft] = useState("");
   const [voiceLockDraft, setVoiceLockDraft] = useState("");
+  const [voiceLibraryOpen, setVoiceLibraryOpen] = useState(false);
   const [promptDirty, setPromptDirty] = useState(false);
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
@@ -361,6 +393,11 @@ export function DramaAssetBoard({ series, episode }) {
     queryKey: ["drama-assets", episodeId],
     queryFn: () => fetchDramaAssets(episodeId),
     enabled: Boolean(episodeId),
+  });
+  const voiceLibraryQuery = useQuery({
+    queryKey: ["assets", "audio", ""],
+    queryFn: () => fetchAssets({ kind: "audio" }),
+    enabled: voiceLibraryOpen,
   });
 
   const imageModels = imageModelsQuery.data || [];
@@ -548,6 +585,20 @@ export function DramaAssetBoard({ series, episode }) {
     markBusy(selected.id, "voice", true);
     try {
       await uploadDramaAssetVoiceReference(selected.id, file);
+      setVoiceLibraryOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
+      invalidate();
+    } finally {
+      markBusy(selected.id, "voice", false);
+    }
+  }
+
+  async function onVoiceLibrarySelect(libraryAsset) {
+    if (!libraryAsset?.id || !selected) return;
+    markBusy(selected.id, "voice", true);
+    try {
+      await bindDramaAssetVoiceReference(selected.id, libraryAsset.id);
+      setVoiceLibraryOpen(false);
       invalidate();
     } finally {
       markBusy(selected.id, "voice", false);
@@ -790,7 +841,7 @@ export function DramaAssetBoard({ series, episode }) {
         voiceBusy={isBusy(selected?.id, "voice")}
         onVoiceLockChange={(event) => setVoiceLockDraft(event.target.value)}
         onVoiceSave={() => saveVoice().catch((err) => showToast(err.message))}
-        onVoiceUploadClick={() => voiceFileRef.current?.click()}
+        onVoiceUploadClick={() => setVoiceLibraryOpen(true)}
         supportsVoiceReference={supportsVoiceReference}
         onZoom={() => selected && setPreview({
           src: mediaUrl(selected.imageStorageKey || selected.imageUrl),
@@ -809,6 +860,17 @@ export function DramaAssetBoard({ series, episode }) {
             event.target.value = "";
             onVoiceUpload(file).catch((err) => showToast(err.message));
           }}
+        />
+      )}
+
+      {supportsVoiceReference && voiceLibraryOpen && (
+        <VoiceLibraryDialog
+          assets={voiceLibraryQuery.data || []}
+          loading={voiceLibraryQuery.isLoading}
+          busy={isBusy(selected?.id, "voice")}
+          onClose={() => setVoiceLibraryOpen(false)}
+          onSelect={(item) => onVoiceLibrarySelect(item).catch((err) => showToast(err.message))}
+          onUpload={() => voiceFileRef.current?.click()}
         />
       )}
 
