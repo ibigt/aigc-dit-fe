@@ -72,6 +72,7 @@ const ADAPTER_OPTIONS = [
   { key: "seedance-2.5", label: "Seedance 2.5", category: "video", provider: "官方API", defaultEndpoint: "https://ark.cn-beijing.volces.com/api/v3", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "doubao-seedance-2-5-260628" },
   { key: "minimax-h3", label: "MiniMax-H3", category: "video", provider: "官方API", defaultEndpoint: "https://api.minimax.cn", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "MiniMax-H3" },
   { key: "agnes-video-2.5", label: "Agnes Video 2.5", category: "video", provider: "官方API", defaultEndpoint: "https://api.agnes-ai.cn/v1", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "agnes-video-2.5-flash" },
+  { key: "minimax-speech", label: "MiniMax Speech", category: "audio", provider: "官方API", defaultEndpoint: "https://api.minimax.cn/v1/t2a_v2", modes: ["t2a"], defaultPaths: {}, defaultModelKey: "speech-2.8-hd" },
   { key: "openai-speech", label: "OpenAI 兼容语音", category: "audio", provider: "自定义配置", defaultEndpoint: "https://api.openai.com/v1", modes: ["t2a"], defaultPaths: {}, defaultModelKey: "gpt-4o-mini-tts" },
   { key: "agnes-text", label: "Agnes 对话", category: "text", provider: "官方API", defaultEndpoint: "https://api.agnes-ai.cn/v1", modes: [], defaultPaths: {}, defaultModelKey: "agnes-2.5-flash" },
   { key: "openai-compat", label: "OpenAI 兼容", category: "text", provider: "自定义配置", defaultEndpoint: "", modes: [], defaultPaths: {}, defaultModelKey: "" },
@@ -104,6 +105,10 @@ function isSeedanceOfficial(adapterKey) {
 
 function isMiniMaxH3(adapterKey) {
   return adapterKey === "minimax-h3";
+}
+
+function isMiniMaxSpeech(adapterKey) {
+  return adapterKey === "minimax-speech";
 }
 
 function audioCapabilityOf(model) {
@@ -210,6 +215,7 @@ function inferAdapterKey(model) {
     if (provider.includes("自定义") || provider.includes("手动") || provider.includes("openai") || key.includes("openai") || key.includes("gpt-4") || key.includes("gpt-3")) return "openai-compat";
     return "agnes-text";
   }
+  if (category === "audio" && (key.startsWith("speech-") || key.includes("minimax") || provider.includes("minimax") || provider.includes("稀宇"))) return "minimax-speech";
   if (key.includes("agnes-image") || (key.includes("agnes") && category === "image")) return "agnes-image-2.5";
   if (key.includes("seedance-2.5") || key.includes("seedance-2-5") || key.includes("doubao-seedance-2-5")) return "seedance-2.5";
   if (key.includes("doubao-seedance-2-0") || key.includes("doubao-seedance-2.0") || key.includes("seedance-2-0-fast") || key.includes("seedance-2.0-fast") || provider.includes("ark") || provider.includes("火山") || provider.includes("方舟")) return "seedance-2.0";
@@ -604,6 +610,20 @@ function ModelDialog({ model, onClose, onSave, saving }) {
         : (isSeedanceOfficial(adapter.key) && isOfficialTokenPlan(current.provider) ? PROVIDER_OFFICIAL_TOKEN_PLAN : adapter.provider),
       capabilities: filterCapsForAdapter(current.capabilities, category, adapter.key),
     };
+    if (category === "audio" && current.adapterKey !== adapter.key) {
+      const minimaxSpeech = isMiniMaxSpeech(adapter.key);
+      next.defaultVoice = minimaxSpeech ? "male-qn-qingse" : "alloy";
+      next.voicesText = minimaxSpeech
+        ? "male-qn-qingse, male-qn-jingying, male-qn-badao, male-qn-daxuesheng, female-shaonv, female-yujie, female-chengshu, female-tianmei"
+        : "alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer";
+      next.formatsText = minimaxSpeech ? "mp3, wav, flac, pcm" : "mp3, wav, aac, flac, opus";
+      next.adapterConfig = {
+        ...(current.adapterConfig || {}),
+        defaultVoice: next.defaultVoice,
+        defaultFormat: "mp3",
+        ...(minimaxSpeech ? { volume: 1, pitch: 0, sampleRate: 32000, bitrate: 128000, channel: 1, languageBoost: "auto" } : {}),
+      };
+    }
     if (!current.endpoint || current.endpoint === prevDefault || current.endpoint === ARK_PAYG_ENDPOINT || current.endpoint === ARK_PLAN_ENDPOINT || current.endpoint === MINIMAX_OFFICIAL_ENDPOINT || current.endpoint === MINIMAX_COMFY_ENDPOINT) {
       next.endpoint = isMiniMaxH3(adapter.key)
         ? (next.provider === "ComfyUI" ? MINIMAX_COMFY_ENDPOINT : MINIMAX_OFFICIAL_ENDPOINT)
@@ -674,6 +694,7 @@ function ModelDialog({ model, onClose, onSave, saving }) {
   const adapter = adapterOf(draft.adapterKey);
   const isText = draft.category === "text";
   const isAudio = draft.category === "audio";
+  const isMiniMaxAudio = isMiniMaxSpeech(draft.adapterKey);
   const providerCopy = adapter?.provider === "ComfyUI"
     ? "适配协议决定字段翻译；来源 ComfyUI 与默认服务地址已自动带出。"
     : adapter?.provider === "自定义配置"
@@ -681,8 +702,10 @@ function ModelDialog({ model, onClose, onSave, saving }) {
         ? "语音通道走 OpenAI 兼容 /audio/speech。请填写 Base URL、模型标识、音色与输出格式。"
         : "文本通道走 OpenAI 兼容 /v1/chat/completions。请填写 Base URL 与模型标识；本地网关无鉴权时可留空 API Key。")
       : adapter?.provider === "官方API"
-        ? (isText
-          ? "文本通道走官方对话接口。默认地址与 Agnes 图/视频相同，模型标识填 agnes-2.5-flash。"
+        ? (isMiniMaxAudio
+          ? "MiniMax Speech 走 /v1/t2a_v2，支持系统音色或自定义 voice_id，并解析返回的音频数据。"
+          : isText
+            ? "文本通道走官方对话接口。默认地址与 Agnes 图/视频相同，模型标识填 agnes-2.5-flash。"
           : isSeedanceOfficial(adapter?.key)
             ? "适配协议只负责 t2v/r2v/i2v 字段翻译。接入来源选「官方API」走按量 /api/v3，选「官方API（token plan）」走订阅 /api/plan/v3。"
             : adapter?.key === "minimax-h3"
@@ -737,6 +760,7 @@ function ModelDialog({ model, onClose, onSave, saving }) {
           {!isText && <div className="model-form-wide model-cap-field"><span>能力勾选</span><div className="model-cap-row">{visibleCapOptions.map((cap) => <label key={cap.id} className="model-cap-chip"><input type="checkbox" checked={caps.includes(cap.id)} onChange={() => toggleCap(cap.id)} />{cap.label}</label>)}</div></div>}
           {draft.category === "video" && <div className="model-form-wide model-cap-field"><span>参考音频能力</span><div className="model-cap-row"><span className="model-cap-chip">{audioCapabilityLabel(draft)}</span></div><small className="model-logo-hint">由适配协议和模型标识自动判定，无需手动配置。</small></div>}
           {isAudio && <><label>默认音色<input value={draft.defaultVoice || ""} onChange={(event) => update("defaultVoice", event.target.value)} placeholder="alloy" /></label><label>默认格式<select value={draft.adapterConfig?.defaultFormat || "mp3"} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), defaultFormat: event.target.value } }))}><option value="mp3">MP3</option><option value="wav">WAV</option><option value="aac">AAC</option><option value="flac">FLAC</option><option value="opus">OPUS</option></select></label><label className="model-form-wide">可选音色（逗号分隔）<input value={draft.voicesText || ""} onChange={(event) => update("voicesText", event.target.value)} placeholder="alloy, nova, shimmer" /></label><label className="model-form-wide">支持格式（逗号分隔）<input value={draft.formatsText || ""} onChange={(event) => update("formatsText", event.target.value)} placeholder="mp3, wav, aac" /></label><label>最低语速<input type="number" step="0.05" min="0.25" max="4" value={draft.minSpeed ?? 0.25} onChange={(event) => update("minSpeed", Number(event.target.value))} /></label><label>最高语速<input type="number" step="0.05" min="0.25" max="4" value={draft.maxSpeed ?? 4} onChange={(event) => update("maxSpeed", Number(event.target.value))} /></label></>}
+          {isMiniMaxAudio && <><label>默认音量<input type="number" step="0.1" min="0.1" max="10" value={draft.adapterConfig?.volume ?? 1} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), volume: Number(event.target.value) } }))} /></label><label>默认音调<input type="number" min="-12" max="12" value={draft.adapterConfig?.pitch ?? 0} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), pitch: Number(event.target.value) } }))} /></label><label>采样率<input type="number" min="8000" value={draft.adapterConfig?.sampleRate ?? 32000} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), sampleRate: Number(event.target.value) } }))} /></label><label>比特率<input type="number" min="32000" value={draft.adapterConfig?.bitrate ?? 128000} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), bitrate: Number(event.target.value) } }))} /></label><label>声道数<select value={draft.adapterConfig?.channel ?? 1} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), channel: Number(event.target.value) } }))}><option value={1}>单声道</option><option value={2}>双声道</option></select></label><label>语言增强<input value={draft.adapterConfig?.languageBoost || "auto"} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), languageBoost: event.target.value } }))} placeholder="auto / Chinese / English" /></label></>}
           {!isText && !isAudio && !isOfficialSource(draft.provider) && visibleCapOptions.filter((cap) => caps.includes(cap.id)).map((cap) => (
             <label key={cap.pathKey} className="model-form-wide">{cap.pathLabel}<input value={pathValue(draft, cap.pathKey)} onChange={(event) => update(cap.pathKey, event.target.value)} placeholder={pathPlaceholder(cap, draft.adapterKey)} /></label>
           ))}
