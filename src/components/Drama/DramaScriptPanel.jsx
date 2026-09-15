@@ -26,37 +26,11 @@ function resolutionOptionsFor(model) {
   return listed.length ? listed : RESOLUTIONS;
 }
 
-const ANALYSIS_STORE_PREFIX = "drama-analysis-config:";
-
-function readAnalysisStore(seriesId) {
-  if (!seriesId) return {};
-  try {
-    const raw = window.localStorage.getItem(ANALYSIS_STORE_PREFIX + seriesId);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeAnalysisStore(seriesId, config) {
-  if (!seriesId) return;
-  window.localStorage.setItem(ANALYSIS_STORE_PREFIX + seriesId, JSON.stringify({
-    episodeDurationSec: config.episodeDurationSec,
-    shotsPerEpisode: config.shotsPerEpisode,
-    requirements: config.requirements || "",
-  }));
-}
-
 function settingsDraftFrom(series) {
-  const stored = readAnalysisStore(series?.id);
   return {
     styleKey: series?.styleKey || DEFAULT_DRAMA_STYLE_KEY,
     aspectRatio: series?.aspectRatio || "16:9",
     defaultResolution: series?.defaultResolution || "720P",
-    episodeCount: series?.plannedEpisodeCount || 1,
-    episodeDurationSec: stored.episodeDurationSec ?? 15,
-    shotsPerEpisode: stored.shotsPerEpisode ?? 8,
-    requirements: stored.requirements || "",
   };
 }
 
@@ -65,18 +39,13 @@ function seriesPayload(draft) {
     styleKey: draft.styleKey,
     aspectRatio: draft.aspectRatio,
     defaultResolution: draft.defaultResolution,
-    plannedEpisodeCount: Math.min(99, Math.max(1, Number(draft.episodeCount) || 1)),
   };
 }
 
 function sameSettings(left, right) {
   return left.styleKey === right.styleKey
     && left.aspectRatio === right.aspectRatio
-    && left.defaultResolution === right.defaultResolution
-    && Number(left.episodeCount) === Number(right.episodeCount)
-    && Number(left.episodeDurationSec) === Number(right.episodeDurationSec)
-    && Number(left.shotsPerEpisode) === Number(right.shotsPerEpisode)
-    && (left.requirements || "") === (right.requirements || "");
+    && left.defaultResolution === right.defaultResolution;
 }
 
 const ANALYSIS_STAGES = [
@@ -150,7 +119,6 @@ export function DramaScriptPanel({
 
   function persistSettings(next = draft) {
     if (!series?.id) throw new Error("请先打开短剧项目");
-    writeAnalysisStore(series.id, next);
     return updateDramaSeries(series.id, seriesPayload(next));
   }
 
@@ -162,10 +130,6 @@ export function DramaScriptPanel({
         setSavedDraft(draft);
       }
       return analyzeDramaScript(episode.id, {
-        episodeCount: draft.episodeCount,
-        episodeDurationSec: draft.episodeDurationSec,
-        shotsPerEpisode: draft.shotsPerEpisode,
-        requirements: draft.requirements,
         sourceText: raw,
       });
     },
@@ -430,18 +394,6 @@ export function DramaScriptPanel({
       </section>
 
       <aside className="drama-script-settings">
-        <section className="settings-block drama-analysis-settings">
-          <header>
-            <strong>剧本分析配置</strong>
-            <span>保存后用于后续分析</span>
-          </header>
-          <div className="drama-analysis-fields">
-            <label>集数<input type="number" min="1" max="100" value={draft.episodeCount} onChange={(e) => setDraft((current) => ({ ...current, episodeCount: Number(e.target.value) }))} /></label>
-            <label>单集时长（秒）<input type="number" min="5" max="60" value={draft.episodeDurationSec} onChange={(e) => setDraft((current) => ({ ...current, episodeDurationSec: Number(e.target.value) }))} /></label>
-            <label>目标分镜数<input type="number" min="1" max="100" value={draft.shotsPerEpisode} onChange={(e) => setDraft((current) => ({ ...current, shotsPerEpisode: Number(e.target.value) }))} /></label>
-          </div>
-          <label className="drama-analysis-requirements">补充要求<textarea rows="3" value={draft.requirements} onChange={(e) => setDraft((current) => ({ ...current, requirements: e.target.value }))} placeholder="例如：节奏紧凑，结尾保留悬念" /></label>
-        </section>
         <section className="settings-block">
           <header>
             <strong>视频比例与清晰度</strong>

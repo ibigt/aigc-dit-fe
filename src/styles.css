@@ -1064,10 +1064,6 @@ button.asset-card__preview {
 .drama-analysis-summary header strong { color: var(--ink); font-size: 13px; }
 .drama-analysis-stats { display: flex; gap: 18px; margin-top: 10px; color: var(--muted); font-size: 12px; }
 .drama-analysis-stats b { color: var(--ink); font-size: 20px; margin-right: 3px; }
-.drama-analysis-fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.drama-analysis-fields label, .drama-analysis-requirements { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 12px; }
-.drama-analysis-fields input, .drama-analysis-requirements textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px; background: var(--soft); color: var(--ink); font: inherit; }
-.drama-analysis-requirements { margin-top: 10px; }
 .drama-script__head h2 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 15px; }
 .drama-script__meta { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
 .drama-script__meta .drama-status-chip { margin-left: 0; }
