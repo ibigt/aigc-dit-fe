@@ -149,12 +149,6 @@ export function dramaStoryboardStatus(board) {
   return board?.status || "未开始";
 }
 
-function generatedModeLabel(mode) {
-  if (mode === "i2v") return "出片时：首尾帧";
-  if (mode === "r2v") return "出片时：参考图";
-  return "";
-}
-
 function shotModeOf(shot) {
   const mode = shot?.effectiveVideoGenerateMode || shot?.videoGenerateMode;
   return mode === "i2v" ? "i2v" : "r2v";
@@ -163,6 +157,13 @@ function shotModeOf(shot) {
 function shotChainOf(shot) {
   if (shot?.effectiveVideoChainPrevTail != null) return Boolean(shot.effectiveVideoChainPrevTail);
   return Boolean(shot?.videoChainPrevTail);
+}
+
+function shotPromptText(shot) {
+  if (!shot) return "";
+  const override = String(shot.promptOverride || "").trim();
+  if (override) return override;
+  return shot.compiledPrompt || "";
 }
 
 function firstFrameTitle(source) {
@@ -194,6 +195,11 @@ function ShotInspector({
   const promptRef = useRef(null);
   const promptCountRef = useRef(null);
   const frozen = generating || readOnly;
+  const serverPrompt = shotPromptText(selected);
+  const [promptText, setPromptText] = useState(serverPrompt);
+  useEffect(() => {
+    setPromptText(serverPrompt);
+  }, [selected?.id, serverPrompt]);
   if (!selected) {
     return (
       <aside className="youxi-inspector youxi-story-inspector">
@@ -243,7 +249,7 @@ function ShotInspector({
     commitCast({ ...cast, [key]: cast[key].filter((item) => item !== name) });
   }
 
-  const promptInitial = selected.promptOverride ?? selected.compiledPrompt ?? "";
+  const promptInitial = serverPrompt;
 
   function savePrompt(value) {
     if (value === promptInitial) return;
@@ -406,7 +412,7 @@ function ShotInspector({
           <p className="drama-form-error">
             {selected.promptOverride
               ? "模式已变，请改覆盖提示词或清空后用自动编译。"
-              : "身份、风格或生成方式已变，旧 prompt 已作废，请重新编译后再出片。"}
+              : "身份、风格或生成方式已变，已重新编译提示词；请确认后再出片。"}
           </p>
         )}
         {selected.prevTailStale && generateMode === "i2v" && (
@@ -501,16 +507,16 @@ function ShotInspector({
             {selected.promptOverride
               ? <em className="drama-engine">手动</em>
               : <em className="drama-engine drama-engine--auto">自动</em>}
-            <em className="drama-prompt-field__count"><span ref={promptCountRef}>{promptInitial.length}</span> 字</em>
+            <em className="drama-prompt-field__count"><span ref={promptCountRef}>{promptText.length}</span> 字</em>
           </span>
           <textarea
             ref={promptRef}
             rows={10}
             disabled={frozen}
-            defaultValue={promptInitial}
-            key={`${selected.id}:prompt:${promptInitial}`}
-            placeholder={selected.compiledPrompt ? "" : "点击侧栏「编译本镜」或顶栏「重新编译」生成提示词，或直接手写覆盖"}
-            onInput={(event) => {
+            value={promptText}
+            placeholder={serverPrompt ? "" : "拆镜完成后会自动填入视频提示词，也可直接手写覆盖"}
+            onChange={(event) => {
+              setPromptText(event.target.value);
               if (promptCountRef.current) promptCountRef.current.textContent = String(event.target.value.length);
             }}
             onBlur={(event) => savePrompt(event.target.value)}
@@ -1174,7 +1180,7 @@ export function DramaStoryboard({ series, episode }) {
                           : selected?.compiledStale
                             ? (selected.promptOverride
                               ? "模式已变，请改覆盖提示词或清空后用自动编译"
-                              : "身份、风格或生成方式已变，请重新编译后再出片")
+                              : "身份、风格或生成方式已变，提示词已自动重编译")
                             : generateMode === "i2v"
                               ? (selected?.firstFrameSource === "none"
                                 ? "将自动画开场静帧后出片"
@@ -1226,17 +1232,6 @@ export function DramaStoryboard({ series, episode }) {
                               ? `${shot.durationSec || 5}s · 已生成`
                               : `${shot.durationSec || 5}s`}
                         </small>
-                        {shotModeOf(shot) === "i2v" && (
-                          <em className="youxi-shot-mode-tag">首尾帧</em>
-                        )}
-                        {shotModeOf(shot) === "r2v" && shotChainOf(shot) && (
-                          <em className="youxi-shot-mode-tag">引用尾帧</em>
-                        )}
-                        {generatedModeLabel(shot.videoGeneratedMode) && (
-                          <em className={`youxi-shot-mode-tag${shot.videoGeneratedMode !== shotModeOf(shot) ? " is-mismatch" : ""}`}>
-                            {generatedModeLabel(shot.videoGeneratedMode)}
-                          </em>
-                        )}
                         {shot.prevTailStale && shotModeOf(shot) === "i2v" && (
                           <em className="youxi-shot-mode-tag is-stale">上一镜已更新</em>
                         )}
