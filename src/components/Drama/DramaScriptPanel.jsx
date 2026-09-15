@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Plus, RectangleHorizontal, RectangleVertical, Save, Square, Sparkles, Trash2 } from "lucide-react";
+import { FileText, Plus, Save, Sparkles, Trash2 } from "lucide-react";
 import { analyzeDramaScript, bindDramaTextModel, fetchDramaTextModels, fetchDramaVideoModels, updateDramaSeries } from "../../api/drama.js";
 import { DramaStylePicker } from "./DramaStylePicker.jsx";
 import { DEFAULT_DRAMA_STYLE_KEY } from "./dramaStyles.js";
@@ -12,12 +12,15 @@ const ENGINE_LABELS = {
 };
 
 const ASPECT_RATIOS = [
-  { id: "16:9", label: "16:9", Icon: RectangleHorizontal },
-  { id: "9:16", label: "9:16", Icon: RectangleVertical },
-  { id: "1:1", label: "1:1", Icon: Square },
+  { id: "21:9", label: "21:9" },
+  { id: "16:9", label: "16:9" },
+  { id: "4:3", label: "4:3" },
+  { id: "1:1", label: "1:1" },
+  { id: "3:4", label: "3:4" },
+  { id: "9:16", label: "9:16" },
 ];
 
-const RESOLUTIONS = ["480P", "720P"];
+const RESOLUTIONS = ["480P", "720P", "1080P", "2K"];
 
 function resolutionOptionsFor(model) {
   const listed = Array.isArray(model?.resolutions)
@@ -401,21 +404,18 @@ export function DramaScriptPanel({
           </header>
           <p className="drama-spec-label">视频比例</p>
           <div className="ratio-card-grid drama-ratio-grid">
-            {ASPECT_RATIOS.map((item) => {
-              const Icon = item.Icon;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={draft.aspectRatio === item.id ? "active" : ""}
-                  disabled={!series?.id || analyzing}
-                  onClick={() => setDraft((current) => ({ ...current, aspectRatio: item.id }))}
-                >
-                  <Icon size={26} strokeWidth={1.6} aria-hidden="true" />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
+            {ASPECT_RATIOS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={draft.aspectRatio === item.id ? "active" : ""}
+                disabled={!series?.id || analyzing}
+                onClick={() => setDraft((current) => ({ ...current, aspectRatio: item.id }))}
+              >
+                <i data-ratio={item.id} aria-hidden="true" />
+                <span>{item.label}</span>
+              </button>
+            ))}
           </div>
           <p className="drama-spec-label">清晰度</p>
           <div className="ratio-card-grid drama-ratio-grid drama-resolution-grid">
