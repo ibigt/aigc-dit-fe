@@ -450,7 +450,22 @@ function AudioParameterPanel({ voices, formats, voiceId, setVoiceId, audioFormat
 }
 
 function CreationPresetCards({ generationType, onSelect }) {
-  return <div className="creation-preset-grid">{creationPresets[generationType].map((preset) => <button type="button" className="creation-preset-card" key={preset.id} onClick={() => onSelect(preset)}>{generationType === "video" ? <video src={preset.video} poster={preset.poster} muted loop autoPlay playsInline preload="metadata" aria-hidden="true" tabIndex={-1} /> : generationType === "audio" ? <div className="audio-preview"><AudioLines size={34} /><span /><span /><span /><span /></div> : <img src={preset.image} alt={preset.title} />}<span className="creation-preset-card__shade" /><span className="creation-preset-card__content"><strong>{preset.title}</strong><em>{preset.description}</em></span></button>)}</div>;
+  return <div className="creation-preset-grid">{creationPresets[generationType].map((preset) => (
+    <button type="button" className="creation-preset-card" key={preset.id} onClick={() => onSelect(preset)}>
+      {generationType === "video" ? (
+        <span className="creation-preset-card__media"><video src={preset.video} poster={preset.poster} muted loop autoPlay playsInline preload="metadata" aria-hidden="true" tabIndex={-1} /></span>
+      ) : generationType === "audio" ? (
+        <span className="creation-preset-card__media"><span className="audio-preview"><AudioLines size={34} /><span /><span /><span /><span /></span></span>
+      ) : (
+        <span className="creation-preset-card__media is-image">
+          <img className="creation-preset-card__backdrop" src={preset.image} alt="" aria-hidden="true" />
+          <img className="creation-preset-card__subject" src={preset.image} alt={preset.title} />
+        </span>
+      )}
+      <span className="creation-preset-card__shade" />
+      <span className="creation-preset-card__content"><strong>{preset.title}</strong><em>{preset.description}</em></span>
+    </button>
+  ))}</div>;
 }
 
 function AssetPicker({ assets, selectedItems, onToggle, onClose, onConfirm }) {

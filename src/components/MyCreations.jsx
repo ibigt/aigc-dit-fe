@@ -59,8 +59,8 @@ export function MyCreations() {
       </section>
       <section className={`creation-grid ${view === "list" ? "creation-grid--list" : ""}`}>
         {creations.map((item) => (
-          <article className="creation-card" key={item.id}>
-            <button className="creation-card__preview" type="button" onClick={() => setSelected(item)} aria-label={`查看作品：${item.title}`}>
+          <article className={`creation-card ${item.type === "audio" ? "creation-card--audio" : ""}`} key={item.id}>
+            <button className={`creation-card__preview ${item.type === "audio" ? "is-audio" : ""}`} type="button" onClick={() => setSelected(item)} aria-label={`查看作品：${item.title}`}>
               <MediaCover item={item} />
               <span className="creation-spec">{item.type === "audio" ? "音频" : <>{item.ratio} · {item.resolution}{item.type === "video" ? ` · ${item.duration}` : ""}</>}</span>
               <span className="creation-play">{item.type === "video" ? <Play size={17} fill="currentColor" /> : item.type === "audio" ? <AudioLines size={17} /> : <Expand size={17} />}</span>
@@ -85,11 +85,11 @@ export function MyCreations() {
               <div><span className="modal-kicker">CREATION PREVIEW</span><h2>{selected.title}</h2></div>
               <button className="modal-close" type="button" aria-label="关闭作品预览" onClick={() => setSelected(null)}><X size={19} /></button>
             </header>
-            <div className="creation-viewer__media">
+            <div className={`creation-viewer__media ${selected.type === "audio" ? "is-audio" : ""}`}>
               {selected.type === "video"
                 ? <video src={selected.src} poster={selected.poster} controls playsInline />
                 : selected.type === "audio"
-                  ? <audio src={selected.src} controls preload="metadata" />
+                  ? <div className="creation-audio-viewer"><span><AudioLines size={26} /></span><div><small>音频作品</small><strong>{selected.title}</strong></div><audio src={selected.src} controls preload="metadata" /></div>
                   : <img src={selected.src} alt={selected.title} />}
             </div>
             <div className="creation-viewer__meta">

@@ -1787,3 +1787,31 @@
   font-size: 11px;
   white-space: nowrap;
 }
+
+/* 短剧工作区沿用全局四级字号，旧版密集区域不再使用 6–10px 微型文字。 */
+.drama-library,
+.drama-workspace,
+.script-creation { font-size: var(--font-body); line-height: var(--line-normal); }
+.drama-library small,
+.drama-workspace small,
+.script-creation small { font-size: var(--font-caption) !important; line-height: var(--line-compact); }
+.drama-workspace-header :is(button, span, i),
+.drama-script-step :is(button, input, textarea, select, label, p, em),
+.drama-subject-step :is(button, input, textarea, select, label, p, em),
+.drama-shots-step :is(button, input, textarea, select, label, p, em, th, td),
+.drama-film-step :is(button, input, textarea, select, label, p, em, dt, dd) {
+  font-size: var(--font-meta);
+  line-height: var(--line-compact);
+}
+.drama-project-menu :is(label, button),
+.drama-project-card__body > p,
+.drama-project-card__body footer,
+.drama-progress b,
+.drama-project-new span { font-size: var(--font-caption); line-height: var(--line-compact); }
+.drama-workspace-header { grid-template-columns: 140px 210px 1fr 96px; }
+.drama-workspace-header nav button { min-width: 96px; }
+.drama-script-editor textarea { font-size: var(--font-meta); line-height: 1.75; }
+.subject-card > p { height: 40px; }
+.shot-table textarea { min-height: 82px; font-size: var(--font-meta); line-height: 1.55; }
+.shot-table th { height: 40px; }
+.shot-table td { padding: 10px; }
