@@ -1758,6 +1758,22 @@
 .drama-voice-action--primary:hover:not(:disabled) { border-color: #5b36c2; background: #5b36c2; }
 .drama-voice-action:disabled { opacity: .48; cursor: not-allowed; }
 .drama-native-voice > small { color: var(--text-secondary, #6b7280); line-height: 1.45; }
+.drama-voice-library { width: min(620px, 94vw); }
+.drama-voice-library__body { padding: 16px 18px; }
+.drama-voice-library__upload { width: 100%; min-height: 58px; padding: 10px 14px; border: 1px dashed #aeb5ef; border-radius: 11px; display: flex; align-items: center; gap: 11px; color: #565fd4; background: #f5f6ff; text-align: left; }
+.drama-voice-library__upload span { display: flex; flex-direction: column; gap: 3px; }
+.drama-voice-library__upload strong { font-size: 12px; }
+.drama-voice-library__upload small { color: #7c8490; font-size: 10px; }
+.drama-voice-library__list { max-height: 360px; overflow-y: auto; margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.drama-voice-library__list > p { margin: 18px 0; color: #7c8490; text-align: center; font-size: 12px; }
+.drama-voice-library__list article { min-width: 0; padding: 10px 11px; border: 1px solid #e4e7eb; border-radius: 10px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+.drama-voice-library__list article > span { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.drama-voice-library__list article strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.drama-voice-library__list audio { width: 100%; height: 28px; }
+.drama-voice-library__list article > button { min-height: 32px; padding: 0 12px; border: 0; border-radius: 8px; color: #fff; background: #5962d9; }
+.drama-voice-library > footer { padding: 0 18px 16px; display: flex; justify-content: flex-end; }
+.drama-voice-library > footer button { min-height: 34px; padding: 0 14px; border: 1px solid #dfe3e7; border-radius: 8px; background: #fff; }
+.console-shell[data-theme="dark"] :is(.drama-voice-library__upload,.drama-voice-library__list article,.drama-voice-library > footer button) { color: #e2e7ef; border-color: #3b4553; background: #202731; }
 .console-shell[data-theme="dark"] .drama-native-voice { border-color: #493c69; background: #211d2c; }
 .console-shell[data-theme="dark"] .drama-voice-action--secondary { color: #d7ddea; border-color: #485262; background: #252d37; }
 .console-shell[data-theme="dark"] .drama-voice-action--secondary:hover:not(:disabled) { color: #ddd6fe; border-color: #7561a8; background: #312943; }
