@@ -1,4 +1,4 @@
-import { CalendarDays, Download, Expand, Grid3X3, Image, List, Play, Search, SlidersHorizontal, Trash2, Video, X } from "lucide-react";
+import { AudioLines, CalendarDays, Download, Expand, Grid3X3, Image, List, Play, Search, SlidersHorizontal, Trash2, Video, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteCreation, fetchCreations } from "../api/creations.js";
@@ -45,9 +45,9 @@ export function MyCreations() {
         <div className="creation-stat"><strong>{creations.length}</strong><span>全部作品</span></div>
       </header>
       <section className="creation-toolbar">
-        <div className="filter-tabs">{[{ id: "all", label: "全部" }, { id: "video", label: "视频" }, { id: "image", label: "图片" }].map((item) => (
+        <div className="filter-tabs">{[{ id: "all", label: "全部" }, { id: "video", label: "视频" }, { id: "image", label: "图片" }, { id: "audio", label: "语音" }].map((item) => (
           <button key={item.id} type="button" className={filter === item.id ? "active" : ""} onClick={() => setFilter(item.id)}>
-            {item.id === "video" ? <Video size={15} /> : item.id === "image" ? <Image size={15} /> : <SlidersHorizontal size={15} />}
+            {item.id === "video" ? <Video size={15} /> : item.id === "image" ? <Image size={15} /> : item.id === "audio" ? <AudioLines size={15} /> : <SlidersHorizontal size={15} />}
             {item.label}
           </button>
         ))}</div>
@@ -62,8 +62,8 @@ export function MyCreations() {
           <article className="creation-card" key={item.id}>
             <button className="creation-card__preview" type="button" onClick={() => setSelected(item)} aria-label={`查看作品：${item.title}`}>
               <MediaCover item={item} />
-              <span className="creation-spec">{item.ratio} · {item.resolution}{item.type === "video" ? ` · ${item.duration}` : ""}</span>
-              <span className="creation-play">{item.type === "video" ? <Play size={17} fill="currentColor" /> : <Expand size={17} />}</span>
+              <span className="creation-spec">{item.type === "audio" ? "音频" : <>{item.ratio} · {item.resolution}{item.type === "video" ? ` · ${item.duration}` : ""}</>}</span>
+              <span className="creation-play">{item.type === "video" ? <Play size={17} fill="currentColor" /> : item.type === "audio" ? <AudioLines size={17} /> : <Expand size={17} />}</span>
             </button>
             <div className="creation-card__body">
               <div><strong>{item.title}</strong><p>{item.prompt}</p></div>
@@ -88,12 +88,14 @@ export function MyCreations() {
             <div className="creation-viewer__media">
               {selected.type === "video"
                 ? <video src={selected.src} poster={selected.poster} controls playsInline />
-                : <img src={selected.src} alt={selected.title} />}
+                : selected.type === "audio"
+                  ? <audio src={selected.src} controls preload="metadata" />
+                  : <img src={selected.src} alt={selected.title} />}
             </div>
             <div className="creation-viewer__meta">
               <div><span>生成提示</span><p>{selected.prompt}</p></div>
               <dl>
-                <div><dt>规格</dt><dd>{selected.ratio} · {selected.resolution} · {selected.duration}</dd></div>
+                <div><dt>规格</dt><dd>{selected.type === "audio" ? "音频" : `${selected.ratio} · ${selected.resolution}${selected.type === "video" ? ` · ${selected.duration}` : ""}`}</dd></div>
                 <div><dt>模型</dt><dd>{selected.model}</dd></div>
                 <div><dt>消耗</dt><dd>{selected.cost} 积分</dd></div>
               </dl>

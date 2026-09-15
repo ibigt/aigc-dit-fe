@@ -50,8 +50,8 @@ const adminMenus = [
   { id: "models", label: "模型管理", icon: Bot },
 ];
 
-const categoryLabels = { image: "图像模型", video: "视频模型", text: "文本模型" };
-const categoryTabs = [{ id: "all", label: "全部" }, { id: "video", label: "视频模型" }, { id: "image", label: "图像模型" }, { id: "text", label: "文本模型" }];
+const categoryLabels = { image: "图像模型", video: "视频模型", audio: "语音模型", text: "文本模型" };
+const categoryTabs = [{ id: "all", label: "全部" }, { id: "video", label: "视频模型" }, { id: "image", label: "图像模型" }, { id: "audio", label: "语音模型" }, { id: "text", label: "文本模型" }];
 const providerOptions = ["全部来源", "ComfyUI", "RunningHub", "官方API", "官方API（token plan）", "自定义配置"];
 const usageColors = ["#665cf1", "#33a474", "#e2943b", "#d76588", "#8b94a1"];
 
@@ -61,6 +61,7 @@ const MODE_CAP_OPTIONS = [
   { id: "t2v", kind: "video", label: "t2v 文生视频", pathKey: "t2vPath", pathLabel: "文生视频路径 / URL", placeholder: "rhart-video/sparkvideo-2.0/text-to-video", defaultPath: "rhart-video/sparkvideo-2.0/text-to-video" },
   { id: "r2v", kind: "video", label: "r2v 参考生视频", pathKey: "r2vPath", pathLabel: "参考生视频路径 / URL", placeholder: "rhart-video/sparkvideo-2.0/multimodal-video", defaultPath: "rhart-video/sparkvideo-2.0/multimodal-video" },
   { id: "i2v", kind: "video", label: "i2v 首尾帧", pathKey: "i2vPath", pathLabel: "首尾帧路径 / URL", placeholder: "厂商首尾帧路径" },
+  { id: "t2a", kind: "audio", label: "t2a 文本生成语音", pathKey: "t2aPath", pathLabel: "语音合成路径", placeholder: "/audio/speech" },
 ];
 
 const ADAPTER_OPTIONS = [
@@ -71,6 +72,7 @@ const ADAPTER_OPTIONS = [
   { key: "seedance-2.5", label: "Seedance 2.5", category: "video", provider: "官方API", defaultEndpoint: "https://ark.cn-beijing.volces.com/api/v3", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "doubao-seedance-2-5-260628" },
   { key: "minimax-h3", label: "MiniMax-H3", category: "video", provider: "官方API", defaultEndpoint: "https://api.minimax.cn", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "MiniMax-H3" },
   { key: "agnes-video-2.5", label: "Agnes Video 2.5", category: "video", provider: "官方API", defaultEndpoint: "https://api.agnes-ai.cn/v1", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "agnes-video-2.5-flash" },
+  { key: "openai-speech", label: "OpenAI 兼容语音", category: "audio", provider: "自定义配置", defaultEndpoint: "https://api.openai.com/v1", modes: ["t2a"], defaultPaths: {}, defaultModelKey: "gpt-4o-mini-tts" },
   { key: "agnes-text", label: "Agnes 对话", category: "text", provider: "官方API", defaultEndpoint: "https://api.agnes-ai.cn/v1", modes: [], defaultPaths: {}, defaultModelKey: "agnes-2.5-flash" },
   { key: "openai-compat", label: "OpenAI 兼容", category: "text", provider: "自定义配置", defaultEndpoint: "", modes: [], defaultPaths: {}, defaultModelKey: "" },
 ];
@@ -127,6 +129,16 @@ function audioCapabilityLabel(model) {
   if (model?.category !== "video") return "—";
   if (!capability.supported) return "不支持参考音频";
   return `参考音频 ≤ ${capability.max}${capability.audioOnly ? " · 可仅音频" : " · 需搭配画面"}`;
+}
+
+function audioModelLabel(model) {
+  if (model?.category === "audio") {
+    const config = model.adapterConfig || {};
+    const voices = Array.isArray(config.voices) ? config.voices.length : 0;
+    const formats = Array.isArray(config.formats) ? config.formats.map((item) => String(item).toUpperCase()).join("/") : "MP3";
+    return `${voices || 1} 个音色 · ${formats || "MP3"}`;
+  }
+  return audioCapabilityLabel(model);
 }
 
 function isComfyUiSource(provider) {
@@ -267,6 +279,7 @@ function endpointLabel(provider) {
 
 function categoryBadge(category) {
   if (category === "video") return "视频";
+  if (category === "audio") return "语音";
   if (category === "text") return "文本";
   return "图像";
 }
@@ -545,7 +558,7 @@ function ModelDialog({ model, onClose, onSave, saving }) {
     if (!model) {
       const adapterKey = defaultAdapterKey("image");
       const adapter = adapterOf(adapterKey);
-      return { name: "", category: "image", adapterKey, provider: adapter.provider, modelKey: "", endpoint: adapter.defaultEndpoint, description: "", enabled: true, apiKey: "", concurrentLimit: 1, instanceType: "", proxy: "", pricing: emptyPricing, logo: FALLBACK_LOGO, capabilities: ["image", ...adapter.modes], adapterConfig: {}, t2iPath: adapter.defaultPaths.t2iPath || "", i2iPath: "", t2vPath: "", r2vPath: "", i2vPath: "" };
+      return { name: "", category: "image", adapterKey, provider: adapter.provider, modelKey: "", endpoint: adapter.defaultEndpoint, description: "", enabled: true, apiKey: "", concurrentLimit: 1, instanceType: "", proxy: "", pricing: emptyPricing, logo: FALLBACK_LOGO, capabilities: ["image", ...adapter.modes], adapterConfig: {}, defaultVoice: "alloy", voicesText: "alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer", formatsText: "mp3, wav, aac, flac, opus", minSpeed: 0.25, maxSpeed: 4, t2iPath: adapter.defaultPaths.t2iPath || "", i2iPath: "", t2vPath: "", r2vPath: "", i2vPath: "" };
     }
     const adapterKey = inferAdapterKey(model);
     return {
@@ -560,6 +573,11 @@ function ModelDialog({ model, onClose, onSave, saving }) {
       t2vPath: pathValue(model, "t2vPath"),
       r2vPath: pathValue(model, "r2vPath"),
       i2vPath: pathValue(model, "i2vPath"),
+      defaultVoice: model.adapterConfig?.defaultVoice || "alloy",
+      voicesText: (model.adapterConfig?.voices || []).map((item) => typeof item === "string" ? item : item.id).filter(Boolean).join(", "),
+      formatsText: (model.adapterConfig?.formats || ["mp3", "wav", "aac", "flac", "opus"]).join(", "),
+      minSpeed: model.adapterConfig?.minSpeed ?? 0.25,
+      maxSpeed: model.adapterConfig?.maxSpeed ?? 4,
       logo: modelLogoSrc(model),
     };
   });
@@ -655,10 +673,13 @@ function ModelDialog({ model, onClose, onSave, saving }) {
   const updatePrice = (side, key, value) => setDraft((current) => ({ ...current, pricing: { ...(current.pricing || emptyPricing), [side]: { ...(current.pricing?.[side] || emptyPricing[side]), [key]: value } } }));
   const adapter = adapterOf(draft.adapterKey);
   const isText = draft.category === "text";
+  const isAudio = draft.category === "audio";
   const providerCopy = adapter?.provider === "ComfyUI"
     ? "适配协议决定字段翻译；来源 ComfyUI 与默认服务地址已自动带出。"
     : adapter?.provider === "自定义配置"
-      ? "文本通道走 OpenAI 兼容 /v1/chat/completions。请填写 Base URL 与模型标识；本地网关无鉴权时可留空 API Key。"
+      ? (isAudio
+        ? "语音通道走 OpenAI 兼容 /audio/speech。请填写 Base URL、模型标识、音色与输出格式。"
+        : "文本通道走 OpenAI 兼容 /v1/chat/completions。请填写 Base URL 与模型标识；本地网关无鉴权时可留空 API Key。")
       : adapter?.provider === "官方API"
         ? (isText
           ? "文本通道走官方对话接口。默认地址与 Agnes 图/视频相同，模型标识填 agnes-2.5-flash。"
@@ -701,8 +722,8 @@ function ModelDialog({ model, onClose, onSave, saving }) {
         });
       }}>
         <div className="model-form-grid">
-          <label>名称<input required value={draft.name} onChange={(event) => updateIdentity({ name: event.target.value })} placeholder={isText ? "例如：Agnes 对话" : "例如：自有视频模型"} /></label>
-          <label>模型类型<select value={draft.category} onChange={(event) => changeCategory(event.target.value)}><option value="image">图像模型</option><option value="video">视频模型</option><option value="text">文本模型</option></select></label>
+          <label>名称<input required value={draft.name} onChange={(event) => updateIdentity({ name: event.target.value })} placeholder={isText ? "例如：Agnes 对话" : isAudio ? "例如：品牌旁白语音" : "例如：自有视频模型"} /></label>
+          <label>模型类型<select value={draft.category} onChange={(event) => changeCategory(event.target.value)}><option value="image">图像模型</option><option value="video">视频模型</option><option value="audio">语音模型</option><option value="text">文本模型</option></select></label>
           <label>适配协议<select required value={draft.adapterKey} onChange={(event) => changeAdapter(event.target.value)}>{adaptersForCategory(draft.category).map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
           {isSeedanceOfficial(draft.adapterKey)
             ? <label>接入来源<select value={isOfficialTokenPlan(draft.provider) ? PROVIDER_OFFICIAL_TOKEN_PLAN : "官方API"} onChange={(event) => changeOfficialSource(event.target.value)}><option value="官方API">官方API</option><option value={PROVIDER_OFFICIAL_TOKEN_PLAN}>官方API（token plan）</option></select></label>
@@ -715,12 +736,13 @@ function ModelDialog({ model, onClose, onSave, saving }) {
           <div className="model-form-wide model-cap-field"><span>品牌图标</span><div className="model-logo-picker">{MODEL_LOGO_CATALOG.map((item) => <button type="button" key={item.file} className={draft.logo === item.file ? "active" : ""} title={item.label} aria-label={item.label} onClick={() => update("logo", item.file)}><img src={item.file} alt="" /></button>)}</div><small className="model-logo-hint">按名称 / 标识自动匹配，也可手动点选。未命中时使用通用图标。</small></div>
           {!isText && <div className="model-form-wide model-cap-field"><span>能力勾选</span><div className="model-cap-row">{visibleCapOptions.map((cap) => <label key={cap.id} className="model-cap-chip"><input type="checkbox" checked={caps.includes(cap.id)} onChange={() => toggleCap(cap.id)} />{cap.label}</label>)}</div></div>}
           {draft.category === "video" && <div className="model-form-wide model-cap-field"><span>参考音频能力</span><div className="model-cap-row"><span className="model-cap-chip">{audioCapabilityLabel(draft)}</span></div><small className="model-logo-hint">由适配协议和模型标识自动判定，无需手动配置。</small></div>}
-          {!isText && !isOfficialSource(draft.provider) && visibleCapOptions.filter((cap) => caps.includes(cap.id)).map((cap) => (
+          {isAudio && <><label>默认音色<input value={draft.defaultVoice || ""} onChange={(event) => update("defaultVoice", event.target.value)} placeholder="alloy" /></label><label>默认格式<select value={draft.adapterConfig?.defaultFormat || "mp3"} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), defaultFormat: event.target.value } }))}><option value="mp3">MP3</option><option value="wav">WAV</option><option value="aac">AAC</option><option value="flac">FLAC</option><option value="opus">OPUS</option></select></label><label className="model-form-wide">可选音色（逗号分隔）<input value={draft.voicesText || ""} onChange={(event) => update("voicesText", event.target.value)} placeholder="alloy, nova, shimmer" /></label><label className="model-form-wide">支持格式（逗号分隔）<input value={draft.formatsText || ""} onChange={(event) => update("formatsText", event.target.value)} placeholder="mp3, wav, aac" /></label><label>最低语速<input type="number" step="0.05" min="0.25" max="4" value={draft.minSpeed ?? 0.25} onChange={(event) => update("minSpeed", Number(event.target.value))} /></label><label>最高语速<input type="number" step="0.05" min="0.25" max="4" value={draft.maxSpeed ?? 4} onChange={(event) => update("maxSpeed", Number(event.target.value))} /></label></>}
+          {!isText && !isAudio && !isOfficialSource(draft.provider) && visibleCapOptions.filter((cap) => caps.includes(cap.id)).map((cap) => (
             <label key={cap.pathKey} className="model-form-wide">{cap.pathLabel}<input value={pathValue(draft, cap.pathKey)} onChange={(event) => update(cap.pathKey, event.target.value)} placeholder={pathPlaceholder(cap, draft.adapterKey)} /></label>
           ))}
           {!isText && draft.provider === "RunningHub" && <><label>实例类型<input value={draft.instanceType || ""} onChange={(event) => update("instanceType", event.target.value)} placeholder="可选，如 48G" /></label><label>并发限制<input type="number" min="1" max="10" value={draft.concurrentLimit || 1} onChange={(event) => update("concurrentLimit", Number(event.target.value))} /></label></>}
           <label className="model-form-wide">能力说明<input value={draft.description || ""} onChange={(event) => update("description", event.target.value)} placeholder="简要说明适用场景" /></label>
-          <label>计费单位<select value={draft.pricing?.unit || "次"} onChange={(event) => setDraft((current) => ({ ...current, pricing: { ...(current.pricing || emptyPricing), unit: event.target.value } }))}><option>次</option><option>张</option><option>秒</option><option>万字符</option></select></label>
+          <label>计费单位<select value={draft.pricing?.unit || "次"} onChange={(event) => setDraft((current) => ({ ...current, pricing: { ...(current.pricing || emptyPricing), unit: event.target.value } }))}><option>次</option><option>张</option><option>秒</option><option>千字符</option><option>万字符</option></select></label>
           <div />
           <PriceEditor title="售价" values={draft.pricing?.sale || emptyPricing.sale} onChange={(key, value) => updatePrice("sale", key, value)} />
           <PriceEditor title="成本" values={draft.pricing?.cost || emptyPricing.cost} onChange={(key, value) => updatePrice("cost", key, value)} />
@@ -750,7 +772,7 @@ function PriceCell({ title, pricing, side }) {
 }
 
 function ModelCard({ model, onToggle, onEdit, onRemove }) {
-  return <article className="model-card"><header><span className="model-logo"><img src={modelLogoSrc(model)} alt="" /></span><div><strong>{model.name}</strong><small>{model.modelKey}</small></div><label className="toggle-switch"><input aria-label={`${model.name} 创作端可用`} type="checkbox" checked={model.enabled !== false} onChange={(event) => onToggle(event.target.checked)} /><span /></label></header><p>{model.description}</p><div className="model-card-meta"><span>{categoryLabels[model.category] || model.category}</span><span>{model.provider}</span><span><i />{model.hasApiKey ? "密钥已配置" : "未配置密钥"}</span>{model.category === "video" && <span><AudioLines size={12} />{audioCapabilityLabel(model)}</span>}</div><div className="model-card-pricing"><PriceCell title="售价" pricing={model.pricing} side="sale" /><PriceCell title="成本" pricing={model.pricing} side="cost" /></div><footer><span>{model.category === "text" ? "用于漫剧文本" : "同步至创作端"}</span><div><button aria-label={`编辑模型：${model.name}`} onClick={onEdit}><Pencil size={14} /> 编辑</button><button className="danger" aria-label={`删除模型：${model.name}`} onClick={onRemove}><Trash2 size={14} /></button></div></footer></article>;
+  return <article className="model-card"><header><span className="model-logo"><img src={modelLogoSrc(model)} alt="" /></span><div><strong>{model.name}</strong><small>{model.modelKey}</small></div><label className="toggle-switch"><input aria-label={`${model.name} 创作端可用`} type="checkbox" checked={model.enabled !== false} onChange={(event) => onToggle(event.target.checked)} /><span /></label></header><p>{model.description}</p><div className="model-card-meta"><span>{categoryLabels[model.category] || model.category}</span><span>{model.provider}</span><span><i />{model.hasApiKey ? "密钥已配置" : "未配置密钥"}</span>{(model.category === "video" || model.category === "audio") && <span><AudioLines size={12} />{audioModelLabel(model)}</span>}</div><div className="model-card-pricing"><PriceCell title="售价" pricing={model.pricing} side="sale" /><PriceCell title="成本" pricing={model.pricing} side="cost" /></div><footer><span>{model.category === "text" ? "用于漫剧文本" : "同步至创作端"}</span><div><button aria-label={`编辑模型：${model.name}`} onClick={onEdit}><Pencil size={14} /> 编辑</button><button className="danger" aria-label={`删除模型：${model.name}`} onClick={onRemove}><Trash2 size={14} /></button></div></footer></article>;
 }
 
 function toModelPayload(draft) {
@@ -768,6 +790,14 @@ function toModelPayload(draft) {
   if (adapterConfig.v2vPath && !adapterConfig.i2vPath) adapterConfig.i2vPath = adapterConfig.v2vPath;
   delete adapterConfig.v2vPath;
   if (category === "text" && draft.modelKey) adapterConfig.chatModel = draft.modelKey;
+  if (category === "audio") {
+    adapterConfig.defaultVoice = (draft.defaultVoice || "alloy").trim();
+    adapterConfig.defaultFormat = adapterConfig.defaultFormat || "mp3";
+    adapterConfig.voices = String(draft.voicesText || "").split(/[,，]/).map((item) => item.trim()).filter(Boolean);
+    adapterConfig.formats = String(draft.formatsText || "").split(/[,，]/).map((item) => item.trim().toLowerCase()).filter(Boolean);
+    adapterConfig.minSpeed = Number(draft.minSpeed || 0.25);
+    adapterConfig.maxSpeed = Number(draft.maxSpeed || 4);
+  }
   return {
     name: draft.name,
     modelKey: draft.modelKey,
@@ -854,7 +884,7 @@ function ModelsPage() {
     <div className="model-category-tabs" role="tablist" aria-label="模型类型">{categoryTabs.map((tab) => <button role="tab" aria-selected={category === tab.id} className={category === tab.id ? "active" : ""} key={tab.id} onClick={() => setCategory(tab.id)}>{tab.label}<span>{tab.id === "all" ? modelItems.length : modelItems.filter((item) => item.category === tab.id).length}</span></button>)}</div>
     <div className="model-summary"><span><Server size={17} /><b>{modelItems.filter((item) => item.provider === "ComfyUI").length}</b> ComfyUI</span><span><CloudCog size={17} /><b>{modelItems.filter((item) => item.provider === "RunningHub").length}</b> RunningHub</span><span><Globe size={17} /><b>{modelItems.filter((item) => String(item.provider || "").startsWith("官方API")).length}</b> 官方API</span><span><Cpu size={17} /><b>{modelItems.filter((item) => item.provider === "自定义配置" || item.provider === "手动配置").length}</b> 自定义配置</span><em>已启用 {modelItems.filter((item) => item.enabled !== false).length} / {modelItems.length}</em></div>
     <div className="model-toolbar"><label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索模型名称或标识" /></label><select aria-label="筛选接入来源" value={provider} onChange={(event) => setProvider(event.target.value)}>{providerOptions.map((item) => <option key={item}>{item}</option>)}</select><div className="view-switch" role="group" aria-label="视图模式"><button className={view === "cards" ? "active" : ""} aria-label="卡片模式" onClick={() => setView("cards")}><Grid2X2 size={15} /></button><button className={view === "list" ? "active" : ""} aria-label="列表模式" onClick={() => setView("list")}><List size={15} /></button></div></div>
-    {view === "cards" ? <div className="model-card-grid">{visible.map((model) => <ModelCard key={model.id} model={model} onToggle={(enabled) => toggleMutation.mutate({ id: model.id, enabled })} onEdit={() => setEditing({ ...model, apiKey: "" })} onRemove={() => { if (window.confirm(`确定删除模型“${model.name}”吗？`)) removeMutation.mutate(model); }} />)}</div> : <div className="admin-table-card model-table"><div className="admin-table-scroll"><table><thead><tr><th>模型</th><th>类型</th><th>接入来源</th><th>参考音频</th><th>售价</th><th>成本</th><th>服务状态</th><th>创作端可用</th><th>操作</th></tr></thead><tbody>{visible.map((model) => <tr key={model.id}><td><span className="table-model-logo"><img src={modelLogoSrc(model)} alt="" /></span><span><strong>{model.name}</strong><small>{model.modelKey}</small></span></td><td><span className="category-chip">{categoryLabels[model.category]}</span></td><td>{model.provider}</td><td>{audioCapabilityLabel(model)}</td><td><PriceCell title="售价" pricing={model.pricing} side="sale" /></td><td><PriceCell title="成本" pricing={model.pricing} side="cost" /></td><td><span className="service-ok"><i />{model.hasApiKey ? "密钥已配置" : "未配置密钥"}</span></td><td><label className="toggle-switch"><input aria-label={`${model.name} 创作端可用`} type="checkbox" checked={model.enabled !== false} onChange={(event) => toggleMutation.mutate({ id: model.id, enabled: event.target.checked })} /><span /></label></td><td><div className="table-actions"><button aria-label={`编辑模型：${model.name}`} onClick={() => setEditing({ ...model, apiKey: "" })}><Pencil size={14} /></button><button className="danger" aria-label={`删除模型：${model.name}`} onClick={() => { if (window.confirm(`确定删除模型“${model.name}”吗？`)) removeMutation.mutate(model); }}><Trash2 size={14} /></button></div></td></tr>)}</tbody></table></div></div>}
+    {view === "cards" ? <div className="model-card-grid">{visible.map((model) => <ModelCard key={model.id} model={model} onToggle={(enabled) => toggleMutation.mutate({ id: model.id, enabled })} onEdit={() => setEditing({ ...model, apiKey: "" })} onRemove={() => { if (window.confirm(`确定删除模型“${model.name}”吗？`)) removeMutation.mutate(model); }} />)}</div> : <div className="admin-table-card model-table"><div className="admin-table-scroll"><table><thead><tr><th>模型</th><th>类型</th><th>接入来源</th><th>语音能力</th><th>售价</th><th>成本</th><th>服务状态</th><th>创作端可用</th><th>操作</th></tr></thead><tbody>{visible.map((model) => <tr key={model.id}><td><span className="table-model-logo"><img src={modelLogoSrc(model)} alt="" /></span><span><strong>{model.name}</strong><small>{model.modelKey}</small></span></td><td><span className="category-chip">{categoryLabels[model.category]}</span></td><td>{model.provider}</td><td>{audioModelLabel(model)}</td><td><PriceCell title="售价" pricing={model.pricing} side="sale" /></td><td><PriceCell title="成本" pricing={model.pricing} side="cost" /></td><td><span className="service-ok"><i />{model.hasApiKey ? "密钥已配置" : "未配置密钥"}</span></td><td><label className="toggle-switch"><input aria-label={`${model.name} 创作端可用`} type="checkbox" checked={model.enabled !== false} onChange={(event) => toggleMutation.mutate({ id: model.id, enabled: event.target.checked })} /><span /></label></td><td><div className="table-actions"><button aria-label={`编辑模型：${model.name}`} onClick={() => setEditing({ ...model, apiKey: "" })}><Pencil size={14} /></button><button className="danger" aria-label={`删除模型：${model.name}`} onClick={() => { if (window.confirm(`确定删除模型“${model.name}”吗？`)) removeMutation.mutate(model); }}><Trash2 size={14} /></button></div></td></tr>)}</tbody></table></div></div>}
     {!visible.length && <div className="admin-empty"><Bot size={22} /><strong>没有匹配的模型</strong><span>接入模型或调整类型、来源、关键词后重试。</span></div>}
     {editing !== undefined && <ModelDialog model={editing} saving={saveMutation.isPending} onClose={() => setEditing(undefined)} onSave={(draft) => saveMutation.mutate(draft)} />}
   </div>;

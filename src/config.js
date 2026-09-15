@@ -108,7 +108,7 @@ export const fallbackConfig = {
     { id: "google-omni-flash", name: "Google Omni Flash", description: "视频编辑、续写与文生视频", badge: "视频编辑", category: "video", provider: "手动配置", modelKey: "google-omni-flash", endpoint: "/mock-api/video-edit", enabled: true },
     { id: "runway-aleph", name: "Runway Aleph", description: "视频内容编辑与图片参考", badge: "视频编辑", category: "video", provider: "手动配置", modelKey: "runway-aleph", endpoint: "/mock-api/video-edit", enabled: true },
     { id: "wan-2-7-edit", name: "万相 2.7 视频编辑", description: "风格迁移、局部替换与主体编辑", badge: "视频编辑", category: "video", provider: "RunningHub", modelKey: "wan2.7-edit", endpoint: "https://www.runninghub.cn/api", enabled: true },
-  ].filter((model) => model.category === "image" || model.category === "video").map(decorateModel),
+  ].filter((model) => model.category === "image" || model.category === "video" || model.category === "audio").map(decorateModel),
   integrations: {
     comfyui: { url: "http://127.0.0.1:8188", apiKey: "", enabled: true },
     video: { provider: "Mock Video Gateway", baseUrl: "/mock-api/video", defaultModel: "minimax-h3" },

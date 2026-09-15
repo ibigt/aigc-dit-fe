@@ -18,7 +18,7 @@ const videoResolutions = ["480P", "720P", "1080P", "2K", "4K"];
 const videoResolutionMultipliers = { "480P": 0.5, "720P": 0.75, "768P": 0.8, "1080P": 1, "2K": 1.5, "4K": 2.5 };
 const qualityLevels = ["Low", "Medium", "High"];
 const DEFAULT_SESSION_ID = "new-creation-default";
-const MODE_CAPS = ["t2i", "i2i", "t2v", "r2v", "i2v"];
+const MODE_CAPS = ["t2i", "i2i", "t2v", "r2v", "i2v", "t2a"];
 function canonicalCap(cap) {
   if (cap === "frames" || cap === "frame" || cap === "v2v") return "i2v";
   return cap;
@@ -32,6 +32,7 @@ function modelSupports(model, mode) {
   return specific.includes(mode);
 }
 function supportsLibraryCite(model, generationType) {
+  if (generationType === "audio") return false;
   return generationType === "image" ? modelSupports(model, "i2i") : modelSupports(model, "r2v");
 }
 function isMiniMaxH3(model) {
@@ -95,6 +96,9 @@ function capabilityBlockReason(model, generationType, referenceImages, firstFram
   const audioCount = (referenceImages || []).filter((item) => item?.type === "audio").length;
   const visualCount = (referenceImages || []).filter((item) => item?.type !== "audio").length;
   const hasFrames = Boolean(firstFrame || lastFrame);
+  if (generationType === "audio" && !modelSupports(model, "t2a")) {
+    return "当前模型不支持文本生成语音";
+  }
   if (generationType === "image" && hasRefs && !modelSupports(model, "i2i")) {
     return "当前模型不支持参考图，请移除参考素材后再创作";
   }
@@ -155,6 +159,11 @@ function toReferenceMaterial(asset) {
   };
 }
 const creationPresets = {
+  audio: [
+    { id: "brand-voice", title: "品牌旁白", description: "清晰沉稳的产品与品牌解说", prompt: "欢迎来到同道创作平台，让每一个灵感都拥有自己的声音。" },
+    { id: "story-voice", title: "故事讲述", description: "自然、有温度的叙事表达", prompt: "夜幕降临，城市的灯光次第亮起，一段新的故事正悄然开始。" },
+    { id: "short-video", title: "短视频口播", description: "紧凑有力的社交媒体口播", prompt: "只需几步，就能把你的创意快速变成可分享的作品。" },
+  ],
   video: [
     {
       id: "street-rhythm", mode: "reference", title: "节奏复刻", description: "跟随人物动作完成富有节奏的镜头切换", video: "/media/seedance-20.webm", poster: "/media/seedance-20-poster.webp",
@@ -335,8 +344,10 @@ function ResultMessage({ message, onReuse, onSave, savedIds = [], savingId }) {
           <div className="result-media-wrap">
             {items.map((media) => media.type === "video"
               ? <video key={media.id || media.src} src={media.src} poster={media.poster} controls playsInline><track kind="captions" src="/media/demo-captions.vtt" srcLang="zh" label="中文" /></video>
-              : <img key={media.id || media.src} src={media.src} alt={media.title || ""} />)}
-            <span className="media-spec-badge">{message.ratio} · {message.resolution}{message.creationType === "视频" ? ` · ${message.duration}` : ""}</span>
+              : media.type === "audio"
+                ? <div className="asset-audio-player" key={media.id || media.src}><AudioLines size={36} /><strong>{media.title || "语音作品"}</strong><audio src={media.src} controls preload="metadata" /></div>
+                : <img key={media.id || media.src} src={media.src} alt={media.title || ""} />)}
+            {message.creationType !== "语音" && <span className="media-spec-badge">{message.ratio} · {message.resolution}{message.creationType === "视频" ? ` · ${message.duration}` : ""}</span>}
           </div>
         )}
         <div className="result-meta-grid">
@@ -401,8 +412,16 @@ function ParameterPanel({ generationType, ratio, setRatio, resolution, setResolu
   </div>;
 }
 
+function AudioParameterPanel({ voices, formats, voiceId, setVoiceId, audioFormat, setAudioFormat, speed, setSpeed, minSpeed, maxSpeed }) {
+  return <div className="creation-popover creation-parameter-popover is-audio">
+    <section><label>音色</label><SegmentedOptions options={voices} value={voiceId} onChange={setVoiceId} /></section>
+    <section><label>格式</label><SegmentedOptions options={formats} value={audioFormat} onChange={setAudioFormat} formatter={(item) => item.toUpperCase()} /></section>
+    <section><label>语速 · {speed.toFixed(2)}x</label><input type="range" min={minSpeed} max={maxSpeed} step="0.05" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} /></section>
+  </div>;
+}
+
 function CreationPresetCards({ generationType, onSelect }) {
-  return <div className="creation-preset-grid">{creationPresets[generationType].map((preset) => <button type="button" className="creation-preset-card" key={preset.id} onClick={() => onSelect(preset)}>{generationType === "video" ? <video src={preset.video} poster={preset.poster} muted loop autoPlay playsInline preload="metadata" aria-hidden="true" tabIndex={-1} /> : <img src={preset.image} alt={preset.title} />}<span className="creation-preset-card__shade" /><span className="creation-preset-card__content"><strong>{preset.title}</strong><em>{preset.description}</em></span></button>)}</div>;
+  return <div className="creation-preset-grid">{creationPresets[generationType].map((preset) => <button type="button" className="creation-preset-card" key={preset.id} onClick={() => onSelect(preset)}>{generationType === "video" ? <video src={preset.video} poster={preset.poster} muted loop autoPlay playsInline preload="metadata" aria-hidden="true" tabIndex={-1} /> : generationType === "audio" ? <div className="audio-preview"><AudioLines size={34} /><span /><span /><span /><span /></div> : <img src={preset.image} alt={preset.title} />}<span className="creation-preset-card__shade" /><span className="creation-preset-card__content"><strong>{preset.title}</strong><em>{preset.description}</em></span></button>)}</div>;
 }
 
 function AssetPicker({ assets, selectedItems, onToggle, onClose, onConfirm }) {
@@ -459,6 +478,9 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const [duration, setDuration] = useState(5);
   const [quality, setQuality] = useState("Low");
   const [copies, setCopies] = useState(1);
+  const [voiceId, setVoiceId] = useState("alloy");
+  const [speed, setSpeed] = useState(1);
+  const [audioFormat, setAudioFormat] = useState("mp3");
   const [openPanel, setOpenPanel] = useState(null);
   const [referenceImages, setReferenceImages] = useState([]);
   const [firstFrame, setFirstFrame] = useState(null);
@@ -476,12 +498,18 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const activeSession = sessions.find((item) => item.id === activeSessionId) || sessions[0];
   const sessionGenerating = isSessionGenerating(activeSession, generatingSessionIds);
   const selectedModel = useMemo(() => availableModels.find((item) => String(item.id) === String(model)) || availableModels[0], [availableModels, model]);
+  const audioOptions = selectedModel?.audioOptions || {};
+  const voices = (audioOptions.voices?.length ? audioOptions.voices : [audioOptions.defaultVoice || "alloy"]).map((item) => typeof item === "string" ? item : item.id).filter(Boolean);
+  const audioFormats = audioOptions.formats?.length ? audioOptions.formats : [audioOptions.defaultFormat || "mp3"];
+  const minSpeed = Number(audioOptions.minSpeed ?? 0.25);
+  const maxSpeed = Number(audioOptions.maxSpeed ?? 4);
   const supportsAudioReference = generationType === "video" && Boolean(selectedModel?.supportsAudioReference);
   const maxAudioReferences = supportsAudioReference ? Number(selectedModel?.maxAudioReferences || 0) : 0;
   const supportsFrames = modelSupports(selectedModel, "i2v");
   const supportsLibrary = supportsLibraryCite(selectedModel, generationType);
   const showVideoModes = generationType === "video" && (modelSupports(selectedModel, "r2v") || supportsFrames);
-  const copiesLimited = selectedModel?.adapterKey === "gpt-image-2"
+  const copiesLimited = generationType === "audio"
+    || selectedModel?.adapterKey === "gpt-image-2"
     || selectedModel?.adapterKey === "seedance-2"
     || selectedModel?.adapterKey === "seedance-2.0"
     || selectedModel?.adapterKey === "seedance-2.5"
@@ -489,14 +517,23 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     || isAgnes(selectedModel)
     || isMiniMaxH3(selectedModel)
     || isSeedanceOfficial(selectedModel);
-  const unitPrice = Number.parseFloat(selectedModel?.pricing?.sale?.output) || (generationType === "video" ? 12 : 2);
-  const parameterMultiplier = generationType === "video"
+  const unitPrice = Number.parseFloat(selectedModel?.pricing?.sale?.output) || (generationType === "video" ? 12 : generationType === "audio" ? 3 : 2);
+  const parameterMultiplier = generationType === "audio" ? 1 : generationType === "video"
     ? (videoResolutionMultipliers[resolution] || 1)
     : ({ "1K": 1, "2K": 2, "4K": 4 }[resolution] || 1) * ({ Low: 1, Medium: 1.5, High: 2 }[quality] || 1);
-  const quantityCost = generationType === "video" && selectedModel?.pricing?.unit === "秒" ? unitPrice * duration : unitPrice;
+  const audioUnit = selectedModel?.pricing?.unit === "万字符" ? 10000 : selectedModel?.pricing?.unit === "千字符" ? 1000 : 0;
+  const quantityCost = generationType === "video" && selectedModel?.pricing?.unit === "秒" ? unitPrice * duration : generationType === "audio" && audioUnit ? unitPrice * Math.max(1, prompt.length) / audioUnit : unitPrice;
   const creditCost = Math.ceil(quantityCost * parameterMultiplier * (copiesLimited ? 1 : copies));
   useEffect(() => { activeSessionIdRef.current = activeSessionId; }, [activeSessionId]);
   useEffect(() => { if (availableModels.length && !availableModels.some((item) => String(item.id) === String(model))) setModel(String(availableModels[0].id)); }, [availableModels, model]);
+  useEffect(() => {
+    if (generationType !== "audio") return;
+    const nextVoice = audioOptions.defaultVoice || voices[0] || "alloy";
+    const nextFormat = audioOptions.defaultFormat || audioFormats[0] || "mp3";
+    setVoiceId((current) => voices.includes(current) ? current : nextVoice);
+    setAudioFormat((current) => audioFormats.includes(current) ? current : nextFormat);
+    setSpeed((current) => Math.min(maxSpeed, Math.max(minSpeed, current || 1)));
+  }, [generationType, selectedModel?.id]);
   useEffect(() => {
     const next = clampDurationForModel(selectedModel, duration);
     if (next !== duration) setDuration(next);
@@ -704,8 +741,8 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     setFirstFrame(null);
     setLastFrame(null);
     setVideoMode("reference");
-    setRatio(type === "video" ? "16:9" : "9:16");
-    setResolution(type === "video" ? "720P" : "1K");
+    setRatio(type === "video" ? "16:9" : type === "image" ? "9:16" : "");
+    setResolution(type === "video" ? "720P" : type === "image" ? "1K" : "");
   }
 
   function resetComposer() {
@@ -714,11 +751,12 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     setFirstFrame(null);
     setLastFrame(null);
     setVideoMode("reference");
-    setRatio(generationType === "video" ? "16:9" : "9:16");
-    setResolution(generationType === "video" ? "720P" : "1K");
+    setRatio(generationType === "video" ? "16:9" : generationType === "image" ? "9:16" : "");
+    setResolution(generationType === "video" ? "720P" : generationType === "image" ? "1K" : "");
     setDuration(5);
     setQuality("Low");
     setCopies(1);
+    setSpeed(1);
     setOpenPanel(null);
   }
 
@@ -824,7 +862,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
       pending: true,
       pendingKey,
       prompt: text,
-      text: currentType === "video" ? "视频生成中，通常需要几分钟，请稍候…" : "图片生成中，请稍候…",
+      text: currentType === "video" ? "视频生成中，通常需要几分钟，请稍候…" : currentType === "audio" ? "语音生成中，请稍候…" : "图片生成中，请稍候…",
     };
     let sessionId = activeSessionId === DEFAULT_SESSION_ID ? null : activeSessionId;
     let keepBusy = false;
@@ -835,7 +873,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
       text: message,
       error: true,
       model: currentModel?.name || "模型",
-      creationType: currentType === "video" ? "视频" : "图片",
+      creationType: currentType === "video" ? "视频" : currentType === "audio" ? "语音" : "图片",
       createdAt: formatDateTime(new Date()),
       elapsed: "—",
       credits: 0,
@@ -886,6 +924,9 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         resolution,
         quality,
         durationSec: currentType === "video" ? clampDurationForModel(currentModel, duration) : undefined,
+        voiceId: currentType === "audio" ? voiceId : undefined,
+        speed: currentType === "audio" ? speed : undefined,
+        audioFormat: currentType === "audio" ? audioFormat : undefined,
         copies: copiesLimited ? 1 : copies,
         references: useFrames ? undefined : references.map((item) => ({
           type: item.type,
@@ -960,7 +1001,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         {sessions.map((session) => (
           <div className={`session-item ${session.id === activeSessionId ? "active" : ""} ${sessionMenuId === session.id ? "menu-open" : ""}`} key={session.id}>
             <button type="button" className="session-open" onClick={() => { setSessionMenuId(null); switchSession(session); }}>
-              {session.generationType === "video" ? <Video size={15} /> : <Image size={15} />}
+              {session.generationType === "video" ? <Video size={15} /> : session.generationType === "audio" ? <AudioLines size={15} /> : <Image size={15} />}
               <span>{session.title}<small>{isSessionGenerating(session, generatingSessionIds) ? "生成中" : session.updated}</small></span>
             </button>
             <div className="session-menu-wrap" ref={sessionMenuId === session.id ? sessionMenuRef : null}>
@@ -988,20 +1029,20 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
       <section className="create-main">
         <CosmicBackdrop active={theme === "dark"} />
         <div className={`conversation ${activeSession.messages.length ? "conversation--active" : ""}`}>
-          {!activeSession.messages.length ? <><GravityDots /><div className="create-welcome"><div className="create-welcome__title"><span>使用</span><span className="create-welcome__kind">{generationType === "video" ? <Video size={15} /> : <Image size={15} />}{generationType === "video" ? "视频" : "图片"}</span><span>开启今日创作</span></div><p>选择一个灵感场景，素材与提示词将自动带入输入框</p><CreationPresetCards generationType={generationType} onSelect={applyPreset} /></div></> : <div className="message-list">{activeSession.messages.map((message, index) => message.type === "user" ? <div className="message message--user" key={`${activeSession.id}-${index}`}><span>你</span><p>{message.text}</p></div> : <ResultMessage key={`${activeSession.id}-${index}`} message={message} onReuse={reuseResult} onSave={saveResult} savedIds={savedCreationIds} savingId={savingId} />)}{sessionGenerating && !activeSession.messages.some((item) => item.pending) && <div className="message message--result"><span><Sparkles size={16} /></span><div className="generating-line"><i /><i /><i /> 正在构思画面与光线…</div></div>}</div>}
+          {!activeSession.messages.length ? <><GravityDots /><div className="create-welcome"><div className="create-welcome__title"><span>使用</span><span className="create-welcome__kind">{generationType === "video" ? <Video size={15} /> : generationType === "audio" ? <AudioLines size={15} /> : <Image size={15} />}{generationType === "video" ? "视频" : generationType === "audio" ? "语音" : "图片"}</span><span>开启今日创作</span></div><p>选择一个灵感场景，素材与提示词将自动带入输入框</p><CreationPresetCards generationType={generationType} onSelect={applyPreset} /></div></> : <div className="message-list">{activeSession.messages.map((message, index) => message.type === "user" ? <div className="message message--user" key={`${activeSession.id}-${index}`}><span>你</span><p>{message.text}</p></div> : <ResultMessage key={`${activeSession.id}-${index}`} message={message} onReuse={reuseResult} onSave={saveResult} savedIds={savedCreationIds} savingId={savingId} />)}{sessionGenerating && !activeSession.messages.some((item) => item.pending) && <div className="message message--result"><span><Sparkles size={16} /></span><div className="generating-line"><i /><i /><i /> {generationType === "audio" ? "正在合成语音…" : "正在构思画面与光线…"}</div></div>}</div>}
         </div>
         <div className="composer-shell composer-shell--expanded">
           <div className={`composer creation-composer ${referenceImages.length || firstFrame || lastFrame ? "has-material" : ""}`}>
             <input ref={referenceInputRef} aria-label="上传参考素材" className="visually-hidden" type="file" accept={generationType === "video" && !imageOnlyRefs(selectedModel) ? `image/*,video/*${supportsAudioReference ? ",audio/*,.mp3,.wav,.m4a,.aac" : ""}` : "image/*"} multiple disabled={!supportsLibrary} onChange={(event) => { addReferenceImages(event.target.files); event.target.value = ""; }} />
             <input ref={firstFrameInputRef} aria-label="上传视频首帧" className="visually-hidden" type="file" accept="image/*" disabled={!supportsFrames} onChange={(event) => { setFrame(event.target.files?.[0], setFirstFrame); event.target.value = ""; }} />
             <input ref={lastFrameInputRef} aria-label="上传视频尾帧" className="visually-hidden" type="file" accept="image/*" disabled={!supportsFrames} onChange={(event) => { setFrame(event.target.files?.[0], setLastFrame); event.target.value = ""; }} />
-            <div className="composer-kind-tabs" role="tablist" aria-label="创作类型"><button role="tab" aria-selected={generationType === "video"} className={generationType === "video" ? "active" : ""} onClick={() => changeType("video")}><Video size={14} />视频</button><button role="tab" aria-selected={generationType === "image"} className={generationType === "image" ? "active" : ""} onClick={() => changeType("image")}><Image size={14} />图片</button></div>
+            <div className="composer-kind-tabs" role="tablist" aria-label="创作类型"><button role="tab" aria-selected={generationType === "video"} className={generationType === "video" ? "active" : ""} onClick={() => changeType("video")}><Video size={14} />视频</button><button role="tab" aria-selected={generationType === "image"} className={generationType === "image" ? "active" : ""} onClick={() => changeType("image")}><Image size={14} />图片</button><button role="tab" aria-selected={generationType === "audio"} className={generationType === "audio" ? "active" : ""} onClick={() => changeType("audio")}><AudioLines size={14} />语音</button></div>
             {submitError && <p className="create-submit-error">{submitError}</p>}
             <div className="creation-composer__body">
               <div className={`creation-reference-slots ${videoMode === "frames" && generationType === "video" ? "is-frames" : ""}`}>
                 {generationType === "video" && videoMode === "frames" ? <><UploadTile label="首帧" detail="起始画面" material={firstFrame} onClick={() => firstFrameInputRef.current?.click()} onRemove={() => setFirstFrame(null)} /><ArrowLeftRight className="frame-bridge" size={15} /><UploadTile label="尾帧" detail="结束画面" material={lastFrame} onClick={() => lastFrameInputRef.current?.click()} onRemove={() => setLastFrame(null)} /></> : supportsLibrary ? <>{referenceImages.map((item, index) => <UploadTile key={item.storageKey || item.id || `${item.url}-${index}`} label={item.name || `参考 ${index + 1}`} material={item} onRemove={() => setReferenceImages((items) => items.filter((_, itemIndex) => itemIndex !== index))} />)}<UploadTile label="参考" detail={generationType === "video" ? (imageOnlyRefs(selectedModel) ? "图片" : supportsAudioReference ? `图片/视频/音频（音频≤${maxAudioReferences}）` : "图片/视频") : "支持多选"} onClick={() => referenceInputRef.current?.click()} /></> : null}
               </div>
-              <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendPrompt(); } }} placeholder={generationType === "video" ? "描述您想要生成的视频内容，例如，“一个孩子在公园里放风筝，金色阳光，镜头上移。”" : "描述您想生成的图片，例如，“夕阳映照在海面上，鲜艳的色彩与汹涌的波涛交相辉映。”"} />
+              <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendPrompt(); } }} placeholder={generationType === "video" ? "描述您想要生成的视频内容，例如，“一个孩子在公园里放风筝，金色阳光，镜头上移。”" : generationType === "audio" ? "输入需要朗读的文本，例如，“欢迎使用同道智能语音创作平台。”" : "描述您想生成的图片，例如，“夕阳映照在海面上，鲜艳的色彩与汹涌的波涛交相辉映。”"} maxLength={generationType === "audio" ? 4096 : undefined} />
             </div>
             <footer className="creation-composer__footer">
               <div className="creation-controls">
@@ -1015,8 +1056,8 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
                   })}</div>}
                 </div>
                 {showVideoModes && <div className="creation-control-wrap"><button type="button" className="creation-pill" aria-expanded={openPanel === "mode"} onClick={() => setOpenPanel(openPanel === "mode" ? null : "mode")}><Film size={14} />{videoMode === "reference" ? "参考生成" : "首/尾帧"}<ChevronDown size={13} /></button>{openPanel === "mode" && <div className="creation-popover creation-mode-popover"><button className={videoMode === "reference" ? "active" : ""} onClick={() => { setVideoMode("reference"); setOpenPanel(null); }}><Images size={14} /><span><strong>参考生成</strong><small>{imageOnlyRefs(selectedModel) ? "可用图片作为参考（不支持参考视频）" : "可用图片或视频作为参考"}</small></span>{videoMode === "reference" && <Check size={14} />}</button><button className={videoMode === "frames" ? "active" : ""} disabled={!supportsFrames} onClick={() => { if (!supportsFrames) return; setVideoMode("frames"); setOpenPanel(null); }}><Film size={14} /><span><strong>首/尾帧</strong><small>{supportsFrames ? "控制视频起始与结束画面" : "当前模型不支持首尾帧"}</small></span>{videoMode === "frames" && <Check size={14} />}</button></div>}</div>}
-                <div className="creation-control-wrap"><button type="button" className="creation-pill creation-spec-pill" aria-expanded={openPanel === "params"} onClick={() => setOpenPanel(openPanel === "params" ? null : "params")}><Maximize2 size={14} />{generationType === "video" ? `${resolution} · ${duration}s · ${ratio}` : `${resolution} · ${quality} · ${ratio}`}<ChevronDown size={13} /></button>{openPanel === "params" && <ParameterPanel generationType={generationType} ratio={ratio} setRatio={setRatio} resolution={resolution} setResolution={setResolution} duration={duration} setDuration={setDuration} quality={quality} setQuality={setQuality} durationOptions={durationOptionsFor(selectedModel)} resolutionOptions={generationType === "video" ? videoResolutionsFor(selectedModel) : ["1K", "2K", "4K"]} />}</div>
-                <button type="button" className="creation-icon-action" title={supportsLibrary ? (generationType === "video" ? "从素材库引用图片或视频" : "从素材库引用") : "当前模型不支持参考素材"} aria-label="从素材库引用素材" disabled={!supportsLibrary} onClick={() => { if (supportsLibrary) openAssetPicker(); }}><AtSign size={16} /></button>
+                <div className="creation-control-wrap"><button type="button" className="creation-pill creation-spec-pill" aria-expanded={openPanel === "params"} onClick={() => setOpenPanel(openPanel === "params" ? null : "params")}>{generationType === "audio" ? <AudioLines size={14} /> : <Maximize2 size={14} />}{generationType === "video" ? `${resolution} · ${duration}s · ${ratio}` : generationType === "audio" ? `${voiceId} · ${speed}x · ${audioFormat.toUpperCase()}` : `${resolution} · ${quality} · ${ratio}`}<ChevronDown size={13} /></button>{openPanel === "params" && (generationType === "audio" ? <AudioParameterPanel voices={voices} formats={audioFormats} voiceId={voiceId} setVoiceId={setVoiceId} audioFormat={audioFormat} setAudioFormat={setAudioFormat} speed={speed} setSpeed={setSpeed} minSpeed={minSpeed} maxSpeed={maxSpeed} /> : <ParameterPanel generationType={generationType} ratio={ratio} setRatio={setRatio} resolution={resolution} setResolution={setResolution} duration={duration} setDuration={setDuration} quality={quality} setQuality={setQuality} durationOptions={durationOptionsFor(selectedModel)} resolutionOptions={generationType === "video" ? videoResolutionsFor(selectedModel) : ["1K", "2K", "4K"]} />)}</div>
+                {generationType !== "audio" && <button type="button" className="creation-icon-action" title={supportsLibrary ? (generationType === "video" ? "从素材库引用图片或视频" : "从素材库引用") : "当前模型不支持参考素材"} aria-label="从素材库引用素材" disabled={!supportsLibrary} onClick={() => { if (supportsLibrary) openAssetPicker(); }}><AtSign size={16} /></button>}
                 <button type="button" className="creation-icon-action" title="重置输入" aria-label="重置输入内容与参数" onClick={resetComposer}><RotateCcw size={15} /></button>
               </div>
               <div className="creation-submit-group">

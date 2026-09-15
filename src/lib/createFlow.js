@@ -40,7 +40,9 @@ export function taskToResultMessage(task) {
     prompt: task.prompt || first.prompt || "",
     text: task.category === "video"
       ? `已完成 ${creations.length || task.copies || 1} 个视频副本，可继续编辑或保存`
-      : `已完成 ${creations.length || task.copies || 1} 张图片，可继续编辑或保存`,
+      : task.category === "audio"
+        ? "语音已生成，可播放、下载或保存到素材库"
+        : `已完成 ${creations.length || task.copies || 1} 张图片，可继续编辑或保存`,
     creations,
     media: {
       type: first.type || task.category,
@@ -49,12 +51,12 @@ export function taskToResultMessage(task) {
       title: first.title,
     },
     model: task.modelName || "模型",
-    creationType: task.category === "video" ? "视频" : "图片",
+    creationType: task.category === "video" ? "视频" : task.category === "audio" ? "语音" : "图片",
     createdAt: formatClock(task.finishedAt || task.createdAt),
     elapsed: elapsedOf(task),
     credits: task.creditCost || 0,
-    ratio: first.ratio || task.params?.ratio || "—",
-    resolution: first.resolution || task.params?.resolution || "—",
+    ratio: task.category === "audio" ? "—" : first.ratio || task.params?.ratio || "—",
+    resolution: task.category === "audio" ? (task.params?.audioFormat || "音频").toUpperCase() : first.resolution || task.params?.resolution || "—",
     duration: task.category === "video" ? `${task.params?.durationSec || first.durationSec || "—"} 秒` : "—",
   };
 }
@@ -70,14 +72,14 @@ export function tasksToMessages(tasks = []) {
         prompt: task.prompt || "",
         pending: true,
         taskId: task.id,
-        text: task.category === "video" ? "视频生成中，通常需要几分钟，请稍候或稍后刷新会话" : "图片生成中，请稍候…",
+        text: task.category === "video" ? "视频生成中，通常需要几分钟，请稍候或稍后刷新会话" : task.category === "audio" ? "语音生成中，请稍候…" : "图片生成中，请稍候…",
         model: task.modelName || "模型",
-        creationType: task.category === "video" ? "视频" : "图片",
+        creationType: task.category === "video" ? "视频" : task.category === "audio" ? "语音" : "图片",
         createdAt: formatClock(task.createdAt),
         elapsed: elapsedOf(task),
         credits: task.creditCost || 0,
-        ratio: task.params?.ratio || "—",
-        resolution: task.params?.resolution || "—",
+        ratio: task.category === "audio" ? "—" : task.params?.ratio || "—",
+        resolution: task.category === "audio" ? (task.params?.audioFormat || "音频").toUpperCase() : task.params?.resolution || "—",
         duration: task.category === "video" ? `${task.params?.durationSec || "—"} 秒` : "—",
         media: { type: task.category || "image", src: "" },
         creations: [],
@@ -94,14 +96,14 @@ export function tasksToMessages(tasks = []) {
         }),
         error: true,
         model: task.modelName || "模型",
-        creationType: task.category === "video" ? "视频" : "图片",
+        creationType: task.category === "video" ? "视频" : task.category === "audio" ? "语音" : "图片",
         createdAt: formatClock(task.finishedAt || task.createdAt),
         elapsed: "—",
         credits: 0,
         ratio: "—",
         resolution: "—",
         duration: "—",
-        media: { type: "image", src: "", title: "失败" },
+        media: { type: task.category || "image", src: "", title: "失败" },
         creations: [],
       });
     }
