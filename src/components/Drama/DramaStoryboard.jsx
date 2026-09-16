@@ -1,4 +1,4 @@
-import { AudioLines, CircleCheck, Film, Lock, Plus, RefreshCw, Save, Sparkles, Trash2, Video, Wand2, X, ZoomIn } from "lucide-react";
+import { AudioLines, CircleCheck, Film, Lock, Pencil, Plus, RefreshCw, Save, Sparkles, Trash2, Video, Wand2, X, ZoomIn } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -166,6 +166,33 @@ function shotPromptText(shot) {
   return shot.compiledPrompt || "";
 }
 
+/**
+ * 视频模型仍使用完整编译提示词；这里只清理分镜面板里的结构标记，避免干扰阅读。
+ */
+function promptTextForDisplay(prompt) {
+  const lines = String(prompt || "").split(/\r?\n/);
+  const visible = lines.map((source) => {
+    const trimmed = source.trim();
+    if (/^(Active References|Voice References|Identities):?$/i.test(trimmed)) return "";
+
+    let line = source.replace(/^\s*(Must start|Must|Scene|Action|Dialogue|Continuity in|Continuity out|Cast|Duration|Audio):\s*/i, "");
+    line = line
+      .replace(/[（(]\s*<Picture\s+\d+>\s*[)）]/gi, "")
+      .replace(/\s*=\s*<Picture\s+\d+>/gi, "")
+      .replace(/<Picture\s+\d+>/gi, "")
+      .replace(/<Audio\s+\d+>/gi, "")
+      .replace(/\b(\d+)\s+seconds?\b/gi, "$1 秒")
+      .replace(/[ \t]{2,}/g, " ")
+      .trim();
+    return line;
+  });
+
+  return visible
+    .filter((line, index) => line || (index > 0 && visible[index - 1]))
+    .join("\n")
+    .trim();
+}
+
 function firstFrameTitle(source) {
   if (source === "upload") return "上传";
   if (source === "auto") return "自动";
@@ -197,8 +224,11 @@ function ShotInspector({
   const frozen = generating || readOnly;
   const serverPrompt = shotPromptText(selected);
   const [promptText, setPromptText] = useState(serverPrompt);
+  const [editingPrompt, setEditingPrompt] = useState(false);
+  const visiblePrompt = promptTextForDisplay(serverPrompt);
   useEffect(() => {
     setPromptText(serverPrompt);
+    setEditingPrompt(false);
   }, [selected?.id, serverPrompt]);
   if (!selected) {
     return (
@@ -251,9 +281,17 @@ function ShotInspector({
 
   const promptInitial = serverPrompt;
 
-  function savePrompt(value) {
-    if (value === promptInitial) return;
-    onSave(selected, { promptOverride: value }).catch(() => {});
+  async function savePrompt(value) {
+    if (value === promptInitial) {
+      setEditingPrompt(false);
+      return;
+    }
+    try {
+      await onSave(selected, { promptOverride: value });
+      setEditingPrompt(false);
+    } catch {
+      // 父组件已把失败写进 actionError 横幅，保留编辑态方便继续处理。
+    }
   }
 
   return (
@@ -507,29 +545,56 @@ function ShotInspector({
             {selected.promptOverride
               ? <em className="drama-engine">手动</em>
               : <em className="drama-engine drama-engine--auto">自动</em>}
-            <em className="drama-prompt-field__count"><span ref={promptCountRef}>{promptText.length}</span> 字</em>
+            <em className="drama-prompt-field__count"><span ref={promptCountRef}>{editingPrompt ? promptText.length : visiblePrompt.length}</span> 字</em>
           </span>
           <textarea
             ref={promptRef}
             rows={10}
             disabled={frozen}
-            value={promptText}
+            readOnly={!editingPrompt}
+            value={editingPrompt ? promptText : visiblePrompt}
             placeholder={serverPrompt ? "" : "拆镜完成后会自动填入视频提示词，也可直接手写覆盖"}
             onChange={(event) => {
+              if (!editingPrompt) return;
               setPromptText(event.target.value);
               if (promptCountRef.current) promptCountRef.current.textContent = String(event.target.value.length);
             }}
-            onBlur={(event) => savePrompt(event.target.value)}
+            title={editingPrompt ? "正在编辑提交给视频模型的完整提示词" : "界面已隐藏结构标签，视频生成仍使用完整提示词"}
           />
           <div className="drama-prompt-field__actions">
-            <button
-              type="button"
-              className="button button--primary drama-prompt-field__save"
-              disabled={frozen}
-              onClick={() => savePrompt(promptRef.current?.value ?? "")}
-            >
-              <Save size={14} /> 保存
-            </button>
+            {editingPrompt ? (
+              <>
+                <button
+                  type="button"
+                  className="button button--primary drama-prompt-field__save"
+                  disabled={frozen}
+                  onClick={() => savePrompt(promptText)}
+                >
+                  <Save size={14} /> 保存
+                </button>
+                <button
+                  type="button"
+                  className="drama-tool-button drama-tool-button--ghost"
+                  disabled={frozen}
+                  onClick={() => {
+                    setPromptText(serverPrompt);
+                    setEditingPrompt(false);
+                  }}
+                >
+                  取消
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="button button--primary drama-prompt-field__save"
+                disabled={frozen || !serverPrompt}
+                onClick={() => setEditingPrompt(true)}
+                title="编辑提交给视频模型的完整提示词"
+              >
+                <Pencil size={14} /> 编辑完整提示词
+              </button>
+            )}
             {selected.promptOverride && (
               <button
                 type="button"
