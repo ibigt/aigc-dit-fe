@@ -1,7 +1,7 @@
 import { Film, Scissors } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { assembleDramaFilm, fetchDramaFilm } from "../../api/drama.js";
-import { mediaUrl } from "../../lib/media.js";
+import { authenticatedApiUrl, mediaUrl } from "../../lib/media.js";
 
 export async function downloadDramaFilm(filmUrl, filename = "成片.mp4") {
   const src = mediaUrl(filmUrl);
@@ -35,6 +35,9 @@ export function DramaFilmPanel({ series, episode }) {
   const readyCount = film?.readyShotCount ?? shots.filter((item) => item.ready).length;
   const filmSrc = mediaUrl(film?.filmUrl);
   const posterSrc = mediaUrl(film?.posterUrl);
+  const captionSrc = filmSrc && film?.hasCaptions && !film?.stale
+    ? authenticatedApiUrl(`/api/drama/episodes/${episodeId}/film/captions.vtt?v=${encodeURIComponent(film?.assembledAt || "")}`)
+    : "";
 
   const assembleMutation = useMutation({
     mutationFn: () => assembleDramaFilm(episodeId),
@@ -63,7 +66,7 @@ export function DramaFilmPanel({ series, episode }) {
                 <strong>{shot.title || `镜 ${shot.shotIndex}`}</strong>
                 <small>镜 {shot.shotIndex} · {shot.durationSec || 5}s</small>
               </span>
-              <small className={shot.ready ? "is-ready" : ""}>{shot.ready ? "已出片" : "未出片"}</small>
+              <small className={shot.ready ? "is-ready" : ""}>{shot.ready ? (shot.hasCaptions ? "已出片 · 字幕" : "已出片") : "未出片"}</small>
             </button>
           ))}
           {!shots.length && !filmQuery.isLoading && (
@@ -112,7 +115,16 @@ export function DramaFilmPanel({ series, episode }) {
               src={filmSrc}
               poster={posterSrc || undefined}
             >
-              <track kind="captions" />
+              {captionSrc && (
+                <track
+                  key={captionSrc}
+                  kind="captions"
+                  src={captionSrc}
+                  srcLang="zh-CN"
+                  label="中文"
+                  default
+                />
+              )}
             </video>
           ) : (
             <div className="youxi-story-empty-preview" data-ratio={ratio}>

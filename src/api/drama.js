@@ -1,4 +1,4 @@
-import { api } from "./client.js";
+import { api, isRetryableRequestError } from "./client.js";
 
 export function fetchDramaStyles() {
   return api.get("/drama/styles");
@@ -170,8 +170,30 @@ export function bindDramaVideoModel(seriesId, videoModelId) {
   return api.put(`/drama/series/${seriesId}/video-model`, { videoModelId });
 }
 
+export function bindDramaVideoGenerateMode(seriesId, payload) {
+  return api.put(`/drama/series/${seriesId}/video-generate-mode`, payload);
+}
+
 export function generateDramaShot(shotId) {
   return api.post(`/drama/shots/${shotId}/generate`);
+}
+
+export function generateDramaShotOpeningStill(shotId) {
+  return api.post(`/drama/shots/${shotId}/first-frame/generate`);
+}
+
+export function uploadDramaShotFirstFrame(shotId, file) {
+  const data = new FormData();
+  data.append("file", file);
+  return api.post(`/drama/shots/${shotId}/first-frame`, data);
+}
+
+export function clearDramaShotFirstFrame(shotId) {
+  return api.delete(`/drama/shots/${shotId}/first-frame`);
+}
+
+export function attachDramaShotPrevTail(shotId) {
+  return api.post(`/drama/shots/${shotId}/first-frame/from-prev`);
 }
 
 export function fetchDramaShotGenerateTask(shotId, taskId) {
@@ -206,6 +228,10 @@ export function pollDramaAssetGenerate(assetId, taskId, { interval = 2000, timeo
         }
         window.setTimeout(tick, interval);
       } catch (error) {
+        if (isRetryableRequestError(error) && Date.now() - started <= timeout) {
+          window.setTimeout(tick, interval);
+          return;
+        }
         reject(error);
       }
     };
@@ -215,12 +241,26 @@ export function pollDramaAssetGenerate(assetId, taskId, { interval = 2000, timeo
 
 export function pollDramaShotGenerate(shotId, taskId, { interval = 3000, timeout = 15 * 60 * 1000 } = {}) {
   const started = Date.now();
+  let currentTaskId = taskId;
   return new Promise((resolve, reject) => {
     const tick = async () => {
       try {
-        const result = await fetchDramaShotGenerateTask(shotId, taskId);
+        const result = await fetchDramaShotGenerateTask(shotId, currentTaskId);
+        const liveId = result?.shot?.genTaskId;
+        if (liveId && Number(liveId) !== Number(currentTaskId)) {
+          currentTaskId = liveId;
+          if (result?.shot?.generating || result?.task?.status === "PENDING" || result?.task?.status === "RUNNING") {
+            window.setTimeout(tick, interval);
+            return;
+          }
+        }
         const status = result?.task?.status;
         if (status === "SUCCEEDED" || status === "FAILED" || status === "CANCELLED") {
+          if (result?.shot?.generating && liveId && Number(liveId) !== Number(result?.task?.id)) {
+            currentTaskId = liveId;
+            window.setTimeout(tick, interval);
+            return;
+          }
           resolve(result);
           return;
         }
@@ -230,6 +270,10 @@ export function pollDramaShotGenerate(shotId, taskId, { interval = 3000, timeout
         }
         window.setTimeout(tick, interval);
       } catch (error) {
+        if (isRetryableRequestError(error) && Date.now() - started <= timeout) {
+          window.setTimeout(tick, interval);
+          return;
+        }
         reject(error);
       }
     };

@@ -1,9 +1,11 @@
-import { AudioLines, CircleCheck, Film, Lock, Plus, RefreshCw, Save, Sparkles, Trash2, Video, Wand2, X, ZoomIn } from "lucide-react";
+import { AudioLines, CircleCheck, Film, Lock, Pencil, Plus, RefreshCw, Save, Sparkles, Trash2, Video, Wand2, X, ZoomIn } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   bindDramaVideoModel,
+  clearDramaShotFirstFrame,
+  compileDramaShot,
   compileDramaStoryboard,
   createDramaShot,
   deleteDramaShot,
@@ -13,9 +15,13 @@ import {
   generateDramaShot,
   pollDramaShotGenerate,
   updateDramaShot,
+  uploadDramaShotFirstFrame,
+  generateDramaShotOpeningStill,
+  attachDramaShotPrevTail,
 } from "../../api/drama.js";
-import { mediaUrl } from "../../lib/media.js";
+import { authenticatedApiUrl, mediaUrl } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
+import { isRetryableRequestError } from "../../api/client.js";
 
 const DURATIONS = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
@@ -59,6 +65,18 @@ function isOfficialSeedance(model) {
     || key.includes("doubao-seedance-2.5") || key.includes("doubao-seedance-2-5");
 }
 
+/** 接口未返回 supportsI2v 时，按适配协议判断；RunningHub 的 seedance-2 没有首尾帧。 */
+function modelSupportsI2v(model) {
+  if (!model) return false;
+  if (model.supportsI2v === true) return true;
+  if (model.supportsI2v === false) return false;
+  const adapter = String(model.adapterKey || "").toLowerCase();
+  if (adapter === "seedance-2") return false;
+  return isOfficialSeedance(model)
+    || adapter === "minimax-h3"
+    || adapter === "agnes-video-2.5";
+}
+
 function friendlyShotError(message, model) {
   const text = message || "出片失败";
   if (/real person/i.test(text) || text.includes("真人")) {
@@ -82,15 +100,16 @@ function isShotGenerating(shot, busy) {
   const status = shot?.genTaskStatus;
   return Boolean(
     shot?.generating
+    || shot?.generatingStill
     || isInFlightStatus(status)
-    || (shot?.id && busy?.[shot.id] === "generate")
+    || (shot?.id && (busy?.[shot.id] === "generate" || busy?.[shot.id] === "still"))
   );
 }
 
 function inFlightShots(shots) {
   return (shots || []).filter((shot) => (
     shot?.genTaskId
-    && (shot.generating || isInFlightStatus(shot.genTaskStatus))
+    && (shot.generating || shot.generatingStill || isInFlightStatus(shot.genTaskStatus))
     && shot.genTaskStatus !== "FAILED"
     && shot.genTaskStatus !== "CANCELLED"
     && shot.genTaskStatus !== "SUCCEEDED"
@@ -130,12 +149,87 @@ export function dramaStoryboardStatus(board) {
   return board?.status || "未开始";
 }
 
-function ShotInspector({ selected, generating, readOnly, lockedAssets, onSave, onZoom }) {
+function shotModeOf(shot) {
+  const mode = shot?.effectiveVideoGenerateMode || shot?.videoGenerateMode;
+  return mode === "i2v" ? "i2v" : "r2v";
+}
+
+function shotChainOf(shot) {
+  if (shot?.effectiveVideoChainPrevTail != null) return Boolean(shot.effectiveVideoChainPrevTail);
+  return Boolean(shot?.videoChainPrevTail);
+}
+
+function shotPromptText(shot) {
+  if (!shot) return "";
+  const override = String(shot.promptOverride || "").trim();
+  if (override) return override;
+  return shot.compiledPrompt || "";
+}
+
+/**
+ * 视频模型仍使用完整编译提示词；这里只清理分镜面板里的结构标记，避免干扰阅读。
+ */
+function promptTextForDisplay(prompt) {
+  const lines = String(prompt || "").split(/\r?\n/);
+  const visible = lines.map((source) => {
+    const trimmed = source.trim();
+    if (/^(Active References|Voice References|Identities):?$/i.test(trimmed)) return "";
+
+    let line = source.replace(/^\s*(Must start|Must|Scene|Action|Dialogue|Continuity in|Continuity out|Cast|Duration|Audio):\s*/i, "");
+    line = line
+      .replace(/[（(]\s*<Picture\s+\d+>\s*[)）]/gi, "")
+      .replace(/\s*=\s*<Picture\s+\d+>/gi, "")
+      .replace(/<Picture\s+\d+>/gi, "")
+      .replace(/<Audio\s+\d+>/gi, "")
+      .replace(/\b(\d+)\s+seconds?\b/gi, "$1 秒")
+      .replace(/[ \t]{2,}/g, " ")
+      .trim();
+    return line;
+  });
+
+  return visible
+    .filter((line, index) => line || (index > 0 && visible[index - 1]))
+    .join("\n")
+    .trim();
+}
+
+function firstFrameTitle(source) {
+  if (source === "upload") return "上传";
+  if (source === "auto") return "自动";
+  if (source === "prev-tail") return "落幅";
+  return "首帧";
+}
+
+function ShotInspector({
+  selected,
+  generating,
+  readOnly,
+  lockedAssets,
+  generateMode,
+  chainPrevTail,
+  supportsI2v,
+  onSave,
+  onCompile,
+  onZoom,
+  onUploadFirstFrame,
+  onClearFirstFrame,
+  onGenerateStill,
+  onUsePrevTail,
+  durationOptions,
+}) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [casting, setCasting] = useState(false);
   const promptRef = useRef(null);
   const promptCountRef = useRef(null);
   const frozen = generating || readOnly;
+  const serverPrompt = shotPromptText(selected);
+  const [promptText, setPromptText] = useState(serverPrompt);
+  const [editingPrompt, setEditingPrompt] = useState(false);
+  const visiblePrompt = promptTextForDisplay(serverPrompt);
+  useEffect(() => {
+    setPromptText(serverPrompt);
+    setEditingPrompt(false);
+  }, [selected?.id, serverPrompt]);
   if (!selected) {
     return (
       <aside className="youxi-inspector youxi-story-inspector">
@@ -185,11 +279,19 @@ function ShotInspector({ selected, generating, readOnly, lockedAssets, onSave, o
     commitCast({ ...cast, [key]: cast[key].filter((item) => item !== name) });
   }
 
-  const promptInitial = selected.promptOverride ?? selected.compiledPrompt ?? "";
+  const promptInitial = serverPrompt;
 
-  function savePrompt(value) {
-    if (value === promptInitial) return;
-    onSave(selected, { promptOverride: value }).catch(() => {});
+  async function savePrompt(value) {
+    if (value === promptInitial) {
+      setEditingPrompt(false);
+      return;
+    }
+    try {
+      await onSave(selected, { promptOverride: value });
+      setEditingPrompt(false);
+    } catch {
+      // 父组件已把失败写进 actionError 横幅，保留编辑态方便继续处理。
+    }
   }
 
   return (
@@ -198,6 +300,72 @@ function ShotInspector({ selected, generating, readOnly, lockedAssets, onSave, o
         <button type="button" className="active">本镜</button>
       </div>
       <div className="youxi-inspector-scroll">
+        <section className="youxi-shot-mode">
+          <header>
+            <strong>本镜出片</strong>
+          </header>
+          <label className="youxi-shot-model">
+            <span className="youxi-shot-model-label">生成方式</span>
+            <select
+              aria-label="本镜生成方式"
+              value={generateMode === "i2v" ? "i2v" : "r2v"}
+              disabled={frozen}
+              onChange={(event) => {
+                const next = event.target.value;
+                if (next === "i2v" && !supportsI2v) return;
+                const payload = { videoGenerateMode: next };
+                payload.videoChainPrevTail = next === "r2v" && generateMode === "r2v"
+                  ? Boolean(chainPrevTail)
+                  : false;
+                onSave(selected, payload).catch(() => {});
+              }}
+            >
+              <option value="r2v">参考图</option>
+              <option value="i2v" disabled={!supportsI2v}>
+                {supportsI2v ? "首尾帧" : "首尾帧（当前模型不支持）"}
+              </option>
+            </select>
+          </label>
+          <label className="youxi-shot-model">
+            <span className="youxi-shot-model-label">分镜时长</span>
+            <select
+              aria-label="本镜时长"
+              value={clampDuration(durationOptions, selected.durationSec)}
+              disabled={frozen}
+              onChange={(event) => {
+                const next = Number(event.target.value);
+                onSave(selected, { durationSec: next }).catch(() => {});
+              }}
+            >
+              {(durationOptions?.length ? durationOptions : DURATIONS).map((item) => (
+                <option key={item} value={item}>{item} 秒</option>
+              ))}
+            </select>
+          </label>
+          {generateMode !== "i2v" && (
+            <label className="youxi-shot-chain">
+              <input
+                type="checkbox"
+                checked={Boolean(chainPrevTail)}
+                disabled={frozen}
+                onChange={(event) => onSave(selected, {
+                  videoGenerateMode: "r2v",
+                  videoChainPrevTail: event.target.checked,
+                }).catch(() => {})}
+              />
+              将上一镜尾帧引用参考
+            </label>
+          )}
+          <button
+            type="button"
+            className="drama-tool-button drama-tool-button--ghost"
+            disabled={frozen}
+            title="按本镜生成方式重算提示词，会清除手动覆盖"
+            onClick={() => onCompile?.(selected)}
+          >
+            <RefreshCw size={13} /> 编译本镜
+          </button>
+        </section>
         <label className="youxi-field">
           <span>台词</span>
           <small>镜 {selected.shotIndex}</small>
@@ -279,10 +447,72 @@ function ShotInspector({ selected, generating, readOnly, lockedAssets, onSave, o
           <p className="drama-form-error">未锁定：{selected.unboundNames.join("、")}</p>
         )}
         {selected.compiledStale && (
-          <p className="drama-form-error">身份或风格已变，旧 prompt 已作废，请重新编译后再出片。</p>
+          <p className="drama-form-error">
+            {selected.promptOverride
+              ? "模式已变，请改覆盖提示词或清空后用自动编译。"
+              : "身份、风格或生成方式已变，已重新编译提示词；请确认后再出片。"}
+          </p>
+        )}
+        {selected.prevTailStale && generateMode === "i2v" && (
+          <p className="drama-form-error">上一镜已更新，本镜仍是旧落幅起幅。不会自动重出，需要时请再点生成。</p>
+        )}
+        {generateMode === "i2v" && (
+          <div className="youxi-first-frame">
+            <span>首帧</span>
+            <figure className={selected.effectiveFirstFrameUrl || selected.firstFrameUrl ? "is-on" : undefined}>
+              {selected.effectiveFirstFrameUrl || selected.firstFrameUrl ? (
+                <button
+                  type="button"
+                  className="youxi-ref-zoom"
+                  aria-label="放大首帧"
+                  onClick={() => onZoom({
+                    src: mediaUrl(selected.effectiveFirstFrameUrl || selected.firstFrameUrl),
+                    title: firstFrameTitle(selected.firstFrameSource),
+                  })}
+                >
+                  <img src={mediaUrl(selected.effectiveFirstFrameUrl || selected.firstFrameUrl)} alt="" />
+                </button>
+              ) : <i />}
+              <b>
+                {selected.generatingStill
+                  ? "生成中"
+                  : (selected.firstFrameSource && selected.firstFrameSource !== "none"
+                    ? firstFrameTitle(selected.firstFrameSource)
+                    : "未选择")}
+              </b>
+            </figure>
+            <div className="youxi-first-frame-actions">
+              {selected.canUsePrevTail && selected.firstFrameSource !== "prev-tail" && (
+                <button type="button" disabled={frozen} onClick={() => onUsePrevTail?.(selected)}>加载上一镜落幅</button>
+              )}
+              <button type="button" disabled={frozen} onClick={() => onGenerateStill?.(selected)}>
+                {selected.generatingStill ? "生成中…" : "自动生成"}
+              </button>
+              <label className="youxi-first-frame-upload">
+                上传
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={frozen}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (file) onUploadFirstFrame?.(selected, file);
+                  }}
+                />
+              </label>
+              {selected.firstFrameKey && (
+                <button type="button" disabled={frozen} onClick={() => onClearFirstFrame?.(selected)}>清除</button>
+              )}
+            </div>
+          </div>
         )}
         <div className="youxi-story-refs">
-          <span>本镜参考图（出片按 Picture 序号自动绑定）</span>
+          <span>
+            {generateMode === "i2v"
+              ? "本镜参考图（仅核对身份，出片不上传设定图）"
+              : "本镜参考图（出片按 Picture 序号自动绑定）"}
+          </span>
           <div>
             {refs.map((ref) => {
               const src = mediaUrl(ref.imageUrl) || ref.imageUrl;
@@ -315,29 +545,56 @@ function ShotInspector({ selected, generating, readOnly, lockedAssets, onSave, o
             {selected.promptOverride
               ? <em className="drama-engine">手动</em>
               : <em className="drama-engine drama-engine--auto">自动</em>}
-            <em className="drama-prompt-field__count"><span ref={promptCountRef}>{promptInitial.length}</span> 字</em>
+            <em className="drama-prompt-field__count"><span ref={promptCountRef}>{editingPrompt ? promptText.length : visiblePrompt.length}</span> 字</em>
           </span>
           <textarea
             ref={promptRef}
             rows={10}
             disabled={frozen}
-            defaultValue={promptInitial}
-            key={`${selected.id}:prompt:${promptInitial}`}
-            placeholder={selected.compiledPrompt ? "" : "点击上方「重新编译」生成提示词，或直接手写覆盖"}
-            onInput={(event) => {
+            readOnly={!editingPrompt}
+            value={editingPrompt ? promptText : visiblePrompt}
+            placeholder={serverPrompt ? "" : "拆镜完成后会自动填入视频提示词，也可直接手写覆盖"}
+            onChange={(event) => {
+              if (!editingPrompt) return;
+              setPromptText(event.target.value);
               if (promptCountRef.current) promptCountRef.current.textContent = String(event.target.value.length);
             }}
-            onBlur={(event) => savePrompt(event.target.value)}
+            title={editingPrompt ? "正在编辑提交给视频模型的完整提示词" : "界面已隐藏结构标签，视频生成仍使用完整提示词"}
           />
           <div className="drama-prompt-field__actions">
-            <button
-              type="button"
-              className="button button--primary drama-prompt-field__save"
-              disabled={frozen}
-              onClick={() => savePrompt(promptRef.current?.value ?? "")}
-            >
-              <Save size={14} /> 保存
-            </button>
+            {editingPrompt ? (
+              <>
+                <button
+                  type="button"
+                  className="button button--primary drama-prompt-field__save"
+                  disabled={frozen}
+                  onClick={() => savePrompt(promptText)}
+                >
+                  <Save size={14} /> 保存
+                </button>
+                <button
+                  type="button"
+                  className="drama-tool-button drama-tool-button--ghost"
+                  disabled={frozen}
+                  onClick={() => {
+                    setPromptText(serverPrompt);
+                    setEditingPrompt(false);
+                  }}
+                >
+                  取消
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="button button--primary drama-prompt-field__save"
+                disabled={frozen || !serverPrompt}
+                onClick={() => setEditingPrompt(true)}
+                title="编辑提交给视频模型的完整提示词"
+              >
+                <Pencil size={14} /> 编辑完整提示词
+              </button>
+            )}
             {selected.promptOverride && (
               <button
                 type="button"
@@ -369,6 +626,7 @@ export function DramaStoryboard({ series, episode }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [draftConfirmOpen, setDraftConfirmOpen] = useState(false);
   const [compileNotice, setCompileNotice] = useState("");
+  const wasRecompiling = useRef(false);
 
   const activeEpisode = episodes.find((item) => item.id === episodeId) || episodes[0] || episode;
   const activeEpisodeId = activeEpisode?.id;
@@ -406,7 +664,7 @@ export function DramaStoryboard({ series, episode }) {
       const data = query.state.data;
       const chapters = data?.chapters || [];
       const list = chapters.flatMap((item) => item.shots || []);
-      if (data?.drafting || activeEpisode?.analyzing || inFlightShots(list).length) return 3000;
+      if (data?.drafting || data?.promptRecompiling || activeEpisode?.analyzing || inFlightShots(list).length) return 1500;
       return false;
     },
   });
@@ -420,6 +678,10 @@ export function DramaStoryboard({ series, episode }) {
   const autoDrafting = Boolean(board?.drafting);
   const videoModels = videoModelsQuery.data || [];
   const selectedVideoModel = videoModels.find((item) => String(item.id) === String(videoModelId));
+  const generateMode = shotModeOf(selected);
+  const chainPrevTail = shotChainOf(selected);
+  const recompiling = Boolean(board?.promptRecompiling || series?.promptRecompiling);
+  const supportsI2v = modelSupportsI2v(selectedVideoModel);
   const durationOptions = useMemo(
     () => durationOptionsFor(videoModels.find((item) => String(item.id) === String(videoModelId))),
     [videoModels, videoModelId]
@@ -434,6 +696,13 @@ export function DramaStoryboard({ series, episode }) {
     if (!selected?.id) return;
     if (shotId !== selected.id) setShotId(selected.id);
   }, [selected?.id, shotId]);
+
+  useEffect(() => {
+    if (wasRecompiling.current && !recompiling) {
+      setCompileNotice("已重新编译分镜提示词");
+    }
+    wasRecompiling.current = recompiling;
+  }, [recompiling]);
 
   const draftMutation = useMutation({
     mutationFn: () => draftDramaStoryboard(activeEpisodeId, draftDurationSec),
@@ -511,6 +780,7 @@ export function DramaStoryboard({ series, episode }) {
 
   function deleteBlockedReason(shot) {
     if (autoDrafting || draftMutation.isPending) return "正在拆镜，请稍候";
+    if (recompiling) return "正在重新编译提示词，请稍候";
     if (shots.length <= 1) return "至少保留一个分镜";
     if (isShotGenerating(shot, busy)) return "该镜正在生成，请等任务结束再删除";
     return "";
@@ -520,10 +790,72 @@ export function DramaStoryboard({ series, episode }) {
     mutationFn: (id) => bindDramaVideoModel(seriesId, Number(id)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+      queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
       setActionError("");
     },
     onError: (error) => setActionError(error.message || "绑定视频模型失败"),
   });
+
+  async function uploadFirstFrame(shot, file) {
+    if (!shot?.id || !file) return;
+    try {
+      const result = await uploadDramaShotFirstFrame(shot.id, file);
+      patchShot(result);
+      setActionError("");
+    } catch (error) {
+      setActionError(error.message || "上传首帧失败");
+    }
+  }
+
+  async function clearFirstFrame(shot) {
+    if (!shot?.id) return;
+    try {
+      const result = await clearDramaShotFirstFrame(shot.id);
+      patchShot(result);
+      setActionError("");
+    } catch (error) {
+      setActionError(error.message || "清除首帧失败");
+    }
+  }
+
+  async function applyPrevTail(shot) {
+    if (!shot?.id) return;
+    try {
+      const result = await attachDramaShotPrevTail(shot.id);
+      patchShot(result);
+      setActionError("");
+    } catch (error) {
+      setActionError(error.message || "接入上一镜落幅失败");
+    }
+  }
+
+  async function generateStill(shot) {
+    if (!shot?.id) return;
+    setBusy((current) => ({ ...current, [shot.id]: "still" }));
+    setActionError("");
+    try {
+      const result = await generateDramaShotOpeningStill(shot.id);
+      patchShot(result?.shot || result);
+      if (result?.task?.id) {
+        const done = await pollDramaShotGenerate(shot.id, result.task.id);
+        patchShot(done?.shot || done);
+        if (done?.task?.status === "FAILED") {
+          setActionError(done.task.errorMessage || "开场静帧生成失败");
+        }
+      }
+    } catch (error) {
+      queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
+      if (!isRetryableRequestError(error)) {
+        setActionError(error.message || "开场静帧生成失败");
+      }
+    } finally {
+      setBusy((current) => {
+        const next = { ...current };
+        delete next[shot.id];
+        return next;
+      });
+    }
+  }
 
   function patchShot(next) {
     if (!next?.id) return;
@@ -571,10 +903,31 @@ export function DramaStoryboard({ series, episode }) {
     if (Object.prototype.hasOwnProperty.call(patch, "promptOverride")) {
       payload.promptOverride = patch.promptOverride;
     }
+    if (Object.prototype.hasOwnProperty.call(patch, "videoGenerateMode")) {
+      payload.videoGenerateMode = patch.videoGenerateMode;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "videoChainPrevTail")) {
+      payload.videoChainPrevTail = patch.videoChainPrevTail;
+    }
+    if (patch.durationSec != null) {
+      setDraftDurationSec(Number(patch.durationSec));
+    }
     const result = await runShot(shot.id, "save", () => updateDramaShot(shot.id, payload));
     // 后端把清空的 promptOverride 置 null，Jackson 省略该字段，patchShot 浅合并会残留旧值；这里权威回写，保证「恢复自动编译」即时生效。
     if (Object.prototype.hasOwnProperty.call(patch, "promptOverride")) {
       patchShot({ id: shot.id, promptOverride: (patch.promptOverride || "").trim() || null });
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "videoGenerateMode")
+        || Object.prototype.hasOwnProperty.call(patch, "videoChainPrevTail")) {
+      patchShot({
+        id: shot.id,
+        videoGenerateMode: result?.videoGenerateMode ?? null,
+        videoChainPrevTail: result?.videoChainPrevTail ?? null,
+        videoModeInherited: result?.videoModeInherited,
+        videoChainInherited: result?.videoChainInherited,
+        effectiveVideoGenerateMode: result?.effectiveVideoGenerateMode,
+        effectiveVideoChainPrevTail: result?.effectiveVideoChainPrevTail,
+      });
     }
     queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
     queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
@@ -582,6 +935,18 @@ export function DramaStoryboard({ series, episode }) {
       setActionError("须重新生成当前镜头");
     }
     return result;
+  }
+
+  async function compileThisShot(shot) {
+    if (!shot?.id) return;
+    try {
+      const result = await runShot(shot.id, "compile", () => compileDramaShot(shot.id));
+      patchShot({ id: shot.id, promptOverride: null });
+      setCompileNotice(`已编译镜 ${shot.shotIndex} 的视频提示词`);
+      return result;
+    } catch {
+      // runShot 已把失败写进 actionError
+    }
   }
 
   async function generate(shot) {
@@ -608,8 +973,10 @@ export function DramaStoryboard({ series, episode }) {
       queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
       queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
     } catch (error) {
-      setActionError(error.message || "出片失败");
       queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
+      if (!isRetryableRequestError(error)) {
+        setActionError(error.message || "出片失败");
+      }
     } finally {
       setBusy((current) => {
         const next = { ...current };
@@ -639,7 +1006,9 @@ export function DramaStoryboard({ series, episode }) {
           queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
         })
         .catch((error) => {
-          if (!cancelled && selected?.id === shot.id) setActionError(error.message || "出片失败");
+          if (cancelled || selected?.id !== shot.id) return;
+          if (isRetryableRequestError(error)) return;
+          setActionError(error.message || "出片失败");
         })
         .finally(() => {
           setBusy((current) => {
@@ -656,8 +1025,19 @@ export function DramaStoryboard({ series, episode }) {
 
   const generating = Boolean(selected && isShotGenerating(selected, busy));
   const drafting = autoDrafting || draftMutation.isPending;
-  const error = boardQuery.error || bindMutation.error || (actionError ? { message: actionError } : null);
+  const frozenByRecompile = recompiling;
+  const generateDisabled = !selected || generating || drafting || frozenByRecompile || !videoModelId;
+  const generateTitle = generateMode === "i2v" && selected?.firstFrameSource === "none"
+    ? "将先自动画开场静帧，再生成视频"
+    : undefined;
+  const queryError = boardQuery.error && !isRetryableRequestError(boardQuery.error)
+    ? boardQuery.error
+    : null;
+  const error = queryError || bindMutation.error || (actionError ? { message: actionError } : null);
   const videoSrc = mediaUrl(selected?.videoUrl || selected?.videoKey);
+  const captionSrc = videoSrc && selected?.id && selected?.dialogue?.trim()
+    ? authenticatedApiUrl(`/api/drama/shots/${selected.id}/captions.vtt?v=${encodeURIComponent(selected.updatedAt || "")}`)
+    : "";
 
   return (
     <section className="youxi-storyboard-layout youxi-storyboard-layout--board">
@@ -695,13 +1075,14 @@ export function DramaStoryboard({ series, episode }) {
               <select
                 aria-label="分镜视频模型"
                 value={videoModelId}
+                disabled={frozenByRecompile || drafting}
                 onChange={(event) => {
                   const value = event.target.value;
                   setVideoModelId(value);
                   if (value) bindMutation.mutate(value);
                 }}
               >
-                <option value="">{videoModels.length ? "请选择视频模型" : "暂无已启用 r2v 模型"}</option>
+                <option value="">{videoModels.length ? "请选择视频模型" : "暂无已启用视频模型"}</option>
                 {series?.videoModelId && !videoModels.some((item) => String(item.id) === String(series.videoModelId)) && (
                   <option value={series.videoModelId}>{series.videoModelName || "已绑定（当前已停用）"}</option>
                 )}
@@ -718,38 +1099,19 @@ export function DramaStoryboard({ series, episode }) {
                 {selectedVideoModel.supportsAudioReference ? ` · 最多 ${selectedVideoModel.maxAudioReferences || 1} 段${selectedVideoModel.supportsAudioOnlyReference ? " · 可仅音频" : ""}` : ""}
               </span>
             )}
-            <label className="youxi-shot-model">
-              当前镜头
-              <select
-                aria-label="当前分镜时长"
-                value={clampDuration(durationOptions, selected?.durationSec ?? draftDurationSec)}
-                disabled={generating || drafting || !selected}
-                onChange={(event) => {
-                  const next = Number(event.target.value);
-                  setDraftDurationSec(next);
-                  if (selected) {
-                    saveShot(selected, { durationSec: next }).catch(() => {});
-                  }
-                }}
-              >
-                {durationOptions.map((item) => (
-                  <option key={item} value={item}>{item} 秒</option>
-                ))}
-              </select>
-            </label>
           </div>
           <div>
             <button
               type="button"
               title="按当前动作、台词和锁定资产，重算本集所有分镜的视频提示词，不会生成视频"
-              disabled={compileAllMutation.isPending || !shots.length || drafting}
+              disabled={compileAllMutation.isPending || frozenByRecompile || !shots.length || drafting}
               onClick={() => compileAllMutation.mutate()}
             >
-              <RefreshCw size={14} /> {compileAllMutation.isPending ? "编译中…" : "重新编译"}
+              <RefreshCw size={14} /> {compileAllMutation.isPending || frozenByRecompile ? "编译中…" : "重新编译"}
             </button>
             <button
               type="button"
-              disabled={drafting || !scriptLocked}
+              disabled={drafting || frozenByRecompile || !scriptLocked}
               onClick={() => {
                 if (shots.length) {
                   setDraftConfirmOpen(true);
@@ -763,7 +1125,8 @@ export function DramaStoryboard({ series, episode }) {
             <button
               className="youxi-toolbar-primary"
               type="button"
-              disabled={!selected || generating || drafting || !videoModelId}
+              disabled={generateDisabled}
+              title={frozenByRecompile ? "正在重新编译提示词，暂不可出片" : generateTitle}
               onClick={() => generate(selected)}
             >
               <Video size={14} /> {generating ? "出片中…" : "生成当前镜头"}
@@ -789,6 +1152,16 @@ export function DramaStoryboard({ series, episode }) {
             <div>
               <strong>还没有已锁定参考图</strong>
               <p>可先拆镜预览结构；出片时会按本镜角色 / 场景 / 道具自动绑定已锁定参考图。</p>
+            </div>
+          </div>
+        )}
+
+        {frozenByRecompile && (
+          <div className="drama-asset-gate youxi-story-gate">
+            <RefreshCw size={16} />
+            <div>
+              <strong>正在重新编译</strong>
+              <p>正在重算分镜提示词，出片、编译、拆镜和首帧操作暂不可用。</p>
             </div>
           </div>
         )}
@@ -839,7 +1212,16 @@ export function DramaStoryboard({ series, episode }) {
                     src={videoSrc}
                     poster={mediaUrl(selected?.videoPosterUrl || selected?.videoPosterKey) || undefined}
                   >
-                    <track kind="captions" />
+                    {captionSrc && (
+                      <track
+                        key={captionSrc}
+                        kind="captions"
+                        src={captionSrc}
+                        srcLang="zh-CN"
+                        label="中文"
+                        default
+                      />
+                    )}
                   </video>
                   {shotPoster(selected) && (
                     <button
@@ -863,12 +1245,26 @@ export function DramaStoryboard({ series, episode }) {
                     <strong>{generating ? "正在生成视频" : "尚未生成视频"}</strong>
                     <span>
                       {generating
-                        ? "默认 r2v：锁定资产参考图 + 编译后的提示词"
-                        : selected?.compiledStale
-                          ? "身份或风格已变，请重新编译后再出片"
-                          : "将按本镜角色 / 场景 / 道具自动绑定 Picture 参考图后出片"}
+                        ? (generateMode === "i2v"
+                          ? (selected?.generatingStill
+                            ? "正在画开场静帧，完成后自动出片"
+                            : "正在按侧栏首帧出片")
+                          : chainPrevTail
+                            ? "参考图 + 上一镜尾帧：锁定资产参考图与尾帧一起提交"
+                            : "默认参考图：锁定资产参考图 + 编译后的提示词")
+                        : selected?.prevTailStale && generateMode === "i2v"
+                          ? "上一镜已更新，本镜不会自动重出"
+                          : selected?.compiledStale
+                            ? (selected.promptOverride
+                              ? "模式已变，请改覆盖提示词或清空后用自动编译"
+                              : "身份、风格或生成方式已变，提示词已自动重编译")
+                            : generateMode === "i2v"
+                              ? (selected?.firstFrameSource === "none"
+                                ? "将自动画开场静帧后出片"
+                                : "将用侧栏首帧起幅出片")
+                              : "将按本镜角色 / 场景 / 道具自动绑定 Picture 参考图后出片"}
                     </span>
-                    <button type="button" disabled={generating || drafting || !videoModelId} onClick={() => generate(selected)}>
+                    <button type="button" disabled={generateDisabled} title={generateTitle} onClick={() => generate(selected)}>
                       <Sparkles size={14} /> {generating ? "出片中…" : "生成当前镜头"}
                     </button>
                   </div>
@@ -913,6 +1309,9 @@ export function DramaStoryboard({ series, episode }) {
                               ? `${shot.durationSec || 5}s · 已生成`
                               : `${shot.durationSec || 5}s`}
                         </small>
+                        {shot.prevTailStale && shotModeOf(shot) === "i2v" && (
+                          <em className="youxi-shot-mode-tag is-stale">上一镜已更新</em>
+                        )}
                       </button>
                       <footer>
                         <button
@@ -933,7 +1332,7 @@ export function DramaStoryboard({ series, episode }) {
                     <button
                       type="button"
                       className="youxi-shot-add"
-                      disabled={createShotMutation.isPending || deleteShotMutation.isPending || drafting}
+                      disabled={createShotMutation.isPending || deleteShotMutation.isPending || drafting || frozenByRecompile}
                       title="在此之后插入一镜"
                       aria-label={`在镜 ${shot.shotIndex} 之后添加分镜`}
                       onClick={() => insertAfter(shot)}
@@ -952,10 +1351,19 @@ export function DramaStoryboard({ series, episode }) {
         key={autoDrafting ? "drafting" : (selected?.id || "none")}
         selected={autoDrafting || !shots.length ? null : selected}
         generating={generating}
-        readOnly={drafting}
+        readOnly={drafting || frozenByRecompile || Boolean(selected && busy[selected.id])}
         lockedAssets={lockedAssets}
+        generateMode={generateMode}
+        chainPrevTail={chainPrevTail}
+        supportsI2v={supportsI2v}
         onSave={saveShot}
+        onCompile={compileThisShot}
         onZoom={setPreview}
+        onUploadFirstFrame={uploadFirstFrame}
+        onClearFirstFrame={clearFirstFrame}
+        onGenerateStill={generateStill}
+        onUsePrevTail={applyPrevTail}
+        durationOptions={durationOptions}
       />
       {(deleteTarget || draftConfirmOpen) && createPortal(
         <>
