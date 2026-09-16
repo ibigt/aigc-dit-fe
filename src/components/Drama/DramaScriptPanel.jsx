@@ -405,32 +405,35 @@ export function DramaScriptPanel({
             <strong>视频比例与清晰度</strong>
             <span>用于全部分镜和成片</span>
           </header>
-          <label className="youxi-shot-model">
-            视频比例
-            <select
-              aria-label="视频比例"
-              value={draft.aspectRatio}
-              disabled={!series?.id || analyzing}
-              onChange={(event) => setDraft((current) => ({ ...current, aspectRatio: event.target.value }))}
-            >
-              {ASPECT_RATIOS.map((item) => (
-                <option key={item.id} value={item.id}>{item.label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="youxi-shot-model">
-            清晰度
-            <select
-              aria-label="清晰度"
-              value={draft.defaultResolution}
-              disabled={!series?.id || analyzing}
-              onChange={(event) => setDraft((current) => ({ ...current, defaultResolution: event.target.value }))}
-            >
-              {resolutionOptions.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
-          </label>
+          <p className="drama-spec-label">视频比例</p>
+          <div className="ratio-card-grid drama-ratio-grid">
+            {ASPECT_RATIOS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={draft.aspectRatio === item.id ? "active" : ""}
+                disabled={!series?.id || analyzing}
+                onClick={() => setDraft((current) => ({ ...current, aspectRatio: item.id }))}
+              >
+                <i data-ratio={item.id} aria-hidden="true" />
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+          <p className="drama-spec-label">清晰度</p>
+          <div className="ratio-card-grid drama-ratio-grid drama-resolution-grid">
+            {resolutionOptions.map((item) => (
+              <button
+                key={item}
+                type="button"
+                className={draft.defaultResolution === item ? "active" : ""}
+                disabled={!series?.id || analyzing}
+                onClick={() => setDraft((current) => ({ ...current, defaultResolution: item }))}
+              >
+                <span>{item}</span>
+              </button>
+            ))}
+          </div>
         </section>
 
         <section className="settings-block settings-style-block">
