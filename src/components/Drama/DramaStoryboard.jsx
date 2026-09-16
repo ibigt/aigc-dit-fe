@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   bindDramaVideoModel,
+  bindDramaVideoGenerateMode,
   clearDramaShotFirstFrame,
   compileDramaShot,
   compileDramaStoryboard,
@@ -680,6 +681,7 @@ export function DramaStoryboard({ series, episode }) {
   const selectedVideoModel = videoModels.find((item) => String(item.id) === String(videoModelId));
   const generateMode = shotModeOf(selected);
   const chainPrevTail = shotChainOf(selected);
+  const projectGenerateMode = (board?.videoGenerateMode || series?.videoGenerateMode) === "i2v" ? "i2v" : "r2v";
   const recompiling = Boolean(board?.promptRecompiling || series?.promptRecompiling);
   const supportsI2v = modelSupportsI2v(selectedVideoModel);
   const durationOptions = useMemo(
@@ -794,6 +796,16 @@ export function DramaStoryboard({ series, episode }) {
       setActionError("");
     },
     onError: (error) => setActionError(error.message || "绑定视频模型失败"),
+  });
+
+  const modeMutation = useMutation({
+    mutationFn: (videoGenerateMode) => bindDramaVideoGenerateMode(seriesId, { videoGenerateMode }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+      queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
+      setActionError("");
+    },
+    onError: (error) => setActionError(error.message || "切换连续分镜模式失败"),
   });
 
   async function uploadFirstFrame(shot, file) {
@@ -1033,7 +1045,7 @@ export function DramaStoryboard({ series, episode }) {
   const queryError = boardQuery.error && !isRetryableRequestError(boardQuery.error)
     ? boardQuery.error
     : null;
-  const error = queryError || bindMutation.error || (actionError ? { message: actionError } : null);
+  const error = queryError || bindMutation.error || modeMutation.error || (actionError ? { message: actionError } : null);
   const videoSrc = mediaUrl(selected?.videoUrl || selected?.videoKey);
   const captionSrc = videoSrc && selected?.id && selected?.dialogue?.trim()
     ? authenticatedApiUrl(`/api/drama/shots/${selected.id}/captions.vtt?v=${encodeURIComponent(selected.updatedAt || "")}`)
@@ -1091,6 +1103,18 @@ export function DramaStoryboard({ series, episode }) {
                     {item.name}{item.provider ? ` · ${item.provider}` : ""}{item.supportsNativeAudio ? " · 原生有声" : ""}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label className="youxi-shot-model">
+              分镜衔接
+              <select
+                aria-label="项目分镜衔接模式"
+                value={projectGenerateMode}
+                disabled={!videoModelId || frozenByRecompile || drafting || modeMutation.isPending}
+                onChange={(event) => modeMutation.mutate(event.target.value)}
+              >
+                <option value="i2v" disabled={!supportsI2v}>连续分镜（尾帧接首帧）</option>
+                <option value="r2v">独立分镜（参考图）</option>
               </select>
             </label>
             {(selectedVideoModel?.supportsNativeAudio || selectedVideoModel?.supportsAudioReference) && (
