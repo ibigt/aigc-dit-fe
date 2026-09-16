@@ -44,7 +44,26 @@ done
 SSH_OPTIONS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -p "$DEPLOY_PORT")
 SCP_OPTIONS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -P "$DEPLOY_PORT")
 
-if [[ "$DEPLOY_PASSWORDLESS" == "1" ]]; then
+if [[ "$DEPLOY_USER" == "root" ]]; then
+  if [[ "$DEPLOY_PASSWORDLESS" == "1" ]]; then
+    SSH=(ssh "${SSH_OPTIONS[@]}")
+    SCP=(scp "${SCP_OPTIONS[@]}")
+  else
+    command -v sshpass >/dev/null 2>&1 || {
+      echo "缺少 sshpass；macOS 可执行：brew install hudochenkov/sshpass/sshpass" >&2
+      echo "或配置 SSH key，并设置 DEPLOY_PASSWORDLESS=1。" >&2
+      exit 1
+    }
+    if [[ -z "${DEPLOY_PASSWORD:-}" ]]; then
+      read -rsp "${DEPLOY_USER}@${DEPLOY_HOST} 的 SSH 密码：" DEPLOY_PASSWORD
+      echo
+    fi
+    export SSHPASS="$DEPLOY_PASSWORD"
+    SSH=(sshpass -e ssh "${SSH_OPTIONS[@]}")
+    SCP=(sshpass -e scp "${SCP_OPTIONS[@]}")
+  fi
+  SUDO_COMMAND=(bash -s --)
+elif [[ "$DEPLOY_PASSWORDLESS" == "1" ]]; then
   SSH=(ssh "${SSH_OPTIONS[@]}")
   SCP=(scp "${SCP_OPTIONS[@]}")
   SUDO_COMMAND=(sudo -n bash -s --)
@@ -68,7 +87,7 @@ run_remote_root() {
   local remote_script remote_command
   remote_script="$(cat)"
   printf -v remote_command '%q ' "${SUDO_COMMAND[@]}" "$@"
-  if [[ "$DEPLOY_PASSWORDLESS" == "1" ]]; then
+  if [[ "$DEPLOY_PASSWORDLESS" == "1" || "$DEPLOY_USER" == "root" ]]; then
     printf '%s\n' "$remote_script" | "${SSH[@]}" "$DEPLOY_USER@$DEPLOY_HOST" "$remote_command"
   else
     {

@@ -19,7 +19,7 @@ import {
   generateDramaShotOpeningStill,
   attachDramaShotPrevTail,
 } from "../../api/drama.js";
-import { mediaUrl } from "../../lib/media.js";
+import { authenticatedApiUrl, mediaUrl } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 import { isRetryableRequestError } from "../../api/client.js";
 
@@ -1035,6 +1035,9 @@ export function DramaStoryboard({ series, episode }) {
     : null;
   const error = queryError || bindMutation.error || (actionError ? { message: actionError } : null);
   const videoSrc = mediaUrl(selected?.videoUrl || selected?.videoKey);
+  const captionSrc = videoSrc && selected?.id && selected?.dialogue?.trim()
+    ? authenticatedApiUrl(`/api/drama/shots/${selected.id}/captions.vtt?v=${encodeURIComponent(selected.updatedAt || "")}`)
+    : "";
 
   return (
     <section className="youxi-storyboard-layout youxi-storyboard-layout--board">
@@ -1209,7 +1212,16 @@ export function DramaStoryboard({ series, episode }) {
                     src={videoSrc}
                     poster={mediaUrl(selected?.videoPosterUrl || selected?.videoPosterKey) || undefined}
                   >
-                    <track kind="captions" />
+                    {captionSrc && (
+                      <track
+                        key={captionSrc}
+                        kind="captions"
+                        src={captionSrc}
+                        srcLang="zh-CN"
+                        label="中文"
+                        default
+                      />
+                    )}
                   </video>
                   {shotPoster(selected) && (
                     <button

@@ -24,6 +24,14 @@ export function mediaUrl(keyOrUrl) {
   return `/api/media?key=${encodeURIComponent(key)}&token=${encodeURIComponent(token)}`;
 }
 
+export function authenticatedApiUrl(path) {
+  if (!path) return "";
+  const token = window.localStorage.getItem(TOKEN_KEY) || "";
+  if (!token) return path;
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}token=${encodeURIComponent(token)}`;
+}
+
 export function formatDateTime(value) {
   if (!value) return "";
   const date = value instanceof Date ? value : new Date(value);
