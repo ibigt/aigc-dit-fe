@@ -24,7 +24,6 @@ import {
   extractDramaAssets,
   fetchDramaAssets,
   fetchDramaImageModels,
-  fetchDramaVideoModels,
   generateDramaAssetImage,
   lockDramaAsset,
   lockDramaScript,
@@ -271,8 +270,7 @@ function SubjectInspector({
                     className="drama-voice-action drama-voice-action--secondary"
                     type="button"
                     onClick={onVoiceUploadClick}
-                    disabled={voiceBusy || !supportsVoiceReference}
-                    title={!supportsVoiceReference ? effectiveVoiceReferenceStatus.help : undefined}
+                    disabled={voiceBusy}
                   >
                     <AudioLines size={13} /> {effectiveVoiceReferenceStatus.state === "loading" ? "检查模型能力中…" : asset.voiceReferenceUrl ? "更换参考音频" : "绑定参考音频"}
                   </button>
@@ -400,10 +398,6 @@ export function DramaAssetBoard({ series, episode }) {
     queryKey: ["drama-image-models"],
     queryFn: fetchDramaImageModels,
   });
-  const videoModelsQuery = useQuery({
-    queryKey: ["drama-video-models"],
-    queryFn: fetchDramaVideoModels,
-  });
   const assetsQuery = useQuery({
     queryKey: ["drama-assets", episodeId],
     queryFn: () => fetchDramaAssets(episodeId),
@@ -416,49 +410,11 @@ export function DramaAssetBoard({ series, episode }) {
   });
 
   const imageModels = imageModelsQuery.data || [];
-  const videoModels = videoModelsQuery.data || [];
-  const selectedVideoModel = videoModels.find((item) => String(item.id) === String(series?.videoModelId));
-  const supportsVoiceReference = Boolean(selectedVideoModel?.supportsAudioReference);
-  const hasBoundVideoModel = Boolean(series?.videoModelId);
-  const videoModelLoading = hasBoundVideoModel && (videoModelsQuery.isPending || videoModelsQuery.isLoading);
-  let voiceReferenceStatus;
-  if (!hasBoundVideoModel) {
-    voiceReferenceStatus = {
-      state: "unbound",
-      label: "未绑定视频模型",
-      help: "请先在基础信息中选择视频模型；仍可保存文字音色描述。",
-    };
-  } else if (videoModelLoading) {
-    voiceReferenceStatus = {
-      state: "loading",
-      label: "正在检查模型能力",
-      help: "视频模型能力加载完成后，即可选择参考音频。",
-    };
-  } else if (videoModelsQuery.isError) {
-    voiceReferenceStatus = {
-      state: "error",
-      label: "模型能力加载失败",
-      help: "暂时无法确认视频模型是否支持参考音频，请重新加载；文字音色描述仍可保存。",
-    };
-  } else if (!selectedVideoModel) {
-    voiceReferenceStatus = {
-      state: "missing",
-      label: "当前视频模型不可用",
-      help: "当前绑定的视频模型已停用或不存在，请在基础信息中重新选择。",
-    };
-  } else if (!supportsVoiceReference) {
-    voiceReferenceStatus = {
-      state: "unsupported",
-      label: "仅支持文字音色",
-      help: "当前视频模型不支持参考音频，可使用上方文字描述锁定音色。",
-    };
-  } else {
-    voiceReferenceStatus = {
-      state: "ready",
-      label: "可绑定参考音频",
-      help: "从音频素材库选择一段音频作为角色音色参考；对白、环境声和音效仍随视频生成。",
-    };
-  }
+  const voiceReferenceStatus = {
+    state: "ready",
+    label: "可绑定参考音频",
+    help: "可先为角色保存参考音频；到分镜阶段将按所选视频模型能力决定是否使用。",
+  };
   const assets = assetsQuery.data || [];
   const scriptLocked = episode?.status === "已锁定";
 
