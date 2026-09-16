@@ -46,12 +46,12 @@ const PROMPT_MAX = 4000;
 const BATCH_LIMIT = 4;
 const emptyCreate = { name: "", meta: "", prompt: "" };
 
-function VoiceLibraryDialog({ assets, loading, busy, onClose, onSelect, onUpload }) {
+function VoiceLibraryDialog({ targetName, assets, loading, busy, onClose, onSelect, onUpload }) {
   return (
     <div className="drama-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
       <section className="drama-dialog drama-voice-library" role="dialog" aria-modal="true" aria-labelledby="voice-library-title">
         <header>
-          <div><span>参考音频</span><h2 id="voice-library-title">选择角色音色</h2></div>
+          <div><span>参考音频</span><h2 id="voice-library-title">为“{targetName}”选择音色</h2></div>
         </header>
         <div className="drama-voice-library__body">
           <button className="drama-voice-library__upload" type="button" disabled={busy} onClick={onUpload}>
@@ -223,10 +223,15 @@ function SubjectInspector({
   onVoiceSave,
   onVoiceUploadClick,
   supportsVoiceReference,
+  voiceReferenceStatus,
+  onVoiceCapabilityRetry,
   onZoom,
 }) {
   const src = mediaUrl(asset?.imageStorageKey || asset?.imageUrl);
   const voiceDescriptionChanged = (voiceLock || "").trim() !== (asset?.voiceLock || "").trim();
+  const effectiveVoiceReferenceStatus = asset?.voiceReferenceUrl && voiceReferenceStatus.state === "ready"
+    ? { ...voiceReferenceStatus, state: "success", label: "已绑定参考音频" }
+    : voiceReferenceStatus;
   return (
     <aside className="youxi-inspector youxi-subject-inspector">
       <div className="youxi-inspector-tabs">
@@ -253,20 +258,24 @@ function SubjectInspector({
             {type === "角色" && (
               <section className="drama-native-voice">
                 <header>
-                  <strong><AudioLines size={14} /> 原生视频音色</strong>
-                  <em>{asset.voiceReferenceUrl ? "已绑定参考音频" : "文字描述"}</em>
+                  <strong><AudioLines size={14} /> 角色音色</strong>
+                  <em data-state={effectiveVoiceReferenceStatus.state}>{effectiveVoiceReferenceStatus.label}</em>
                 </header>
                 <label className="youxi-field">
                   <span>音色描述</span>
                   <input value={voiceLock} onChange={onVoiceLockChange} placeholder="例：30岁低沉男声，普通话，克制冷静" />
                 </label>
-                {supportsVoiceReference && asset.voiceReferenceUrl && <audio controls preload="metadata" src={mediaUrl(asset.voiceReferenceUrl) || asset.voiceReferenceUrl} />}
+                {asset.voiceReferenceUrl && <audio controls preload="metadata" src={mediaUrl(asset.voiceReferenceUrl) || asset.voiceReferenceUrl} />}
                 <div className="drama-native-voice__actions">
-                  {supportsVoiceReference && (
-                    <button className="drama-voice-action drama-voice-action--secondary" type="button" onClick={onVoiceUploadClick} disabled={voiceBusy}>
-                      <AudioLines size={13} /> {asset.voiceReferenceUrl ? "更换参考音频" : "配置参考音频"}
-                    </button>
-                  )}
+                  <button
+                    className="drama-voice-action drama-voice-action--secondary"
+                    type="button"
+                    onClick={onVoiceUploadClick}
+                    disabled={voiceBusy || !supportsVoiceReference}
+                    title={!supportsVoiceReference ? effectiveVoiceReferenceStatus.help : undefined}
+                  >
+                    <AudioLines size={13} /> {effectiveVoiceReferenceStatus.state === "loading" ? "检查模型能力中…" : asset.voiceReferenceUrl ? "更换参考音频" : "绑定参考音频"}
+                  </button>
                   <button
                     className="drama-voice-action drama-voice-action--primary"
                     type="button"
@@ -276,7 +285,12 @@ function SubjectInspector({
                     <Save size={13} /> 保存声音描述
                   </button>
                 </div>
-                <small>{supportsVoiceReference ? "对白、环境声和音效随视频一次生成；参考音频只锁定音色身份。" : "当前视频模型不支持上传参考音频，可使用文字描述锁定音色。"}</small>
+                <div className="drama-native-voice__help">
+                  <small>{effectiveVoiceReferenceStatus.help}</small>
+                  {effectiveVoiceReferenceStatus.state === "error" && (
+                    <button type="button" onClick={onVoiceCapabilityRetry}>重新加载</button>
+                  )}
+                </div>
               </section>
             )}
             <label className="youxi-field">
@@ -366,6 +380,7 @@ export function DramaAssetBoard({ series, episode }) {
   const [promptDraft, setPromptDraft] = useState("");
   const [voiceLockDraft, setVoiceLockDraft] = useState("");
   const [voiceLibraryOpen, setVoiceLibraryOpen] = useState(false);
+  const [voiceTarget, setVoiceTarget] = useState(null);
   const [promptDirty, setPromptDirty] = useState(false);
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
@@ -404,6 +419,46 @@ export function DramaAssetBoard({ series, episode }) {
   const videoModels = videoModelsQuery.data || [];
   const selectedVideoModel = videoModels.find((item) => String(item.id) === String(series?.videoModelId));
   const supportsVoiceReference = Boolean(selectedVideoModel?.supportsAudioReference);
+  const hasBoundVideoModel = Boolean(series?.videoModelId);
+  const videoModelLoading = hasBoundVideoModel && (videoModelsQuery.isPending || videoModelsQuery.isLoading);
+  let voiceReferenceStatus;
+  if (!hasBoundVideoModel) {
+    voiceReferenceStatus = {
+      state: "unbound",
+      label: "未绑定视频模型",
+      help: "请先在基础信息中选择视频模型；仍可保存文字音色描述。",
+    };
+  } else if (videoModelLoading) {
+    voiceReferenceStatus = {
+      state: "loading",
+      label: "正在检查模型能力",
+      help: "视频模型能力加载完成后，即可选择参考音频。",
+    };
+  } else if (videoModelsQuery.isError) {
+    voiceReferenceStatus = {
+      state: "error",
+      label: "模型能力加载失败",
+      help: "暂时无法确认视频模型是否支持参考音频，请重新加载；文字音色描述仍可保存。",
+    };
+  } else if (!selectedVideoModel) {
+    voiceReferenceStatus = {
+      state: "missing",
+      label: "当前视频模型不可用",
+      help: "当前绑定的视频模型已停用或不存在，请在基础信息中重新选择。",
+    };
+  } else if (!supportsVoiceReference) {
+    voiceReferenceStatus = {
+      state: "unsupported",
+      label: "仅支持文字音色",
+      help: "当前视频模型不支持参考音频，可使用上方文字描述锁定音色。",
+    };
+  } else {
+    voiceReferenceStatus = {
+      state: "ready",
+      label: "可绑定参考音频",
+      help: "从音频素材库选择一段音频作为角色音色参考；对白、环境声和音效仍随视频生成。",
+    };
+  }
   const assets = assetsQuery.data || [];
   const scriptLocked = episode?.status === "已锁定";
 
@@ -581,27 +636,39 @@ export function DramaAssetBoard({ series, episode }) {
   }
 
   async function onVoiceUpload(file) {
-    if (!file || !selected) return;
-    markBusy(selected.id, "voice", true);
+    const target = voiceTarget;
+    if (!file || !target?.id) return;
+    markBusy(target.id, "voice", true);
     try {
-      await uploadDramaAssetVoiceReference(selected.id, file);
+      const updated = await uploadDramaAssetVoiceReference(target.id, file);
+      queryClient.setQueryData(["drama-assets", episodeId], (current) => {
+        if (!Array.isArray(current)) return current;
+        return current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item));
+      });
       setVoiceLibraryOpen(false);
+      setVoiceTarget(null);
       queryClient.invalidateQueries({ queryKey: ["assets"] });
       invalidate();
     } finally {
-      markBusy(selected.id, "voice", false);
+      markBusy(target.id, "voice", false);
     }
   }
 
   async function onVoiceLibrarySelect(libraryAsset) {
-    if (!libraryAsset?.id || !selected) return;
-    markBusy(selected.id, "voice", true);
+    const target = voiceTarget;
+    if (!libraryAsset?.id || !target?.id) return;
+    markBusy(target.id, "voice", true);
     try {
-      await bindDramaAssetVoiceReference(selected.id, libraryAsset.id);
+      const updated = await bindDramaAssetVoiceReference(target.id, libraryAsset.id);
+      queryClient.setQueryData(["drama-assets", episodeId], (current) => {
+        if (!Array.isArray(current)) return current;
+        return current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item));
+      });
       setVoiceLibraryOpen(false);
+      setVoiceTarget(null);
       invalidate();
     } finally {
-      markBusy(selected.id, "voice", false);
+      markBusy(target.id, "voice", false);
     }
   }
 
@@ -841,34 +908,42 @@ export function DramaAssetBoard({ series, episode }) {
         voiceBusy={isBusy(selected?.id, "voice")}
         onVoiceLockChange={(event) => setVoiceLockDraft(event.target.value)}
         onVoiceSave={() => saveVoice().catch((err) => showToast(err.message))}
-        onVoiceUploadClick={() => setVoiceLibraryOpen(true)}
+        onVoiceUploadClick={() => {
+          if (!selected) return;
+          setVoiceTarget({ id: selected.id, name: selected.name });
+          setVoiceLibraryOpen(true);
+        }}
         supportsVoiceReference={supportsVoiceReference}
+        voiceReferenceStatus={voiceReferenceStatus}
+        onVoiceCapabilityRetry={() => videoModelsQuery.refetch()}
         onZoom={() => selected && setPreview({
           src: mediaUrl(selected.imageStorageKey || selected.imageUrl),
           title: selected.name,
         })}
       />
 
-      {supportsVoiceReference && (
-        <input
-          ref={voiceFileRef}
-          type="file"
-          accept="audio/*,.mp3,.wav,.m4a,.aac"
-          hidden
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = "";
-            onVoiceUpload(file).catch((err) => showToast(err.message));
-          }}
-        />
-      )}
+      <input
+        ref={voiceFileRef}
+        type="file"
+        accept="audio/*,.mp3,.wav,.m4a,.aac"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          onVoiceUpload(file).catch((err) => showToast(err.message));
+        }}
+      />
 
       {supportsVoiceReference && voiceLibraryOpen && (
         <VoiceLibraryDialog
+          targetName={voiceTarget?.name || "当前角色"}
           assets={voiceLibraryQuery.data || []}
           loading={voiceLibraryQuery.isLoading}
-          busy={isBusy(selected?.id, "voice")}
-          onClose={() => setVoiceLibraryOpen(false)}
+          busy={isBusy(voiceTarget?.id, "voice")}
+          onClose={() => {
+            setVoiceLibraryOpen(false);
+            setVoiceTarget(null);
+          }}
           onSelect={(item) => onVoiceLibrarySelect(item).catch((err) => showToast(err.message))}
           onUpload={() => voiceFileRef.current?.click()}
         />
