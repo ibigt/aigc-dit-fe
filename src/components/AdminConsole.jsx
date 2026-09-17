@@ -51,6 +51,7 @@ import {
   updateAdminModel,
   updateAdminUser,
 } from "../api/admin.js";
+import { textReasoningEnabled, withTextReasoning } from "./adminModelConfig.js";
 
 const adminMenus = [
   { id: "dashboard", label: "仪表盘", icon: LayoutDashboard },
@@ -627,7 +628,7 @@ function ModelDialog({ model, onClose, onSave, saving }) {
     if (!model) {
       const adapterKey = defaultAdapterKey("image");
       const adapter = adapterOf(adapterKey);
-      return { name: "", category: "image", adapterKey, provider: adapter.provider, modelKey: "", endpoint: adapter.defaultEndpoint, description: "", enabled: true, apiKey: "", concurrentLimit: 1, instanceType: "", proxy: "", pricing: emptyPricing, logo: FALLBACK_LOGO, capabilities: ["image", ...adapter.modes], adapterConfig: {}, defaultVoice: "alloy", voicesText: "alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer", formatsText: "mp3, wav, aac, flac, opus", minSpeed: 0.25, maxSpeed: 4, t2iPath: adapter.defaultPaths.t2iPath || "", i2iPath: "", t2vPath: "", r2vPath: "", i2vPath: "" };
+      return { name: "", category: "image", adapterKey, provider: adapter.provider, modelKey: "", endpoint: adapter.defaultEndpoint, description: "", enabled: true, apiKey: "", concurrentLimit: 1, instanceType: "", proxy: "", pricing: emptyPricing, logo: FALLBACK_LOGO, capabilities: ["image", ...adapter.modes], adapterConfig: {}, defaultVoice: "alloy", voicesText: "alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer", formatsText: "mp3, wav, aac, flac, opus", minSpeed: 0.25, maxSpeed: 4, t2iPath: adapter.defaultPaths.t2iPath || "", i2iPath: "", t2vPath: "", r2vPath: "", i2vPath: "", enableThinking: false };
     }
     const adapterKey = inferAdapterKey(model);
     return {
@@ -647,6 +648,7 @@ function ModelDialog({ model, onClose, onSave, saving }) {
       formatsText: (model.adapterConfig?.formats || ["mp3", "wav", "aac", "flac", "opus"]).join(", "),
       minSpeed: model.adapterConfig?.minSpeed ?? 0.25,
       maxSpeed: model.adapterConfig?.maxSpeed ?? 4,
+      enableThinking: textReasoningEnabled(model.adapterConfig),
       logo: modelLogoSrc(model),
     };
   });
@@ -820,6 +822,7 @@ function ModelDialog({ model, onClose, onSave, saving }) {
           <label className="model-form-wide">{endpointLabel(draft.provider)}<input required value={draft.endpoint || ""} onChange={(event) => update("endpoint", event.target.value)} placeholder={draft.provider === "自定义配置" ? "https://api.openai.com/v1 或兼容网关" : ""} />{(isOfficialSource(draft.provider) || (isMiniMaxH3(adapter?.key) && isComfyUiSource(draft.provider))) && <small className="model-logo-hint">{officialHint(adapter?.key, isText, draft.provider)}</small>}</label>
           <label className="model-form-wide">API Key<input type="password" value={draft.apiKey || ""} onChange={(event) => update("apiKey", event.target.value)} placeholder={draft.hasApiKey ? "已加密保存，留空则保持不变" : ((adapter?.provider === "自定义配置" || (isMiniMaxH3(adapter?.key) && isComfyUiSource(draft.provider))) ? "可留空（本地网关无鉴权）" : "明文仅提交一次，服务端加密落库")} />{isOfficialSource(draft.provider) && !isText && <small className="model-logo-hint">{draft.hasApiKey ? "卡片显示「密钥已配置」后才会用这条 Key 调官方接口。" : (adapter?.key === "minimax-h3" ? "当前尚未落库。请粘贴 MiniMax 按量接口密钥（不要用 Token Plan 订阅 Key），再点右下角保存配置。" : (isOfficialTokenPlan(draft.provider) ? "当前尚未落库。请粘贴 Agent Plan 订阅 Key，再点右下角保存配置。" : "当前尚未落库。请粘贴火山方舟 API Key（不要用 IAM AK/SK），再点右下角保存配置。"))}</small>}</label>
           <div className="model-form-wide model-cap-field"><span>品牌图标</span><div className="model-logo-picker">{MODEL_LOGO_CATALOG.map((item) => <button type="button" key={item.file} className={draft.logo === item.file ? "active" : ""} title={item.label} aria-label={item.label} onClick={() => update("logo", item.file)}><img src={item.file} alt="" /></button>)}</div><small className="model-logo-hint">按名称 / 标识自动匹配，也可手动点选。未命中时使用通用图标。</small></div>
+          {isText && <div className="model-form-wide model-cap-field"><label className="model-cap-chip"><input type="checkbox" checked={draft.enableThinking === true} onChange={(event) => setDraft((current) => ({ ...current, enableThinking: event.target.checked }))} />启用思考</label><small className="model-logo-hint">结构化剧本分析建议关闭，避免思考内容占满输出额度。</small></div>}
           {!isText && <div className="model-form-wide model-cap-field"><span>能力勾选</span><div className="model-cap-row">{visibleCapOptions.map((cap) => <label key={cap.id} className="model-cap-chip"><input type="checkbox" checked={caps.includes(cap.id)} onChange={() => toggleCap(cap.id)} />{cap.label}</label>)}</div></div>}
           {draft.category === "video" && <div className="model-form-wide model-cap-field"><span>参考音频能力</span><div className="model-cap-row"><span className="model-cap-chip">{audioCapabilityLabel(draft)}</span></div><small className="model-logo-hint">由适配协议和模型标识自动判定，无需手动配置。</small></div>}
           {isAudio && <><label>默认音色<input value={draft.defaultVoice || ""} onChange={(event) => update("defaultVoice", event.target.value)} placeholder="alloy" /></label><label>默认格式<select value={draft.adapterConfig?.defaultFormat || "mp3"} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), defaultFormat: event.target.value } }))}><option value="mp3">MP3</option><option value="wav">WAV</option><option value="aac">AAC</option><option value="flac">FLAC</option><option value="opus">OPUS</option></select></label><label className="model-form-wide">可选音色（逗号分隔）<input value={draft.voicesText || ""} onChange={(event) => update("voicesText", event.target.value)} placeholder="alloy, nova, shimmer" /></label><label className="model-form-wide">支持格式（逗号分隔）<input value={draft.formatsText || ""} onChange={(event) => update("formatsText", event.target.value)} placeholder="mp3, wav, aac" /></label><label>最低语速<input type="number" step="0.05" min="0.25" max="4" value={draft.minSpeed ?? 0.25} onChange={(event) => update("minSpeed", Number(event.target.value))} /></label><label>最高语速<input type="number" step="0.05" min="0.25" max="4" value={draft.maxSpeed ?? 4} onChange={(event) => update("maxSpeed", Number(event.target.value))} /></label></>}
@@ -877,6 +880,7 @@ function toModelPayload(draft) {
   if (adapterConfig.v2vPath && !adapterConfig.i2vPath) adapterConfig.i2vPath = adapterConfig.v2vPath;
   delete adapterConfig.v2vPath;
   if (category === "text" && draft.modelKey) adapterConfig.chatModel = draft.modelKey;
+  if (category === "text") Object.assign(adapterConfig, withTextReasoning(adapterConfig, draft.enableThinking));
   if (category === "audio") {
     adapterConfig.defaultVoice = (draft.defaultVoice || "alloy").trim();
     adapterConfig.defaultFormat = adapterConfig.defaultFormat || "mp3";
