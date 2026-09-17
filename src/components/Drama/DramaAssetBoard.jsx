@@ -221,9 +221,7 @@ function SubjectInspector({
   onVoiceLockChange,
   onVoiceSave,
   onVoiceUploadClick,
-  supportsVoiceReference,
   voiceReferenceStatus,
-  onVoiceCapabilityRetry,
   onZoom,
 }) {
   const src = mediaUrl(asset?.imageStorageKey || asset?.imageUrl);
@@ -285,9 +283,6 @@ function SubjectInspector({
                 </div>
                 <div className="drama-native-voice__help">
                   <small>{effectiveVoiceReferenceStatus.help}</small>
-                  {effectiveVoiceReferenceStatus.state === "error" && (
-                    <button type="button" onClick={onVoiceCapabilityRetry}>重新加载</button>
-                  )}
                 </div>
               </section>
             )}
@@ -869,9 +864,7 @@ export function DramaAssetBoard({ series, episode }) {
           setVoiceTarget({ id: selected.id, name: selected.name });
           setVoiceLibraryOpen(true);
         }}
-        supportsVoiceReference={supportsVoiceReference}
         voiceReferenceStatus={voiceReferenceStatus}
-        onVoiceCapabilityRetry={() => videoModelsQuery.refetch()}
         onZoom={() => selected && setPreview({
           src: mediaUrl(selected.imageStorageKey || selected.imageUrl),
           title: selected.name,
@@ -890,7 +883,7 @@ export function DramaAssetBoard({ series, episode }) {
         }}
       />
 
-      {supportsVoiceReference && voiceLibraryOpen && (
+      {voiceLibraryOpen && (
         <VoiceLibraryDialog
           targetName={voiceTarget?.name || "当前角色"}
           assets={voiceLibraryQuery.data || []}
