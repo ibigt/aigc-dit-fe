@@ -1,6 +1,8 @@
 import { uploadAsset } from "../api/assets.js";
 import { storageKeyOf } from "./media.js";
 
+export const FRAMES_EMPTY_PROMPT_LABEL = "根据首帧自动生成";
+
 export async function materialToAsset(material) {
   if (!material) return null;
   const storageKey = material.storageKey || storageKeyOf(material.url || material.src);
@@ -37,7 +39,7 @@ export function taskToResultMessage(task) {
   const first = creations[0] || {};
   return {
     type: "result",
-    prompt: task.prompt || first.prompt || "",
+    prompt: task.prompt || first.prompt || userPromptOf(task) || "",
     text: task.category === "video"
       ? `已完成 ${creations.length || task.copies || 1} 个视频副本，可继续编辑或保存`
       : task.category === "audio"
@@ -64,12 +66,13 @@ export function taskToResultMessage(task) {
 export function tasksToMessages(tasks = []) {
   const messages = [];
   for (const task of tasks) {
-    if (task.prompt) messages.push({ type: "user", text: task.prompt });
+    const userText = userPromptOf(task);
+    if (userText) messages.push({ type: "user", text: userText });
     if (task.status === "SUCCEEDED") messages.push(taskToResultMessage(task));
     if (task.status === "PENDING" || task.status === "RUNNING") {
       messages.push({
         type: "result",
-        prompt: task.prompt || "",
+        prompt: userText,
         pending: true,
         taskId: task.id,
         text: task.category === "video" ? "视频生成中，通常需要几分钟，请稍候或稍后刷新会话" : task.category === "audio" ? "语音生成中，请稍候…" : "图片生成中，请稍候…",
@@ -88,7 +91,7 @@ export function tasksToMessages(tasks = []) {
     if (task.status === "FAILED") {
       messages.push({
         type: "result",
-        prompt: task.prompt || "",
+        prompt: userText,
         text: friendlyGenerateError(task.errorMessage, {
           adapterKey: task.params?.adapterKey,
           modelKey: task.params?.modelKey,
@@ -109,6 +112,19 @@ export function tasksToMessages(tasks = []) {
     }
   }
   return messages;
+}
+
+export function userPromptOf(task) {
+  const prompt = String(task?.prompt || "").trim();
+  if (prompt) return prompt;
+  return isFramesTask(task) ? FRAMES_EMPTY_PROMPT_LABEL : "";
+}
+
+function isFramesTask(task) {
+  const mode = String(task?.mode || task?.params?.mode || "").toLowerCase();
+  if (mode === "i2v" || mode === "frames" || mode === "v2v" || mode === "frame") return true;
+  const frames = task?.params?.frames;
+  return Boolean(frames?.firstFrameKey || frames?.lastFrameKey);
 }
 
 export function friendlyGenerateError(message) {

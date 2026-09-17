@@ -10,6 +10,7 @@ import {
   Clock3,
   CloudCog,
   Cpu,
+  FileClock,
   Gauge,
   Globe,
   Grid2X2,
@@ -20,6 +21,7 @@ import {
   Pencil,
   Play,
   Plus,
+  RefreshCw,
   Search,
   Server,
   ShieldCheck,
@@ -27,18 +29,24 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  cancelAdminQueueTask,
   changeAdminModelEnabled,
   changeAdminUserStatus,
   createAdminModel,
   createAdminUser,
   deleteAdminModel,
   deleteAdminUser,
+  exportAdminRequests,
   fetchAdminModels,
+  fetchAdminQueue,
+  fetchAdminQueueSummary,
+  fetchAdminRequests,
   fetchAdminUsers,
   fetchDashboard,
   resetAdminUserPassword,
+  retryAdminQueueTask,
   testAdminModelConnection,
   updateAdminModel,
   updateAdminUser,
@@ -48,6 +56,8 @@ const adminMenus = [
   { id: "dashboard", label: "仪表盘", icon: LayoutDashboard },
   { id: "users", label: "用户管理", icon: Users },
   { id: "models", label: "模型管理", icon: Bot },
+  { id: "requests", label: "请求日志", icon: FileClock },
+  { id: "queue", label: "任务队列", icon: Clock3 },
 ];
 
 const categoryLabels = { image: "图像模型", video: "视频模型", audio: "语音模型", text: "文本模型" };
@@ -348,6 +358,59 @@ function canonicalizeCaps(caps) {
 
 function formatInt(value) {
   return Number(value || 0).toLocaleString("zh-CN");
+}
+
+function formatDuration(seconds) {
+  if (seconds == null || Number.isNaN(Number(seconds))) return "--";
+  const value = Number(seconds);
+  if (value < 60) return `${value.toFixed(1)}s`;
+  const total = Math.round(value);
+  return `${Math.floor(total / 60)}m ${total % 60}s`;
+}
+
+function formatClock(iso) {
+  if (!iso) return "--";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "--";
+  return date.toLocaleString("zh-CN", { hour12: false }).replaceAll("/", "-");
+}
+
+function requestStatusClass(status) {
+  if (status === "SUCCEEDED") return "success";
+  if (status === "FAILED") return "failed";
+  if (status === "RUNNING") return "running";
+  if (status === "PENDING") return "pending";
+  return "cancelled";
+}
+
+function requestStatusLabel(item) {
+  if (item?.statusLabel) return item.statusLabel;
+  return ({ RUNNING: "运行中", PENDING: "等待中", SUCCEEDED: "成功", FAILED: "失败", CANCELLED: "已取消" })[item?.status] || item?.status || "--";
+}
+
+function queueStatusLabel(item) {
+  if (item?.status === "SUCCEEDED") return "已完成";
+  return requestStatusLabel(item);
+}
+
+function useDebouncedValue(value, ms = 400) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(timer);
+  }, [value, ms]);
+  return debounced;
+}
+
+function AdminPager({ pageNum, pages, onPage }) {
+  const totalPages = Math.max(1, Number(pages || 1));
+  return (
+    <div className="admin-pager">
+      <button type="button" disabled={pageNum <= 1} onClick={() => onPage(pageNum - 1)}>上一页</button>
+      <span>{pageNum} / {totalPages}</span>
+      <button type="button" disabled={pageNum >= totalPages} onClick={() => onPage(pageNum + 1)}>下一页</button>
+    </div>
+  );
 }
 
 function formatChange(percent) {
@@ -914,8 +977,225 @@ function ModelsPage() {
   </div>;
 }
 
+function RequestsPage() {
+  const [keyword, setKeyword] = useState("");
+  const [pageNum, setPageNum] = useState(1);
+  const [exporting, setExporting] = useState(false);
+  const [notice, setNotice] = useState("");
+  const debouncedKeyword = useDebouncedValue(keyword, 400);
+  const query = useQuery({
+    queryKey: ["admin-requests", pageNum, debouncedKeyword],
+    queryFn: () => fetchAdminRequests({ pageNum, pageSize: 20, hours: 24, keyword: debouncedKeyword || undefined }),
+    refetchInterval: 8000,
+  });
+  const rows = query.data?.result || [];
+  const total = query.data?.totalNum || 0;
+  const pages = query.data?.pages || 1;
+
+  useEffect(() => {
+    setPageNum(1);
+  }, [debouncedKeyword]);
+
+  const refresh = () => query.refetch();
+  const onExport = async () => {
+    setExporting(true);
+    try {
+      await exportAdminRequests({ hours: 24, keyword: debouncedKeyword || undefined });
+      setNotice("已导出当前筛选的请求日志");
+    } catch (error) {
+      setNotice(errorMessage(error, "导出日志失败"));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <div className="admin-page">
+      <SectionHeading title="请求日志" description="追踪模型调用、耗时、积分与异常状态。" action={<button className="admin-date" type="button" onClick={refresh}><Activity size={15} /> 实时刷新</button>} />
+      {notice && <div className="admin-notice">{notice}<button aria-label="关闭提示" onClick={() => setNotice("")}><X size={14} /></button></div>}
+      {query.error && <div className="admin-notice admin-notice--error">{errorMessage(query.error, "请求日志加载失败")}</div>}
+      <div className="admin-table-card">
+        <div className="admin-table-toolbar">
+          <label><Search size={15} /><input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索请求编号、用户或模型" /></label>
+          <div>
+            <span>最近 24 小时 · 共 {formatInt(total)} 条</span>
+            <button type="button" disabled={exporting} onClick={onExport}>{exporting ? "导出中…" : "导出日志"}</button>
+          </div>
+        </div>
+        <div className="admin-table-scroll">
+          <table>
+            <thead><tr><th>请求编号</th><th>用户</th><th>模型</th><th>来源</th><th>时间</th><th>耗时</th><th>积分</th><th>状态</th></tr></thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id} title={row.errorMessage || undefined}>
+                  <td><code>{row.requestNo}</code></td>
+                  <td>{row.userName || "--"}</td>
+                  <td><strong>{row.modelName || "未知模型"}</strong></td>
+                  <td>{row.source || "快速创作"}</td>
+                  <td>{formatClock(row.createdAt)}</td>
+                  <td>{formatDuration(row.durationSeconds)}</td>
+                  <td>{formatInt(row.creditCost)}</td>
+                  <td>
+                    <span>
+                      <span className={`request-status ${requestStatusClass(row.status)}`}>{requestStatusLabel(row)}</span>
+                      {row.status === "FAILED" && row.errorMessage ? <small title={row.errorMessage}>{row.errorMessage}</small> : null}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!rows.length && !query.isLoading && <div className="admin-empty"><FileClock size={22} /><strong>暂无请求记录</strong><span>最近 24 小时没有匹配的模型调用。</span></div>}
+        {total > 0 && <AdminPager pageNum={pageNum} pages={pages} onPage={setPageNum} />}
+      </div>
+    </div>
+  );
+}
+
+const QUEUE_TABS = [
+  { id: "ALL", label: "全部" },
+  { id: "RUNNING", label: "运行中" },
+  { id: "PENDING", label: "等待中" },
+  { id: "SUCCEEDED", label: "已完成" },
+  { id: "FAILED", label: "失败" },
+];
+
+function QueuePage() {
+  const queryClient = useQueryClient();
+  const [filter, setFilter] = useState("ALL");
+  const [pageNum, setPageNum] = useState(1);
+  const [notice, setNotice] = useState("");
+  const [noticeError, setNoticeError] = useState(false);
+  const summaryQuery = useQuery({
+    queryKey: ["admin-queue-summary"],
+    queryFn: fetchAdminQueueSummary,
+    refetchInterval: 8000,
+  });
+  const listQuery = useQuery({
+    queryKey: ["admin-queue", filter, pageNum],
+    queryFn: () => fetchAdminQueue({ pageNum, pageSize: 20, days: 7, status: filter }),
+    refetchInterval: 8000,
+  });
+  const summary = summaryQuery.data || {};
+  const rows = listQuery.data?.result || [];
+  const total = listQuery.data?.totalNum || 0;
+  const pages = listQuery.data?.pages || 1;
+  const tabs = summary.tabs || {};
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["admin-queue"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-queue-summary"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-requests"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
+  };
+
+  const retryMutation = useMutation({
+    mutationFn: (task) => retryAdminQueueTask(task.id),
+    onSuccess: () => {
+      invalidate();
+      setNoticeError(false);
+      setNotice("已重新入队");
+    },
+    onError: (error) => {
+      setNoticeError(true);
+      setNotice(errorMessage(error, "重试失败"));
+    },
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (task) => cancelAdminQueueTask(task.id),
+    onSuccess: () => {
+      invalidate();
+      setNoticeError(false);
+      setNotice("已取消任务");
+    },
+    onError: (error) => {
+      setNoticeError(true);
+      setNotice(errorMessage(error, "取消失败"));
+    },
+  });
+
+  const changeTab = (id) => {
+    setFilter(id);
+    setPageNum(1);
+  };
+
+  const schedulerRunning = summary.schedulerRunning !== false;
+  const running = Number(summary.running || 0);
+  const maxConcurrent = Number(summary.maxConcurrent || 8);
+
+  return (
+    <div className="admin-page">
+      <SectionHeading
+        title="任务队列"
+        description="查看生成任务的排队、执行、完成与异常状态。"
+        action={(
+          <div className={`queue-health${schedulerRunning ? "" : " is-down"}`}>
+            <span><i />{schedulerRunning ? "调度器运行中" : "调度器未运行"}</span>
+            <b>并发 {running} / {maxConcurrent}</b>
+          </div>
+        )}
+      />
+      {notice && <div className={`admin-notice${noticeError ? " admin-notice--error" : ""}`}>{noticeError ? null : <Check size={15} />}{notice}<button aria-label="关闭提示" onClick={() => setNotice("")}><X size={14} /></button></div>}
+      {(summaryQuery.error || listQuery.error) && <div className="admin-notice admin-notice--error">{errorMessage(summaryQuery.error || listQuery.error, "任务队列加载失败")}</div>}
+      <div className="queue-stats">
+        <span><b>{formatInt(summary.running)}</b>运行中</span>
+        <span><b>{formatInt(summary.pending)}</b>等待中</span>
+        <span><b>{Number(summary.avgDurationSeconds || 0).toFixed(1)}s</b>平均耗时</span>
+        <span><b>{Number(summary.successRate || 0).toFixed(1)}%</b>成功率</span>
+      </div>
+      <div className="model-category-tabs queue-tabs">
+        {QUEUE_TABS.map((tab) => (
+          <button className={filter === tab.id ? "active" : ""} key={tab.id} onClick={() => changeTab(tab.id)}>
+            {tab.label}
+            <span>{formatInt(tab.id === "ALL" ? (tabs.ALL ?? total) : (tabs[tab.id] || 0))}</span>
+          </button>
+        ))}
+      </div>
+      <div className="admin-table-card queue-table">
+        <div className="admin-table-toolbar">
+          <span />
+          <div><span>共 {formatInt(total)} 条</span></div>
+        </div>
+        <div className="admin-table-scroll">
+          <table>
+            <thead><tr><th>任务</th><th>用户</th><th>模型</th><th>来源</th><th>创建时间</th><th>排队</th><th>进度</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody>
+              {rows.map((task) => {
+                const label = queueStatusLabel(task);
+                const progress = Number(task.progress || 0);
+                return (
+                  <tr key={task.id} title={task.errorMessage || undefined}>
+                    <td><span><strong>{task.taskNo}</strong><small>{task.categoryLabel || task.category}</small></span></td>
+                    <td>{task.userName || "--"}</td>
+                    <td>{task.modelName || "未知模型"}</td>
+                    <td>{task.source || "快速创作"}</td>
+                    <td>{formatClock(task.createdAt)}</td>
+                    <td>{formatDuration(task.waitSeconds)}</td>
+                    <td><div className="queue-progress"><i><span style={{ width: `${Math.min(100, Math.max(0, progress))}%` }} /></i><b>{progress}%</b></div></td>
+                    <td><span className={`queue-status queue-status--${label}`}>{label}</span></td>
+                    <td>
+                      <div className="table-actions">
+                        {task.status === "FAILED" && <button aria-label={`重试任务：${task.taskNo}`} onClick={() => retryMutation.mutate(task)}><RefreshCw size={14} /></button>}
+                        {["RUNNING", "PENDING"].includes(task.status) && <button className="danger" aria-label={`取消任务：${task.taskNo}`} onClick={() => cancelMutation.mutate(task)}><X size={14} /></button>}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {!rows.length && !listQuery.isLoading && <div className="admin-empty"><Clock3 size={22} /><strong>暂无任务</strong><span>当前筛选下没有生成任务。</span></div>}
+        {total > 0 && <AdminPager pageNum={pageNum} pages={pages} onPage={setPageNum} />}
+      </div>
+    </div>
+  );
+}
+
 export function AdminConsole() {
   const [active, setActive] = useState("dashboard");
   const current = useMemo(() => adminMenus.find((item) => item.id === active), [active]);
-  return <div className="admin-shell"><aside className="admin-sidebar"><header><span><ShieldCheck size={17} /></span><div><strong>管理后台</strong><small>平台运营控制台</small></div></header><nav>{adminMenus.map((item) => { const Icon = item.icon; return <button key={item.id} className={active === item.id ? "active" : ""} onClick={() => setActive(item.id)}><Icon size={17} /><span>{item.label}</span><ChevronRight size={14} /></button>; })}</nav><footer><span><span className="status-dot" /> 服务运行正常</span><small>一期 · 仪表盘 / 用户 / 模型</small></footer></aside><section className="admin-main" aria-label={current?.label}>{active === "dashboard" && <Dashboard />}{active === "users" && <UsersPage />}{active === "models" && <ModelsPage />}</section></div>;
+  return <div className="admin-shell"><aside className="admin-sidebar"><header><span><ShieldCheck size={17} /></span><div><strong>管理后台</strong><small>平台运营控制台</small></div></header><nav>{adminMenus.map((item) => { const Icon = item.icon; return <button key={item.id} className={active === item.id ? "active" : ""} onClick={() => setActive(item.id)}><Icon size={17} /><span>{item.label}</span><ChevronRight size={14} /></button>; })}</nav><footer><span><span className="status-dot" /> 服务运行正常</span><small>仪表盘 / 用户 / 模型 / 请求日志 / 任务队列</small></footer></aside><section className="admin-main" aria-label={current?.label}>{active === "dashboard" && <Dashboard />}{active === "users" && <UsersPage />}{active === "models" && <ModelsPage />}{active === "requests" && <RequestsPage />}{active === "queue" && <QueuePage />}</section></div>;
 }

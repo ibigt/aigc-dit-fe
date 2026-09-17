@@ -1,4 +1,4 @@
-import { api } from "./client.js";
+import { api, TOKEN_KEY } from "./client.js";
 
 export function fetchDashboard(days = 14) {
   return api.get("/admin/dashboard", { params: { days } });
@@ -54,4 +54,56 @@ export function deleteAdminModel(id) {
 
 export function testAdminModelConnection(payload) {
   return api.post("/admin/models/test-connection", payload, { timeout: 20000 });
+}
+
+export function fetchAdminRequests(params = {}) {
+  return api.get("/admin/requests", { params: { pageNum: 1, pageSize: 20, hours: 24, ...params } });
+}
+
+export async function exportAdminRequests(params = {}) {
+  const token = window.localStorage.getItem(TOKEN_KEY);
+  const search = new URLSearchParams();
+  Object.entries({ hours: 24, ...params }).forEach(([key, value]) => {
+    if (value != null && value !== "") {
+      search.set(key, String(value));
+    }
+  });
+  const response = await fetch(`/api/admin/requests/export?${search.toString()}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!response.ok) {
+    let message = "导出日志失败";
+    try {
+      const body = await response.json();
+      if (body?.message) message = body.message;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(message);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "request-logs.csv";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+export function fetchAdminQueue(params = {}) {
+  return api.get("/admin/queue", { params: { pageNum: 1, pageSize: 20, days: 7, ...params } });
+}
+
+export function fetchAdminQueueSummary() {
+  return api.get("/admin/queue/summary");
+}
+
+export function retryAdminQueueTask(id) {
+  return api.post(`/admin/queue/${id}/retry`);
+}
+
+export function cancelAdminQueueTask(id) {
+  return api.post(`/admin/queue/${id}/cancel`);
 }
