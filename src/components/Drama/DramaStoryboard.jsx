@@ -676,6 +676,7 @@ export function DramaStoryboard({ series, episode }) {
   const lockedAssets = board?.lockedAssets || [];
   const selected = shots.find((item) => item.id === shotId) || shots[0];
   const scriptLocked = activeEpisode?.status === "已锁定";
+  const canUseTextModel = activeEpisode?.canGenerate !== false;
   const autoDrafting = Boolean(board?.drafting);
   const videoModels = videoModelsQuery.data || [];
   const selectedVideoModel = videoModels.find((item) => String(item.id) === String(videoModelId));
@@ -708,15 +709,24 @@ export function DramaStoryboard({ series, episode }) {
 
   const draftMutation = useMutation({
     mutationFn: () => draftDramaStoryboard(activeEpisodeId, draftDurationSec),
+    onMutate: () => {
+      setDraftConfirmOpen(false);
+      setActionError("");
+      queryClient.setQueryData(["drama-storyboard", activeEpisodeId], (current) => (
+        current ? { ...current, drafting: true } : current
+      ));
+    },
     onSuccess: (data) => {
       queryClient.setQueryData(["drama-storyboard", activeEpisodeId], data);
       queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
       queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
       setShotId(data?.chapters?.[0]?.shots?.[0]?.id || null);
-      setDraftConfirmOpen(false);
       setActionError("");
     },
-    onError: (error) => setActionError(error.message || "拆镜失败"),
+    onError: (error) => {
+      setActionError(error.message || "拆镜失败");
+      queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
+    },
   });
 
   const compileAllMutation = useMutation({
@@ -1045,7 +1055,10 @@ export function DramaStoryboard({ series, episode }) {
   const queryError = boardQuery.error && !isRetryableRequestError(boardQuery.error)
     ? boardQuery.error
     : null;
-  const error = queryError || bindMutation.error || modeMutation.error || (actionError ? { message: actionError } : null);
+  const persistedDraftError = !drafting && board?.draftError ? board.draftError : "";
+  const error = queryError || bindMutation.error || modeMutation.error
+    || (actionError ? { message: actionError } : null)
+    || (persistedDraftError ? { message: persistedDraftError } : null);
   const videoSrc = mediaUrl(selected?.videoUrl || selected?.videoKey);
   const captionSrc = videoSrc && selected?.id && selected?.dialogue?.trim()
     ? authenticatedApiUrl(`/api/drama/shots/${selected.id}/captions.vtt?v=${encodeURIComponent(selected.updatedAt || "")}`)
@@ -1135,7 +1148,8 @@ export function DramaStoryboard({ series, episode }) {
             </button>
             <button
               type="button"
-              disabled={drafting || frozenByRecompile || !scriptLocked}
+              disabled={drafting || frozenByRecompile || !scriptLocked || !canUseTextModel}
+              title={!canUseTextModel ? "请先在剧本页绑定可用文本模型" : undefined}
               onClick={() => {
                 if (shots.length) {
                   setDraftConfirmOpen(true);
@@ -1170,6 +1184,16 @@ export function DramaStoryboard({ series, episode }) {
           </div>
         )}
 
+        {scriptLocked && !canUseTextModel && (
+          <div className="drama-asset-gate youxi-story-gate">
+            <Wand2 size={16} />
+            <div>
+              <strong>需要可用文本模型</strong>
+              <p>分镜拆分只能走文本模型。请到剧本页绑定可用模型后再拆镜。</p>
+            </div>
+          </div>
+        )}
+
         {scriptLocked && lockedAssets.length === 0 && (
           <div className="drama-asset-gate youxi-story-gate">
             <Lock size={16} />
@@ -1195,14 +1219,18 @@ export function DramaStoryboard({ series, episode }) {
 
         {boardQuery.isLoading ? (
           <p className="drama-asset-empty">正在读取分镜…</p>
-        ) : autoDrafting ? (
+        ) : drafting ? (
           <div className="youxi-storyboard-main">
             <div className="youxi-story-preview">
               <div className="youxi-story-empty-preview" data-ratio={ratio}>
                 <div className="youxi-story-empty-state">
                   <Wand2 size={24} />
-                  <strong>正在自动拆镜中</strong>
-                  <span>分析已完成。正在按对白和动作给每镜估时长并拆镜头，请稍候。</span>
+                  <strong>{shots.length ? "正在重新拆镜中" : "正在自动拆镜中"}</strong>
+                  <span>
+                    {shots.length
+                      ? "正在按当前剧本重新拆镜头，完成后会替换本集分镜，请稍候。"
+                      : "分析已完成。正在按对白和动作给每镜估时长并拆镜头，请稍候。"}
+                  </span>
                 </div>
               </div>
             </div>
@@ -1214,8 +1242,17 @@ export function DramaStoryboard({ series, episode }) {
                 <div className="youxi-story-empty-state">
                   <Film size={24} />
                   <strong>还没有分镜</strong>
-                  <span>锁定剧本后点「智能分镜」，按场排出本集镜头</span>
-                  <button type="button" disabled={drafting || !scriptLocked} onClick={() => draftMutation.mutate()}>
+                  <span>
+                    {persistedDraftError || actionError
+                      ? "拆镜未完成，请检查文本模型后重试。"
+                      : "锁定剧本后点「智能分镜」，由文本模型按场排出本集镜头"}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={drafting || !scriptLocked || !canUseTextModel}
+                    title={!canUseTextModel ? "请先在剧本页绑定可用文本模型" : undefined}
+                    onClick={() => draftMutation.mutate()}
+                  >
                     <Wand2 size={14} /> {drafting ? "拆镜中…" : "智能分镜"}
                   </button>
                 </div>
@@ -1372,8 +1409,8 @@ export function DramaStoryboard({ series, episode }) {
         </div>
       </div>
       <ShotInspector
-        key={autoDrafting ? "drafting" : (selected?.id || "none")}
-        selected={autoDrafting || !shots.length ? null : selected}
+        key={drafting ? "drafting" : (selected?.id || "none")}
+        selected={drafting || !shots.length ? null : selected}
         generating={generating}
         readOnly={drafting || frozenByRecompile || Boolean(selected && busy[selected.id])}
         lockedAssets={lockedAssets}
@@ -1455,7 +1492,7 @@ export function DramaStoryboard({ series, episode }) {
                     disabled={draftMutation.isPending}
                     onClick={() => draftMutation.mutate()}
                   >
-                    {draftMutation.isPending ? "拆镜中…" : "确认重新拆镜"}
+                    确认重新拆镜
                   </button>
                 </footer>
               </section>

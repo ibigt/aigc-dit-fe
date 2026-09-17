@@ -3,7 +3,6 @@ import {
   Clapperboard,
   AudioLines,
   Image as ImageIcon,
-  ImagePlus,
   Lock,
   Plus,
   RefreshCw,
@@ -238,9 +237,74 @@ function SubjectInspector({
         {asset ? (
           <>
             <label className="youxi-field">
-              <span>{type}名称</span>
-              <input value={nameDraft} maxLength={128} onChange={onNameChange} onBlur={onNameBlur} />
+              <span>名称</span>
+              <input
+                value={nameDraft}
+                maxLength={128}
+                onChange={onNameChange}
+                onBlur={onNameBlur}
+                placeholder={`${type}名称`}
+              />
             </label>
+
+            <div className="youxi-prompt-block">
+              <label className="youxi-field">
+                <span>图片提示词</span>
+                <textarea
+                  value={prompt}
+                  maxLength={PROMPT_MAX}
+                  onChange={onPromptChange}
+                  placeholder="提取后会自动带出设定图提示词，可按角色/场景/道具继续改"
+                />
+              </label>
+              <div className="field-count">{(prompt || "").length} / {PROMPT_MAX}</div>
+              <button
+                className={`button youxi-prompt-save ${promptChanged ? "button--primary" : ""}`}
+                type="button"
+                disabled={!promptChanged || generating || busy || promptSaving}
+                onClick={onPromptSave}
+              >
+                <Save size={14} /> {promptSaving ? "保存中…" : "保存修改"}
+              </button>
+            </div>
+
+            {type === "角色" && (
+              <section className="youxi-voice-block">
+                <label className="youxi-field">
+                  <span>
+                    音色
+                    <em data-state={effectiveVoiceReferenceStatus.state}>{effectiveVoiceReferenceStatus.label}</em>
+                  </span>
+                  <input
+                    value={voiceLock}
+                    onChange={onVoiceLockChange}
+                    placeholder="例：30岁低沉男声，普通话，克制冷静"
+                  />
+                </label>
+                {asset.voiceReferenceUrl && (
+                  <audio controls preload="metadata" src={mediaUrl(asset.voiceReferenceUrl) || asset.voiceReferenceUrl} />
+                )}
+                <div className="youxi-voice-block__actions">
+                  <button
+                    type="button"
+                    onClick={onVoiceUploadClick}
+                    disabled={voiceBusy}
+                  >
+                    <AudioLines size={13} /> {effectiveVoiceReferenceStatus.state === "loading" ? "检查中…" : asset.voiceReferenceUrl ? "更换参考音频" : "绑定参考音频"}
+                  </button>
+                  <button
+                    className="button button--primary"
+                    type="button"
+                    onClick={onVoiceSave}
+                    disabled={voiceBusy || !voiceDescriptionChanged}
+                  >
+                    <Save size={13} /> 保存
+                  </button>
+                </div>
+                <small>{effectiveVoiceReferenceStatus.help}</small>
+              </section>
+            )}
+
             <label className="youxi-field youxi-field--summary">
               <span>设定摘要</span>
               <textarea
@@ -252,105 +316,60 @@ function SubjectInspector({
                 placeholder={`${type}身份、外形或用途，入梦/换装须独立成条`}
               />
             </label>
-            {type === "角色" && (
-              <section className="drama-native-voice">
-                <header>
-                  <strong><AudioLines size={14} /> 角色音色</strong>
-                  <em data-state={effectiveVoiceReferenceStatus.state}>{effectiveVoiceReferenceStatus.label}</em>
-                </header>
-                <label className="youxi-field">
-                  <span>音色描述</span>
-                  <input value={voiceLock} onChange={onVoiceLockChange} placeholder="例：30岁低沉男声，普通话，克制冷静" />
-                </label>
-                {asset.voiceReferenceUrl && <audio controls preload="metadata" src={mediaUrl(asset.voiceReferenceUrl) || asset.voiceReferenceUrl} />}
-                <div className="drama-native-voice__actions">
+
+            <div className="youxi-field youxi-resolution-field">
+              <span>分辨率</span>
+              <div className="generation-chip-grid" style={{ gridTemplateColumns: `repeat(${RESOLUTIONS.length}, minmax(0, 1fr))` }}>
+                {RESOLUTIONS.map((item) => (
                   <button
-                    className="drama-voice-action drama-voice-action--secondary"
                     type="button"
-                    onClick={onVoiceUploadClick}
-                    disabled={voiceBusy}
+                    className={resolution === item ? "active" : ""}
+                    key={item}
+                    onClick={() => onResolution(item)}
                   >
-                    <AudioLines size={13} /> {effectiveVoiceReferenceStatus.state === "loading" ? "检查模型能力中…" : asset.voiceReferenceUrl ? "更换参考音频" : "绑定参考音频"}
+                    {item}
                   </button>
-                  <button
-                    className="drama-voice-action drama-voice-action--primary"
-                    type="button"
-                    onClick={onVoiceSave}
-                    disabled={voiceBusy || !voiceDescriptionChanged}
-                  >
-                    <Save size={13} /> 保存声音描述
-                  </button>
-                </div>
-                <div className="drama-native-voice__help">
-                  <small>{effectiveVoiceReferenceStatus.help}</small>
-                </div>
-              </section>
-            )}
-            <label className="youxi-field">
-              <span>图片提示词</span>
-              <textarea
-                value={prompt}
-                maxLength={PROMPT_MAX}
-                onChange={onPromptChange}
-                placeholder="提取后会自动带出设定图提示词，可按角色/场景/道具继续改"
-              />
-            </label>
-            <div className="field-count">{(prompt || "").length} / {PROMPT_MAX}</div>
-            <button
-              className={`button youxi-prompt-save ${promptChanged ? "button--primary" : ""}`}
-              type="button"
-              disabled={!promptChanged || generating || busy || promptSaving}
-              onClick={onPromptSave}
-            >
-              <Save size={14} /> {promptSaving ? "保存中…" : "保存修改"}
-            </button>
-            <label className="youxi-field youxi-field--compact">
-              <span>出图分辨率</span>
-              <select aria-label="出图分辨率" value={resolution} onChange={(event) => onResolution(event.target.value)}>
-                {RESOLUTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
-            </label>
+                ))}
+              </div>
+            </div>
+
             {asset.genErrorMessage && <p className="drama-form-error">{asset.genErrorMessage}</p>}
+
             <section className="youxi-material-block">
               <header>
                 <strong>资产图</strong>
-                <div className="material-actions">
-                  <button type="button" onClick={onUploadClick} disabled={generating || busy}>
-                    <Upload size={14} /> 本地上传
-                  </button>
-                </div>
+                <span>{src ? "点击可放大" : "支持本地上传"}</span>
               </header>
               <div>
-                {src ? (
+                {src && (
                   <button
-                    className="youxi-media-zoom"
+                    className="youxi-media-zoom youxi-asset-thumb"
                     type="button"
                     aria-label={`放大${asset.name}资产图`}
                     onClick={onZoom}
                   >
                     <img
                       key={src}
-                      className="youxi-subject-media-preview"
                       src={src}
                       alt={`${asset.name}资产图`}
                     />
                   </button>
-                ) : (
-                  <button className="youxi-empty-subject-media" type="button" onClick={onUploadClick}>
-                    <ImagePlus size={22} />
-                    <span>上传图片</span>
-                  </button>
                 )}
+                <button
+                  className="youxi-upload-tile youxi-upload-tile--local"
+                  type="button"
+                  onClick={onUploadClick}
+                  disabled={generating || busy}
+                >
+                  <Upload size={20} />
+                  <span>{src ? "更换图片" : "本地上传"}</span>
+                </button>
               </div>
             </section>
-            <div className="youxi-inspector-actions">
-              <p>在卡片右上角生成或锁定。锁定且有图后，才能作为分镜参考。改提示词或重生成会重新待确认。</p>
-            </div>
+            <p className="youxi-inspector-hint">在卡片右上角生成或锁定。锁定且有图后，才能作为分镜参考。改提示词或重生成会重新待确认。</p>
           </>
         ) : (
-          <>
-            <p className="youxi-story-side-empty">选中{type}后，可在此改提示词并生图。</p>
-          </>
+          <p className="youxi-story-side-empty">选中{type}后，可在此改提示词并生图。</p>
         )}
       </div>
     </aside>
@@ -412,6 +431,7 @@ export function DramaAssetBoard({ series, episode }) {
   };
   const assets = assetsQuery.data || [];
   const scriptLocked = episode?.status === "已锁定";
+  const canUseTextModel = episode?.canGenerate !== false;
 
   useEffect(() => {
     setImageModelId(series?.imageModelId || "");
@@ -689,7 +709,12 @@ export function DramaAssetBoard({ series, episode }) {
             }}
           />
           {scriptLocked ? (
-            <button type="button" disabled={!episodeId || extractMutation.isPending} onClick={() => extractMutation.mutate()}>
+            <button
+              type="button"
+              disabled={!episodeId || extractMutation.isPending || !canUseTextModel}
+              title={!canUseTextModel ? "请先在剧本页绑定可用文本模型" : undefined}
+              onClick={() => extractMutation.mutate()}
+            >
               <RefreshCw size={16} />
               <span>从剧本提取</span>
               <strong>{extractMutation.isPending ? "提取中" : `${assets.length}个`}</strong>

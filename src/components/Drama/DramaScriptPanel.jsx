@@ -277,7 +277,7 @@ export function DramaScriptPanel({
                 disabled={!series?.id || analyzing || bindTextModel.isPending}
                 onChange={(event) => bindTextModel.mutate(event.target.value)}
               >
-                <option value="">{textModels.length ? "不绑定（走规则分场）" : "暂无已启用文本模型"}</option>
+                <option value="">{textModels.length ? "请选择文本模型" : "暂无已启用文本模型"}</option>
                 {textModels.map((item) => (
                   <option key={item.id} value={item.id}>{item.name}{item.provider ? ` · ${item.provider}` : ""}</option>
                 ))}
@@ -297,7 +297,8 @@ export function DramaScriptPanel({
             <button
               className="button button--primary drama-analyze-btn"
               type="button"
-              disabled={!raw.trim() || analyzing}
+              disabled={!raw.trim() || analyzing || episode?.canGenerate === false}
+              title={episode?.canGenerate === false ? "请先绑定可用文本模型" : undefined}
               onClick={() => { setAnalysis(null); setAnalysisStartedAt(Date.now()); setAnalysisNow(Date.now()); analyze.mutate(); }}
             >
               <Sparkles size={15} /> {analyzing ? "分析中…" : "一键分析剧本"}
@@ -320,8 +321,8 @@ export function DramaScriptPanel({
         {episode?.canGenerate === false && episode?.textServiceAvailable && (
           <p className="drama-script__hint">
             {series?.textModelId
-              ? "已绑定文本模型，但通道不可用（请到管理端检查 Base URL / 适配协议）。"
-              : "该项目未绑定可用文本模型。"}
+              ? "已绑定文本模型，但通道不可用（请到管理端检查 Base URL / 适配协议）。绑定可用后才能分析剧本。"
+              : "该项目未绑定可用文本模型。请先选择文本模型，再点「一键分析剧本」。"}
           </p>
         )}
 
@@ -349,9 +350,12 @@ export function DramaScriptPanel({
         )}
 
         {analyze.isError && !analyzing && <p className="drama-form-error">{analyze.error.message || "剧本分析失败"}</p>}
+        {!analyzing && !analyze.isError && episode?.scriptAnalyzeError && (
+          <p className="drama-form-error">{episode.scriptAnalyzeError}</p>
+        )}
         {analysis && (
           <section className="drama-analysis-summary">
-            <header><strong>分析结果</strong><span>{analysis.engine === "llm" ? "文本模型" : "规则引擎"}</span></header>
+            <header><strong>分析结果</strong><span>文本模型</span></header>
             <div className="drama-analysis-stats">
               <span><b>{analysis.actualSceneCount ?? 0}</b> 场景</span>
               <span><b>{analysis.storyboard?.drafting ? "…" : (analysis.actualShotCount ?? 0)}</b>{analysis.storyboard?.drafting ? "拆镜中" : "分镜"}</span>
@@ -394,7 +398,13 @@ export function DramaScriptPanel({
             })}
           </ol>
         ) : (
-          <p className="drama-script__empty">{analyzing ? "正在分析，分场结果出来后会显示在这里。" : "还没有分场结果。粘贴原文后点「一键分析剧本」。"}</p>
+          <p className="drama-script__empty">
+            {analyzing
+              ? "正在分析，分场结果出来后会显示在这里。"
+              : (analyze.isError || episode?.scriptAnalyzeError)
+                ? "分场未完成，请检查文本模型后重试。"
+                : "还没有分场结果。粘贴原文后点「一键分析剧本」。"}
+          </p>
         )}
         </div>
       </section>

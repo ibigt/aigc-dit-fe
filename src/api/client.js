@@ -30,7 +30,7 @@ api.interceptors.response.use(
     const body = error.response?.data;
     const timedOut = error.code === "ECONNABORTED" || /timeout/i.test(error.message || "");
     throw makeApiError(
-      body?.message || (timedOut ? "请求超时。文本模型较慢时请再点一次或刷新页面，规则分场可能已经入库。" : (error.message || "网络错误")),
+        body?.message || (timedOut ? "请求超时。文本模型较慢时请稍候刷新，失败后仍可重新分析。" : (error.message || "网络错误")),
       body?.code || error.response?.status,
     );
   },
