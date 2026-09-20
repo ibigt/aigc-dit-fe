@@ -820,6 +820,14 @@ export function DramaStoryboard({ series, episode }) {
     });
   }
 
+  function insertBefore(shot) {
+    if (!shot?.id || draftMutation.isPending) return;
+    createShotMutation.mutate({
+      chapterId: shot.chapterId,
+      beforeShotId: shot.id,
+    });
+  }
+
   function requestRemoveShot(shot) {
     if (!shot?.id) return;
     setDeleteTarget(shot);
@@ -1382,13 +1390,26 @@ export function DramaStoryboard({ series, episode }) {
               </div>
             </div>
             <div className="youxi-filmstrip" role="list">
-              {shots.map((shot) => {
+              {shots.map((shot, shotPos) => {
                 const active = selected?.id === shot.id;
                 const generatingShot = isShotGenerating(shot, busy);
                 const ready = Boolean(shot.videoKey) && !generatingShot;
                 const deleteReason = deleteBlockedReason(shot);
+                const addDisabled = createShotMutation.isPending || deleteShotMutation.isPending || drafting || frozenByRecompile;
                 return (
                   <div className="youxi-filmstrip-unit" key={shot.id}>
+                    {shotPos === 0 && (
+                      <button
+                        type="button"
+                        className="youxi-shot-add"
+                        disabled={addDisabled}
+                        title="在镜 1 之前插入一镜"
+                        aria-label="在镜 1 之前添加分镜"
+                        onClick={() => insertBefore(shot)}
+                      >
+                        <Plus size={14} />
+                      </button>
+                    )}
                     <article className={`youxi-shot-thumb ${active ? "active" : ""}`}>
                       <button
                         type="button"
@@ -1433,7 +1454,7 @@ export function DramaStoryboard({ series, episode }) {
                     <button
                       type="button"
                       className="youxi-shot-add"
-                      disabled={createShotMutation.isPending || deleteShotMutation.isPending || drafting || frozenByRecompile}
+                      disabled={addDisabled}
                       title="在此之后插入一镜"
                       aria-label={`在镜 ${shot.shotIndex} 之后添加分镜`}
                       onClick={() => insertAfter(shot)}
