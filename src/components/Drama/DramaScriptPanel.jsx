@@ -46,16 +46,17 @@ function sameSettings(left, right) {
 }
 
 const ANALYSIS_STAGES = [
-  { label: "读取剧本", detail: "正在识别人物、场景和剧情结构…", progress: 18 },
-  { label: "生成分场", detail: "正在把原文整理为可编辑的分场剧本…", progress: 48 },
-  { label: "抽取资产", detail: "正在整理角色、场景和道具…", progress: 78 },
-  { label: "收尾", detail: "正在锁定分场并准备后台拆镜…", progress: 92 },
+  { label: "读取剧本", detail: "正在识别人物、场景和剧情结构…", progress: 22 },
+  { label: "生成分场", detail: "正在把原文整理为可编辑的分场剧本…", progress: 58 },
+  { label: "落库资产", detail: "正在写入角色、场景和道具骨架…", progress: 82 },
+  { label: "收尾", detail: "正在锁定分场，随后后台增强资产并拆镜…", progress: 94 },
 ];
 
 function analysisStage(elapsed) {
-  if (elapsed < 8) return ANALYSIS_STAGES[0];
-  if (elapsed < 22) return ANALYSIS_STAGES[1];
-  if (elapsed < 55) return ANALYSIS_STAGES[2];
+  // 同步路径主要为整本分场 LLM；资产骨架本地很快，假进度对齐新阶段化节奏。
+  if (elapsed < 6) return ANALYSIS_STAGES[0];
+  if (elapsed < 28) return ANALYSIS_STAGES[1];
+  if (elapsed < 40) return ANALYSIS_STAGES[2];
   return ANALYSIS_STAGES[3];
 }
 
@@ -140,6 +141,16 @@ export function DramaScriptPanel({
       setAnalysis(result);
       setAnalysisStartedAt(null);
       refreshSeries();
+      // 资产 LLM 增强与拆镜在后台：短时轮询，便于首屏后看到描述补全与分镜进度。
+      const epId = episode?.id;
+      if (!epId) return;
+      let ticks = 0;
+      const timer = window.setInterval(() => {
+        queryClient.invalidateQueries({ queryKey: ["drama-assets", epId] });
+        queryClient.invalidateQueries({ queryKey: ["drama-storyboard", epId] });
+        queryClient.invalidateQueries({ queryKey: ["drama-series", series?.id || episode?.seriesId] });
+        if (++ticks >= 40) window.clearInterval(timer);
+      }, 3000);
     },
     onError: () => {
       setAnalysisStartedAt(null);
