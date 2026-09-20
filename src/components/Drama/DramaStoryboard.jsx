@@ -220,17 +220,23 @@ function ShotInspector({
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [casting, setCasting] = useState(false);
-  const promptRef = useRef(null);
-  const promptCountRef = useRef(null);
+  const [promptEditorOpen, setPromptEditorOpen] = useState(false);
+  const [promptDraft, setPromptDraft] = useState("");
+  const [savingPrompt, setSavingPrompt] = useState(false);
+  const promptEditorRef = useRef(null);
   const frozen = generating || readOnly;
   const serverPrompt = shotPromptText(selected);
-  const [promptText, setPromptText] = useState(serverPrompt);
-  const [editingPrompt, setEditingPrompt] = useState(false);
   const visiblePrompt = promptTextForDisplay(serverPrompt);
   useEffect(() => {
-    setPromptText(serverPrompt);
-    setEditingPrompt(false);
+    setPromptEditorOpen(false);
+    setPromptDraft("");
+    setSavingPrompt(false);
   }, [selected?.id, serverPrompt]);
+  useEffect(() => {
+    if (!promptEditorOpen) return undefined;
+    const timer = window.setTimeout(() => promptEditorRef.current?.focus(), 40);
+    return () => window.clearTimeout(timer);
+  }, [promptEditorOpen]);
   if (!selected) {
     return (
       <aside className="youxi-inspector youxi-story-inspector">
@@ -280,18 +286,32 @@ function ShotInspector({
     commitCast({ ...cast, [key]: cast[key].filter((item) => item !== name) });
   }
 
-  const promptInitial = serverPrompt;
+  function openPromptEditor() {
+    setPromptDraft(serverPrompt);
+    setPromptEditorOpen(true);
+  }
+
+  function closePromptEditor() {
+    if (savingPrompt) return;
+    setPromptEditorOpen(false);
+    setPromptDraft("");
+  }
 
   async function savePrompt(value) {
-    if (value === promptInitial) {
-      setEditingPrompt(false);
+    if (value === serverPrompt) {
+      setPromptEditorOpen(false);
+      setPromptDraft("");
       return;
     }
+    setSavingPrompt(true);
     try {
       await onSave(selected, { promptOverride: value });
-      setEditingPrompt(false);
+      setPromptEditorOpen(false);
+      setPromptDraft("");
     } catch {
       // 父组件已把失败写进 actionError 横幅，保留编辑态方便继续处理。
+    } finally {
+      setSavingPrompt(false);
     }
   }
 
@@ -367,25 +387,44 @@ function ShotInspector({
             <RefreshCw size={13} /> 编译本镜
           </button>
         </section>
-        <label className="youxi-field">
-          <span>台词</span>
-          <small>镜 {selected.shotIndex}</small>
+        <label className="youxi-field drama-prompt-field">
+          <span className="drama-prompt-field__head">
+            <strong>视频提示词</strong>
+            {selected.promptOverride
+              ? <em className="drama-engine">手动</em>
+              : <em className="drama-engine drama-engine--auto">自动</em>}
+            <em className="drama-prompt-field__count">{visiblePrompt.length} 字</em>
+          </span>
           <textarea
-            rows={5}
+            rows={10}
             disabled={frozen}
-            defaultValue={selected.dialogue || ""}
-            key={`${selected.id}:dialogue:${selected.dialogue || ""}`}
-            onBlur={(event) => {
-              const value = event.target.value;
-              if (value === (selected.dialogue || "")) return;
-              onSave(selected, { dialogue: value }).catch(() => {});
-            }}
-            placeholder="当前镜头尚未填写台词"
+            readOnly
+            value={visiblePrompt}
+            placeholder={serverPrompt ? "" : "拆镜完成后会自动填入视频提示词，也可直接手写覆盖"}
+            title="界面已隐藏结构标签，视频生成仍使用完整提示词"
           />
+          <div className="drama-prompt-field__actions">
+            <button
+              type="button"
+              className="button button--primary drama-prompt-field__save"
+              disabled={frozen || !serverPrompt}
+              onClick={openPromptEditor}
+              title="编辑提交给视频模型的完整提示词"
+            >
+              <Pencil size={14} /> 编辑完整提示词
+            </button>
+            {selected.promptOverride && (
+              <button
+                type="button"
+                className="drama-tool-button drama-tool-button--ghost"
+                disabled={frozen || savingPrompt}
+                onClick={() => savePrompt("")}
+              >
+                恢复自动编译
+              </button>
+            )}
+          </div>
         </label>
-        {selected.narrativeGoal && selected.narrativeGoal !== selected.dialogue && (
-          <p className="youxi-story-goal">{selected.narrativeGoal}</p>
-        )}
         <section className="youxi-story-cast">
           <header>
             <strong>角色 / 场景 / 道具</strong>
@@ -540,75 +579,76 @@ function ShotInspector({
             )}
           </div>
         </div>
-        <label className="youxi-field drama-prompt-field">
-          <span className="drama-prompt-field__head">
-            <strong>视频提示词</strong>
-            {selected.promptOverride
-              ? <em className="drama-engine">手动</em>
-              : <em className="drama-engine drama-engine--auto">自动</em>}
-            <em className="drama-prompt-field__count"><span ref={promptCountRef}>{editingPrompt ? promptText.length : visiblePrompt.length}</span> 字</em>
-          </span>
+        <label className="youxi-field">
+          <span>台词</span>
+          <small>镜 {selected.shotIndex}</small>
           <textarea
-            ref={promptRef}
-            rows={10}
+            rows={5}
             disabled={frozen}
-            readOnly={!editingPrompt}
-            value={editingPrompt ? promptText : visiblePrompt}
-            placeholder={serverPrompt ? "" : "拆镜完成后会自动填入视频提示词，也可直接手写覆盖"}
-            onChange={(event) => {
-              if (!editingPrompt) return;
-              setPromptText(event.target.value);
-              if (promptCountRef.current) promptCountRef.current.textContent = String(event.target.value.length);
+            defaultValue={selected.dialogue || ""}
+            key={`${selected.id}:dialogue:${selected.dialogue || ""}`}
+            onBlur={(event) => {
+              const value = event.target.value;
+              if (value === (selected.dialogue || "")) return;
+              onSave(selected, { dialogue: value }).catch(() => {});
             }}
-            title={editingPrompt ? "正在编辑提交给视频模型的完整提示词" : "界面已隐藏结构标签，视频生成仍使用完整提示词"}
+            placeholder="当前镜头尚未填写台词"
           />
-          <div className="drama-prompt-field__actions">
-            {editingPrompt ? (
-              <>
-                <button
-                  type="button"
-                  className="button button--primary drama-prompt-field__save"
-                  disabled={frozen}
-                  onClick={() => savePrompt(promptText)}
-                >
-                  <Save size={14} /> 保存
-                </button>
-                <button
-                  type="button"
-                  className="drama-tool-button drama-tool-button--ghost"
-                  disabled={frozen}
-                  onClick={() => {
-                    setPromptText(serverPrompt);
-                    setEditingPrompt(false);
-                  }}
-                >
-                  取消
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                className="button button--primary drama-prompt-field__save"
-                disabled={frozen || !serverPrompt}
-                onClick={() => setEditingPrompt(true)}
-                title="编辑提交给视频模型的完整提示词"
-              >
-                <Pencil size={14} /> 编辑完整提示词
-              </button>
-            )}
-            {selected.promptOverride && (
-              <button
-                type="button"
-                className="drama-tool-button drama-tool-button--ghost"
-                disabled={frozen}
-                onClick={() => savePrompt("")}
-              >
-                恢复自动编译
-              </button>
-            )}
-          </div>
         </label>
+        {selected.narrativeGoal && selected.narrativeGoal !== selected.dialogue && (
+          <p className="youxi-story-goal">{selected.narrativeGoal}</p>
+        )}
       </div>
+      {promptEditorOpen && createPortal(
+        <div
+          className="drama-dialog-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closePromptEditor();
+          }}
+        >
+          <section
+            className="drama-dialog drama-dialog--prompt"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="drama-prompt-editor-title"
+          >
+            <header>
+              <div>
+                <span>镜 {selected.shotIndex}{selected.title ? ` · ${selected.title}` : ""}</span>
+                <h2 id="drama-prompt-editor-title">编辑完整提示词</h2>
+              </div>
+              <button type="button" aria-label="关闭" disabled={savingPrompt} onClick={closePromptEditor}>
+                <X size={18} />
+              </button>
+            </header>
+            <div className="drama-prompt-editor">
+              <div className="drama-prompt-editor__meta">
+                <span>提交给视频模型的完整提示词</span>
+                <em>{promptDraft.length} 字</em>
+              </div>
+              <textarea
+                ref={promptEditorRef}
+                value={promptDraft}
+                disabled={savingPrompt}
+                onChange={(event) => setPromptDraft(event.target.value)}
+                placeholder="输入本镜完整视频提示词"
+              />
+            </div>
+            <footer className="drama-dialog__actions">
+              <button type="button" disabled={savingPrompt} onClick={closePromptEditor}>取消</button>
+              <button
+                type="button"
+                className="button button--primary"
+                disabled={savingPrompt}
+                onClick={() => savePrompt(promptDraft)}
+              >
+                <Save size={14} /> {savingPrompt ? "保存中…" : "保存修改"}
+              </button>
+            </footer>
+          </section>
+        </div>,
+        document.body,
+      )}
     </aside>
   );
 }

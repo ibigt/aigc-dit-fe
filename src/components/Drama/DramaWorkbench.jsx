@@ -244,7 +244,14 @@ export function DramaWorkbench({ seriesId }) {
           <DramaStoryboard series={series} episode={episode} />
         </div>
       )}
-      {step === "film" && <DramaFilmPanel series={series} episode={episode} />}
+      {step === "film" && (
+        <DramaFilmPanel
+          series={series}
+          episode={episode}
+          episodes={episodes}
+          onSelectEpisode={setEpisodeId}
+        />
+      )}
       {renameOpen && (
         <DramaDialog title="修改项目名称" eyebrow="项目基础信息" onClose={() => { if (!renameMutation.isPending) setRenameOpen(false); }}>
           <form

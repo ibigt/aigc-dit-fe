@@ -1137,6 +1137,77 @@ button.asset-card__preview {
 .drama-prompt-field__save { height: 34px; display: inline-flex; align-items: center; gap: 6px; }
 .drama-prompt-field__count { flex: 0 0 auto; margin-left: 8px; color: var(--muted); font-size: 11px; font-weight: 500; font-style: normal; }
 
+.drama-dialog--prompt {
+  width: min(960px, 96vw);
+  max-height: min(92vh, 900px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.drama-prompt-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 16px 22px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.drama-prompt-editor__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #5f6976;
+  font-size: 12px;
+}
+.drama-prompt-editor__meta em {
+  color: var(--muted);
+  font-style: normal;
+  font-size: 11px;
+}
+.drama-prompt-editor textarea {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: min(52vh, 520px);
+  max-height: none;
+  padding: 14px 16px;
+  resize: vertical;
+  border: 1px solid #dfe3e7;
+  border-radius: 10px;
+  outline: 0;
+  background: #fff;
+  color: #263140;
+  font: 13px/1.75 inherit;
+}
+.drama-dialog--prompt .drama-dialog__actions {
+  flex: 0 0 auto;
+  align-items: center;
+}
+.drama-dialog--prompt .drama-dialog__actions .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.drama-dialog__actions .button--primary {
+  color: #fff;
+  border-color: #6572ed;
+  background: #6572ed;
+}
+.drama-dialog__actions .button--primary:hover {
+  border-color: #5261dc;
+  background: #5261dc;
+}
+.console-shell[data-theme="dark"] .drama-prompt-editor textarea {
+  color: #e5eaf2;
+  background: #111720;
+  border-color: #3a4553;
+}
+.console-shell[data-theme="dark"] .drama-dialog__actions .button--primary {
+  color: #fff;
+  border-color: #7481f0;
+  background: #6572ed;
+}
+
 .drama-scenes { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
 .drama-scene { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); }
 .drama-scene header { display: flex; align-items: baseline; gap: 8px; }

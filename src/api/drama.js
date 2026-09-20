@@ -207,8 +207,9 @@ export function fetchDramaFilm(episodeId) {
   return api.get(`/drama/episodes/${episodeId}/film`);
 }
 
-export function assembleDramaFilm(episodeId) {
-  return api.post(`/drama/episodes/${episodeId}/film/assemble`, null, { timeout: FILM_ASSEMBLE_TIMEOUT_MS });
+export function assembleDramaFilm(episodeId, { shotIds } = {}) {
+  const body = Array.isArray(shotIds) ? { shotIds } : null;
+  return api.post(`/drama/episodes/${episodeId}/film/assemble`, body, { timeout: FILM_ASSEMBLE_TIMEOUT_MS });
 }
 
 export function pollDramaAssetGenerate(assetId, taskId, { interval = 2000, timeout = 8 * 60 * 1000 } = {}) {
