@@ -92,7 +92,7 @@ export const fallbackConfig = {
     { id: "seedream-4", name: "Seedream 4.0", description: "2K/4K 高清直出", badge: "图像", category: "image", provider: "RunningHub", modelKey: "seedream-4.0", endpoint: "https://www.runninghub.cn/api", enabled: true },
     { id: "banana-2", name: "Banana 2", description: "极端画幅与中文文本渲染", badge: "图像", category: "image", provider: "手动配置", modelKey: "banana-2", endpoint: "/mock-api/images", enabled: true },
     { id: "banana-pro", name: "Banana Pro", description: "高质量图像生成与编辑", badge: "图像", category: "image", provider: "手动配置", modelKey: "banana-pro", endpoint: "/mock-api/images", enabled: true },
-    { id: "gpt-image-2", name: "GPT Image 2", description: "Low / 标准 / High 三档", badge: "图像", category: "image", capabilities: ["image", "t2i"], provider: "手动配置", modelKey: "gpt-image-2", endpoint: "/mock-api/images", enabled: true },
+    { id: "gpt-image-2", name: "GPT Image 2", description: "Low / 标准 / High 三档", badge: "图像", category: "image", capabilities: ["image", "t2i", "i2i"], provider: "手动配置", modelKey: "gpt-image-2", endpoint: "/mock-api/images", enabled: true },
     { id: "midjourney-7", name: "Midjourney 7", description: "艺术表现与风格化生成", badge: "图像", category: "image", provider: "RunningHub", modelKey: "midjourney-v7", endpoint: "https://www.runninghub.cn/api", enabled: true },
     { id: "midjourney-8-1", name: "Midjourney 8.1", description: "新一代风格化图像生成", badge: "图像", category: "image", provider: "RunningHub", modelKey: "midjourney-v8.1", endpoint: "https://www.runninghub.cn/api", enabled: true },
     { id: "niji-7", name: "Niji 7", description: "动漫与二次元风格", badge: "图像", category: "image", provider: "RunningHub", modelKey: "niji-v7", endpoint: "https://www.runninghub.cn/api", enabled: true },

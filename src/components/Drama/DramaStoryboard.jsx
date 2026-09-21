@@ -201,6 +201,14 @@ function firstFrameTitle(source) {
   return "首帧";
 }
 
+function isFirstInChapter(shot, shots) {
+  if (!shot) return true;
+  const peers = (shots || []).filter((item) => item.chapterId === shot.chapterId);
+  if (!peers.length) return true;
+  const min = Math.min(...peers.map((item) => item.shotIndex ?? Number.POSITIVE_INFINITY));
+  return shot.shotIndex === min;
+}
+
 function ShotInspector({
   selected,
   generating,
@@ -209,6 +217,7 @@ function ShotInspector({
   generateMode,
   chainPrevTail,
   supportsI2v,
+  firstInChapter,
   onSave,
   onCompile,
   onZoom,
@@ -329,11 +338,11 @@ function ShotInspector({
             <span className="youxi-shot-model-label">生成方式</span>
             <select
               aria-label="本镜生成方式"
-              value={generateMode === "i2v" ? "i2v" : "r2v"}
+              value={generateMode === "i2v" && !firstInChapter ? "i2v" : "r2v"}
               disabled={frozen}
               onChange={(event) => {
                 const next = event.target.value;
-                if (next === "i2v" && !supportsI2v) return;
+                if (next === "i2v" && (!supportsI2v || firstInChapter)) return;
                 const payload = { videoGenerateMode: next };
                 payload.videoChainPrevTail = next === "r2v" && generateMode === "r2v"
                   ? Boolean(chainPrevTail)
@@ -342,8 +351,12 @@ function ShotInspector({
               }}
             >
               <option value="r2v">参考图</option>
-              <option value="i2v" disabled={!supportsI2v}>
-                {supportsI2v ? "首尾帧" : "首尾帧（当前模型不支持）"}
+              <option value="i2v" disabled={!supportsI2v || firstInChapter}>
+                {firstInChapter
+                  ? "首尾帧（场内第一镜不可用）"
+                  : supportsI2v
+                    ? "首尾帧"
+                    : "首尾帧（当前模型不支持）"}
               </option>
             </select>
           </label>
@@ -363,7 +376,7 @@ function ShotInspector({
               ))}
             </select>
           </label>
-          {generateMode !== "i2v" && (
+          {generateMode !== "i2v" && !firstInChapter && (
             <label className="youxi-shot-chain">
               <input
                 type="checkbox"
@@ -523,7 +536,7 @@ function ShotInspector({
             </figure>
             <div className="youxi-first-frame-actions">
               {selected.canUsePrevTail && selected.firstFrameSource !== "prev-tail" && (
-                <button type="button" disabled={frozen} onClick={() => onUsePrevTail?.(selected)}>加载上一镜落幅</button>
+                <button type="button" disabled={frozen} onClick={() => onUsePrevTail?.(selected)}>加载上一镜尾帧</button>
               )}
               <button type="button" disabled={frozen} onClick={() => onGenerateStill?.(selected)}>
                 {selected.generatingStill ? "生成中…" : "自动生成"}
@@ -723,6 +736,7 @@ export function DramaStoryboard({ series, episode }) {
   const generateMode = shotModeOf(selected);
   const chainPrevTail = shotChainOf(selected);
   const projectGenerateMode = (board?.videoGenerateMode || series?.videoGenerateMode) === "i2v" ? "i2v" : "r2v";
+  const firstInChapter = isFirstInChapter(selected, shots);
   const recompiling = Boolean(board?.promptRecompiling || series?.promptRecompiling);
   const supportsI2v = modelSupportsI2v(selectedVideoModel);
   const durationOptions = useMemo(
@@ -1174,8 +1188,8 @@ export function DramaStoryboard({ series, episode }) {
                 disabled={!videoModelId || frozenByRecompile || drafting || modeMutation.isPending}
                 onChange={(event) => modeMutation.mutate(event.target.value)}
               >
-                <option value="i2v" disabled={!supportsI2v}>连续分镜（尾帧接首帧）</option>
                 <option value="r2v">独立分镜（参考图）</option>
+                <option value="i2v" disabled={!supportsI2v}>连续分镜（尾帧接首帧）</option>
               </select>
             </label>
             {(selectedVideoModel?.supportsNativeAudio || selectedVideoModel?.supportsAudioReference) && (
@@ -1478,6 +1492,7 @@ export function DramaStoryboard({ series, episode }) {
         generateMode={generateMode}
         chainPrevTail={chainPrevTail}
         supportsI2v={supportsI2v}
+        firstInChapter={firstInChapter}
         onSave={saveShot}
         onCompile={compileThisShot}
         onZoom={setPreview}

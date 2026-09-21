@@ -68,7 +68,7 @@ const usageColors = ["#665cf1", "#33a474", "#e2943b", "#d76588", "#8b94a1"];
 
 const MODE_CAP_OPTIONS = [
   { id: "t2i", kind: "image", label: "t2i 文生图", pathKey: "t2iPath", pathLabel: "文生图路径 / URL", placeholder: "rhart-image-g-2/text-to-image", defaultPath: "rhart-image-g-2/text-to-image" },
-  { id: "i2i", kind: "image", label: "i2i 参考生图", pathKey: "i2iPath", pathLabel: "参考生图路径 / URL", placeholder: "厂商参考生图路径" },
+  { id: "i2i", kind: "image", label: "i2i 参考生图", pathKey: "i2iPath", pathLabel: "参考生图路径 / URL", placeholder: "rhart-image-g-2/image-to-image", defaultPath: "rhart-image-g-2/image-to-image" },
   { id: "t2v", kind: "video", label: "t2v 文生视频", pathKey: "t2vPath", pathLabel: "文生视频路径 / URL", placeholder: "rhart-video/sparkvideo-2.0/text-to-video", defaultPath: "rhart-video/sparkvideo-2.0/text-to-video" },
   { id: "r2v", kind: "video", label: "r2v 参考生视频", pathKey: "r2vPath", pathLabel: "参考生视频路径 / URL", placeholder: "rhart-video/sparkvideo-2.0/multimodal-video", defaultPath: "rhart-video/sparkvideo-2.0/multimodal-video" },
   { id: "i2v", kind: "video", label: "i2v 首尾帧", pathKey: "i2vPath", pathLabel: "首尾帧路径 / URL", placeholder: "厂商首尾帧路径" },
@@ -76,7 +76,7 @@ const MODE_CAP_OPTIONS = [
 ];
 
 const ADAPTER_OPTIONS = [
-  { key: "gpt-image-2", label: "GPT Image 2", category: "image", provider: "RunningHub", defaultEndpoint: "https://www.runninghub.ai", modes: ["t2i"], defaultPaths: { t2iPath: "rhart-image-g-2/text-to-image" } },
+  { key: "gpt-image-2", label: "GPT Image 2", category: "image", provider: "RunningHub", defaultEndpoint: "https://www.runninghub.ai", modes: ["t2i", "i2i"], defaultPaths: { t2iPath: "rhart-image-g-2/text-to-image", i2iPath: "rhart-image-g-2/image-to-image" } },
   { key: "agnes-image-2.5", label: "Agnes Image 2.5", category: "image", provider: "官方API", defaultEndpoint: "https://api.agnes-ai.cn/v1", modes: ["t2i", "i2i"], defaultPaths: {}, defaultModelKey: "agnes-image-2.5-flash" },
   { key: "seedance-2", label: "Seedance 2.x", category: "video", provider: "RunningHub", defaultEndpoint: "https://www.runninghub.ai", modes: ["t2v", "r2v"], defaultPaths: { t2vPath: "rhart-video/sparkvideo-2.0/text-to-video", r2vPath: "rhart-video/sparkvideo-2.0/multimodal-video" } },
   { key: "seedance-2.0", label: "Seedance 2.0", category: "video", provider: "官方API", defaultEndpoint: "https://ark.cn-beijing.volces.com/api/v3", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "doubao-seedance-2-0-260128" },
