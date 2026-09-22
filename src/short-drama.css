@@ -1412,9 +1412,11 @@
 .console-shell[data-theme="dark"] .drama-analyze-btn { color: #fff; border-color: #7481f0; background: #6572ed; }
 @media (max-width: 1180px) {
   .drama-workspace { --drama-col-left: 208px; --drama-col-right: 328px; }
+  .youxi-storyboard-layout.youxi-storyboard-layout--board { --drama-col-right: 420px; }
 }
 @media (max-width: 980px) {
   .drama-workspace { --drama-col-left: 180px; --drama-col-right: 296px; --drama-grid-gap: 12px; }
+  .youxi-storyboard-layout.youxi-storyboard-layout--board { --drama-col-right: 388px; }
 }
 
 /* Wave B: storyboard = episodes + player + filmstrip + right inspector */
@@ -1422,6 +1424,7 @@
 .youxi-workspace .drama-step--shots > .youxi-storyboard-layout { height: 100%; min-height: 0; }
 .youxi-storyboard-layout.youxi-storyboard-layout--board {
   position: relative;
+  --drama-col-right: 460px;
   grid-template-columns: var(--drama-col-left) minmax(0, 1fr) var(--drama-col-right);
   gap: var(--drama-grid-gap);
   padding: var(--drama-grid-gap);
@@ -1437,7 +1440,48 @@
 }
 .youxi-storyboard-layout--board .youxi-shots-center {
   display: grid;
-  grid-template-rows: 54px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.youxi-storyboard-layout--board .youxi-shot-center-toolbar {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  column-gap: 8px;
+  row-gap: 8px;
+  min-height: 54px;
+  height: auto;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.youxi-storyboard-layout--board .youxi-shot-center-toolbar > div {
+  display: contents;
+}
+.youxi-storyboard-layout--board .youxi-shot-center-toolbar .youxi-shot-model {
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+.youxi-storyboard-layout--board .youxi-shot-center-toolbar .youxi-shot-model > span {
+  flex: 0 0 auto;
+}
+.youxi-storyboard-layout--board .youxi-shot-center-toolbar .youxi-shot-model select {
+  flex: 0 0 auto;
+  width: 180px;
+  min-width: 180px;
+  max-width: 180px;
+  padding-right: 26px;
+  text-overflow: ellipsis;
+}
+.youxi-storyboard-layout--board .youxi-shot-center-toolbar .youxi-shot-model:first-of-type select {
+  width: 300px;
+  min-width: 300px;
+  max-width: 300px;
+}
+.youxi-storyboard-layout--board .youxi-shot-center-toolbar .youxi-native-audio-badge {
+  flex: 0 0 auto;
+  max-width: 100%;
 }
 .youxi-storyboard-layout--board > .youxi-inspector {
   min-height: 0;
@@ -1492,8 +1536,12 @@
   margin: 0 0 16px;
   padding-bottom: 14px;
   display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
   gap: 8px;
   border-bottom: 1px solid var(--drama-line);
+}
+.youxi-shot-mode > :not(.youxi-shot-model) {
+  grid-column: 1 / -1;
 }
 .youxi-shot-mode > header {
   display: flex;
@@ -1511,10 +1559,13 @@
   font-weight: 700;
 }
 .youxi-shot-mode .youxi-shot-model {
-  width: 100%;
+  width: auto;
+  min-width: 0;
 }
 .youxi-shot-mode .youxi-shot-model select {
-  width: 100%;
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
 }
 .youxi-shot-mode > button {
   height: 30px;
@@ -1880,7 +1931,7 @@
 .console-shell[data-theme="dark"] .youxi-story-inspector .youxi-story-goal { color: #aeb9c6; }
 
 @media (max-width: 1120px) {
-  .youxi-storyboard-layout.youxi-storyboard-layout--board { grid-template-columns: 158px minmax(0, 1fr) 300px; }
+  .youxi-storyboard-layout.youxi-storyboard-layout--board { grid-template-columns: 158px minmax(0, 1fr) 400px; }
 }
 @media (max-width: 720px) {
   .youxi-storyboard-layout.youxi-storyboard-layout--board { display: block; overflow-y: auto; }

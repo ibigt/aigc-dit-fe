@@ -1160,9 +1160,12 @@ export function DramaStoryboard({ series, episode }) {
         <div className="youxi-shot-center-toolbar">
           <div>
             <label className="youxi-shot-model">
-              视频模型
+              <span>视频模型</span>
               <select
                 aria-label="分镜视频模型"
+                title={selectedVideoModel
+                  ? `${selectedVideoModel.name}${selectedVideoModel.provider ? ` · ${selectedVideoModel.provider}` : ""}${selectedVideoModel.supportsNativeAudio ? " · 原生有声" : ""}`
+                  : undefined}
                 value={videoModelId}
                 disabled={frozenByRecompile || drafting}
                 onChange={(event) => {
@@ -1183,7 +1186,7 @@ export function DramaStoryboard({ series, episode }) {
               </select>
             </label>
             <label className="youxi-shot-model">
-              分镜衔接
+              <span>分镜衔接</span>
               <select
                 aria-label="项目分镜衔接模式"
                 value={projectGenerateMode}
