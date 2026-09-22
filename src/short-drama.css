@@ -71,6 +71,61 @@
 .console-shell[data-theme="dark"] .drama-back,.console-shell[data-theme="dark"] .drama-episode-panel>button { color: #b7c0cd; }.console-shell[data-theme="dark"] .drama-episode-panel>button.active em { color: #b5bdff; }.console-shell[data-theme="dark"] .director-setting { color: #cbd1ff; background: #252d45; border-color: #3b4660; }.console-shell[data-theme="dark"] .director-setting small { color: #b7c0cd; }.console-shell[data-theme="dark"] .drama-settings-note strong { color: #e1e6ed; }
 .console-shell[data-theme="dark"] .drama-view-switch button { color: #b7c0cd; }.console-shell[data-theme="dark"] .drama-view-switch button.active { color: #cbd1ff; }.console-shell[data-theme="dark"] .shot-table td:nth-child(6)>button { background: #5360c8; }.console-shell[data-theme="dark"] .shot-table .shot-remove { color: #e19aa2; }
 .console-shell[data-theme="dark"] :is(.drama-create-form>label,.director-form>label,.drama-create-form>div>label) { color: #b7c0cd; }.console-shell[data-theme="dark"] :is(.drama-create-form footer button,.director-form footer button,.drama-dialog>header button) { color: #dce2eb; background: #202731; border-color: #303a47; }
+
+/* Drama library / workspace: remaining muted labels on dark surfaces */
+.console-shell[data-theme="dark"] .drama-library__tabs button,
+.console-shell[data-theme="dark"] .drama-library__tabs button span,
+.console-shell[data-theme="dark"] .drama-progress b,
+.console-shell[data-theme="dark"] .drama-project-card__body footer,
+.console-shell[data-theme="dark"] .drama-project-new,
+.console-shell[data-theme="dark"] .drama-project-new strong,
+.console-shell[data-theme="dark"] .drama-project-title span,
+.console-shell[data-theme="dark"] .drama-workspace-header nav button,
+.console-shell[data-theme="dark"] .drama-workspace-header nav button i,
+.console-shell[data-theme="dark"] .drama-back,
+.console-shell[data-theme="dark"] .drama-overview-button,
+.console-shell[data-theme="dark"] .drama-script-editor > header span,
+.console-shell[data-theme="dark"] .drama-script-editor footer,
+.console-shell[data-theme="dark"] .drama-settings-panel > label,
+.console-shell[data-theme="dark"] .drama-settings-note,
+.console-shell[data-theme="dark"] .subject-groups > section > header span,
+.console-shell[data-theme="dark"] .shot-table td:nth-child(3) small,
+.console-shell[data-theme="dark"] .storyboard-grid footer button,
+.console-shell[data-theme="dark"] .film-preview-panel > header span,
+.console-shell[data-theme="dark"] .film-timeline header,
+.console-shell[data-theme="dark"] .film-details dt,
+.console-shell[data-theme="dark"] .film-details article small,
+.console-shell[data-theme="dark"] .drama-overview-panel > header span,
+.console-shell[data-theme="dark"] .overview-metrics span,
+.console-shell[data-theme="dark"] .overview-episode,
+.console-shell[data-theme="dark"] .overview-episode em,
+.console-shell[data-theme="dark"] .overview-activity,
+.console-shell[data-theme="dark"] .overview-activity small,
+.console-shell[data-theme="dark"] .export-options small {
+  color: #b7c0cd;
+}
+.console-shell[data-theme="dark"] .drama-library__tabs button.active,
+.console-shell[data-theme="dark"] .drama-library__tabs button.active span,
+.console-shell[data-theme="dark"] .drama-workspace-header nav button.active {
+  color: #c8ceff;
+}
+.console-shell[data-theme="dark"] .drama-workspace-header nav button i {
+  background: #252e39;
+}
+.console-shell[data-theme="dark"] .drama-workspace-header nav button.active i {
+  color: #fff;
+  background: #5360c8;
+}
+.console-shell[data-theme="dark"] .film-timeline header strong,
+.console-shell[data-theme="dark"] .overview-metrics strong,
+.console-shell[data-theme="dark"] .export-options strong {
+  color: #e4e9f1;
+}
+.console-shell[data-theme="dark"] .drama-progress > span,
+.console-shell[data-theme="dark"] .overview-progress > i,
+.console-shell[data-theme="dark"] .overview-episode i {
+  background: #2a3340;
+}
 .youxi-shot-viewbar .button,
 .youxi-shot-list > header .button { color: #fff; border-color: #4c59c6; background: #4c59c6; font-weight: 700; }
 .youxi-shot-list > header p { color: #626d7b; }
@@ -119,6 +174,8 @@
 
 .youxi-workspace ~ * .credit-pill > span, .console-shell .credit-pill > span { color: #616c7a; }
 .console-shell .account-trigger small { color: #5f6976; }
+.console-shell[data-theme="dark"] .credit-pill > span { color: #b8c1cf; }
+.console-shell[data-theme="dark"] .account-trigger small { color: #b8c1cf; }
 
 .youxi-script-editor { min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: 72px 46px minmax(0,1fr) 40px; background: #fff; }
 .youxi-script-editor > header { padding: 0 24px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--drama-line); }

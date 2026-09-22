@@ -330,6 +330,235 @@ a { color: inherit; text-decoration: none; }
 .console-shell[data-theme="dark"] .creation-viewer__meta p,
 .console-shell[data-theme="dark"] .creation-viewer__meta dd { color: #e8edf5; }
 
+/* Dark theme: secondary text / muted labels that still used light-theme grays */
+.console-shell[data-theme="dark"] .account-dropdown header small,
+.console-shell[data-theme="dark"] .session-sidebar__footer,
+.console-shell[data-theme="dark"] .create-header div,
+.console-shell[data-theme="dark"] .create-header button,
+.console-shell[data-theme="dark"] .generating-line,
+.console-shell[data-theme="dark"] .composer-shell > small,
+.console-shell[data-theme="dark"] .creation-composer + small,
+.console-shell[data-theme="dark"] .creation-character-count,
+.console-shell[data-theme="dark"] .creation-mode-popover small,
+.console-shell[data-theme="dark"] .creation-model-popover small,
+.console-shell[data-theme="dark"] .creation-parameter-popover section > label,
+.console-shell[data-theme="dark"] .creation-voice-section > label small,
+.console-shell[data-theme="dark"] .creation-voice-grid button small,
+.console-shell[data-theme="dark"] .creation-voice-empty,
+.console-shell[data-theme="dark"] .creation-speed-control > div,
+.console-shell[data-theme="dark"] .creation-asset-empty,
+.console-shell[data-theme="dark"] .creation-asset-grid small,
+.console-shell[data-theme="dark"] .creation-asset-dialog > footer,
+.console-shell[data-theme="dark"] .filter-tabs button,
+.console-shell[data-theme="dark"] .library-tools label,
+.console-shell[data-theme="dark"] .library-tools button,
+.console-shell[data-theme="dark"] .library-summary,
+.console-shell[data-theme="dark"] .asset-card__info small,
+.console-shell[data-theme="dark"] .upload-card,
+.console-shell[data-theme="dark"] .upload-card strong,
+.console-shell[data-theme="dark"] .creation-stat span,
+.console-shell[data-theme="dark"] .creation-card__body p,
+.console-shell[data-theme="dark"] .creation-card__body footer span,
+.console-shell[data-theme="dark"] .creation-viewer__meta span,
+.console-shell[data-theme="dark"] .creation-viewer__meta dt,
+.console-shell[data-theme="dark"] .creation-audio-viewer small,
+.console-shell[data-theme="dark"] .workflow-library__hero p,
+.console-shell[data-theme="dark"] .workflow-filter button,
+.console-shell[data-theme="dark"] .workflow-record-card__body p,
+.console-shell[data-theme="dark"] .workflow-record-card__body footer,
+.console-shell[data-theme="dark"] .workflow-loading,
+.console-shell[data-theme="dark"] .workflow-loading small,
+.console-shell[data-theme="dark"] .node-panel header small,
+.console-shell[data-theme="dark"] .node-catalog-scroll section > span,
+.console-shell[data-theme="dark"] .node-catalog-scroll button small,
+.console-shell[data-theme="dark"] .template-modal header p,
+.console-shell[data-theme="dark"] .template-card p,
+.console-shell[data-theme="dark"] .template-card footer span,
+.console-shell[data-theme="dark"] .workflow-import small,
+.console-shell[data-theme="dark"] .profile-modal form label > span,
+.console-shell[data-theme="dark"] .settings-list small,
+.console-shell[data-theme="dark"] .config-note small,
+.console-shell[data-theme="dark"] .credits-modal header p,
+.console-shell[data-theme="dark"] .credits-tabs button,
+.console-shell[data-theme="dark"] .rate-banner small,
+.console-shell[data-theme="dark"] .form-section-title,
+.console-shell[data-theme="dark"] .charge-options span,
+.console-shell[data-theme="dark"] .payment-methods small,
+.console-shell[data-theme="dark"] .recharge-total span,
+.console-shell[data-theme="dark"] .secure-note,
+.console-shell[data-theme="dark"] .transaction-summary span,
+.console-shell[data-theme="dark"] .transaction-list article small,
+.console-shell[data-theme="dark"] .profile-modal--settings > header p,
+.console-shell[data-theme="dark"] .settings-workspace > nav button,
+.console-shell[data-theme="dark"] .settings-section-heading small,
+.console-shell[data-theme="dark"] .settings-workspace form > label > span:first-child,
+.console-shell[data-theme="dark"] .settings-form-footer small,
+.console-shell[data-theme="dark"] .asset-upload-dialog header p,
+.console-shell[data-theme="dark"] .asset-upload-file small,
+.console-shell[data-theme="dark"] .asset-upload-dialog form > label,
+.console-shell[data-theme="dark"] .asset-upload-progress > div,
+.console-shell[data-theme="dark"] .model-dialog p,
+.console-shell[data-theme="dark"] .model-dialog form > footer > span,
+.console-shell[data-theme="dark"] .model-form-grid label,
+.console-shell[data-theme="dark"] .model-logo-hint,
+.console-shell[data-theme="dark"] .tool-grid small,
+.console-shell[data-theme="dark"] .tool-grid em,
+.console-shell[data-theme="dark"] .admin-empty,
+.console-shell[data-theme="dark"] .queue-health,
+.console-shell[data-theme="dark"] .queue-stats span,
+.console-shell[data-theme="dark"] .hour-chart span,
+.console-shell[data-theme="dark"] .source-list span {
+  color: #c5ced9;
+}
+.console-shell[data-theme="dark"] .account-dropdown > button,
+.console-shell[data-theme="dark"] .creation-mode-popover > button,
+.console-shell[data-theme="dark"] .creation-model-popover > button,
+.console-shell[data-theme="dark"] .creation-copy-popover button,
+.console-shell[data-theme="dark"] .creation-option-grid button,
+.console-shell[data-theme="dark"] .creation-voice-grid button,
+.console-shell[data-theme="dark"] .creation-icon-action,
+.console-shell[data-theme="dark"] .creation-pill,
+.console-shell[data-theme="dark"] .creation-asset-dialog > footer button,
+.console-shell[data-theme="dark"] .template-modal__toolbar button,
+.console-shell[data-theme="dark"] .admin-empty strong,
+.console-shell[data-theme="dark"] .queue-stats b,
+.console-shell[data-theme="dark"] .creation-audio-viewer strong,
+.console-shell[data-theme="dark"] .transaction-list article strong,
+.console-shell[data-theme="dark"] .recharge-total strong {
+  color: #e8edf5;
+}
+.console-shell[data-theme="dark"] .creation-mode-popover > button:hover,
+.console-shell[data-theme="dark"] .creation-mode-popover > button.active,
+.console-shell[data-theme="dark"] .creation-model-popover > button:hover,
+.console-shell[data-theme="dark"] .creation-model-popover > button.active {
+  color: #f1f4f8;
+}
+.console-shell[data-theme="dark"] .filter-tabs button.active,
+.console-shell[data-theme="dark"] .credits-tabs button.active,
+.console-shell[data-theme="dark"] .settings-workspace > nav button.active,
+.console-shell[data-theme="dark"] .template-modal__toolbar button.active,
+.console-shell[data-theme="dark"] .workflow-filter button.active {
+  color: #c8ceff;
+}
+.console-shell[data-theme="dark"] .credits-tabs {
+  background: #202731;
+}
+.console-shell[data-theme="dark"] .credits-tabs button.active {
+  background: #2a3340;
+  box-shadow: none;
+}
+.console-shell[data-theme="dark"] .rate-banner {
+  color: #c8ceff;
+  background: linear-gradient(135deg, #252c45, #1c3228);
+}
+.console-shell[data-theme="dark"] .rate-banner > span {
+  color: #c8ceff;
+  background: #171d26;
+}
+.console-shell[data-theme="dark"] .settings-section-heading {
+  color: #e8edf5;
+}
+.console-shell[data-theme="dark"] .settings-workspace form input,
+.console-shell[data-theme="dark"] .settings-workspace form select,
+.console-shell[data-theme="dark"] .profile-modal form input,
+.console-shell[data-theme="dark"] .asset-upload-dialog form > label input {
+  color: #e5eaf2;
+  background: #111720;
+  border-color: #303a47;
+}
+.console-shell[data-theme="dark"] .profile-modal form input:disabled {
+  background: #202731;
+  color: #9aa5b3;
+}
+.console-shell[data-theme="dark"] .config-note {
+  color: #c8ceff;
+  background: #252c45;
+}
+.console-shell[data-theme="dark"] .connection-status {
+  color: #91d1ac;
+  background: #1b3329;
+  border-color: #31503f;
+}
+.console-shell[data-theme="dark"] .connection-status strong { color: #91d1ac; }
+.console-shell[data-theme="dark"] .connection-status small { color: #a8c4b4; }
+.console-shell[data-theme="dark"] .connection-status button {
+  color: #e8edf5;
+  background: #232b36;
+  border-color: #3a4554;
+}
+.console-shell[data-theme="dark"] .admin-empty {
+  background: #171d26;
+  border-color: #303a47;
+}
+.console-shell[data-theme="dark"] .tool-grid article,
+.console-shell[data-theme="dark"] .queue-stats span,
+.console-shell[data-theme="dark"] .queue-health {
+  color: #c5ced9;
+  background: #171d26;
+  border-color: #303a47;
+}
+.console-shell[data-theme="dark"] .tool-grid article > button {
+  color: #c5ced9;
+  background: #252e39;
+}
+.console-shell[data-theme="dark"] .queue-health span { color: #7ee0ad; }
+.console-shell[data-theme="dark"] .queue-health.is-down span { color: #f0a3a8; }
+.console-shell[data-theme="dark"] .queue-status {
+  color: #c5ced9;
+  background: #252e39;
+}
+.console-shell[data-theme="dark"] .queue-status--运行中 { color: #c8ceff; background: #2a3148; }
+.console-shell[data-theme="dark"] .queue-status--等待中 { color: #f0c48a; background: #3a2f1c; }
+.console-shell[data-theme="dark"] .queue-status--已完成 { color: #7ee0ad; background: #1c3228; }
+.console-shell[data-theme="dark"] .queue-status--失败,
+.console-shell[data-theme="dark"] .queue-status--已取消 { color: #f0a3a8; background: #322028; }
+.console-shell[data-theme="dark"] .status-chip,
+.console-shell[data-theme="dark"] .request-status {
+  color: #d5b8bf;
+  background: #322028;
+}
+.console-shell[data-theme="dark"] .status-chip.active,
+.console-shell[data-theme="dark"] .request-status.success {
+  color: #7ee0ad;
+  background: #1c3228;
+}
+.console-shell[data-theme="dark"] .request-status.failed {
+  color: #f0a3a8;
+  background: #322028;
+}
+.console-shell[data-theme="dark"] .peak-badge {
+  color: #f0c48a !important;
+  background: #3a2f1c;
+}
+.console-shell[data-theme="dark"] .admin-notice {
+  color: #91d1ac;
+  background: #1b3329;
+  border-color: #31503f;
+}
+.console-shell[data-theme="dark"] .admin-notice--error {
+  color: #f0a3a8;
+  background: #322028;
+  border-color: #5a3338;
+}
+.console-shell[data-theme="dark"] .asset-upload-file {
+  color: #c8ceff;
+  background: #252c45;
+}
+.console-shell[data-theme="dark"] .asset-upload-dialog,
+.console-shell[data-theme="dark"] .creation-viewer__media.is-audio {
+  color: #e8edf5;
+  background: #171d26;
+}
+.console-shell[data-theme="dark"] .creation-audio-viewer strong { color: #eef2f8; }
+.console-shell[data-theme="dark"] .creation-reference-slots.is-frames .frame-bridge {
+  color: #aab4c1;
+  filter: none;
+}
+.console-shell[data-theme="dark"] .brand__copy small,
+.console-shell[data-theme="dark"] .account-trigger small {
+  color: #b8c1cf;
+}
+
 /* Fast create */
 .create-layout { --create-text: 13px; --create-small: 11px; --create-control: 12px; width: 100%; min-width: 0; height: 100%; display: grid; grid-template-columns: 220px minmax(0, 1fr); }
 .session-sidebar { background: #fbfcfd; border-right: 1px solid var(--line); padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; }
