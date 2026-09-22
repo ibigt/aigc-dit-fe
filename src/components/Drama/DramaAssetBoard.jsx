@@ -89,14 +89,7 @@ function stateLabel(tag) {
 }
 
 function identityOf(asset) {
-  if (!asset) return "";
-  const invariants = asset.identityInvariants?.trim();
-  if (invariants) return invariants;
-  const description = asset.description?.trim();
-  const prompt = promptOf(asset);
-  if (description && description !== prompt) return description;
-  const tag = stateLabel(asset.stateTag);
-  return [asset.type, tag, statusLabel(asset.status)].filter(Boolean).join(" · ");
+  return asset?.identityInvariants?.trim() || "";
 }
 
 function cardMeta(asset) {
@@ -205,10 +198,13 @@ function SubjectInspector({
   summaryDraft,
   generating,
   busy,
+  summaryChanged,
+  summarySaving,
   onNameChange,
   onNameBlur,
   onSummaryChange,
   onSummaryBlur,
+  onSummarySave,
   onPromptChange,
   onPromptSave,
   promptChanged,
@@ -305,17 +301,27 @@ function SubjectInspector({
               </section>
             )}
 
-            <label className="youxi-field youxi-field--summary">
-              <span>设定摘要</span>
-              <textarea
-                rows={3}
-                maxLength={512}
-                value={summaryDraft}
-                onChange={onSummaryChange}
-                onBlur={onSummaryBlur}
-                placeholder={`${type}身份、外形或用途，入梦/换装须独立成条`}
-              />
-            </label>
+            <div className="youxi-prompt-block">
+              <label className="youxi-field youxi-field--summary">
+                <span>设定摘要</span>
+                <textarea
+                  rows={3}
+                  maxLength={512}
+                  value={summaryDraft}
+                  onChange={onSummaryChange}
+                  onBlur={onSummaryBlur}
+                  placeholder={`${type}身份、外形或用途，入梦/换装须独立成条`}
+                />
+              </label>
+              <button
+                className={`button youxi-prompt-save ${summaryChanged ? "button--primary" : ""}`}
+                type="button"
+                disabled={!summaryChanged || generating || busy || summarySaving}
+                onClick={onSummarySave}
+              >
+                <Save size={14} /> {summarySaving ? "保存中…" : "保存摘要"}
+              </button>
+            </div>
 
             <div className="youxi-field youxi-resolution-field">
               <span>分辨率</span>
@@ -394,6 +400,7 @@ export function DramaAssetBoard({ series, episode }) {
   const [voiceLibraryOpen, setVoiceLibraryOpen] = useState(false);
   const [voiceTarget, setVoiceTarget] = useState(null);
   const [promptDirty, setPromptDirty] = useState(false);
+  const [summaryDirty, setSummaryDirty] = useState(false);
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
   const [preview, setPreview] = useState(null);
@@ -458,6 +465,7 @@ export function DramaAssetBoard({ series, episode }) {
 
   useEffect(() => {
     setPromptDirty(false);
+    setSummaryDirty(false);
     setNameDraft(selected?.name || "");
     setSummaryDraft(identityOf(selected));
     setPromptDraft(promptOf(selected));
@@ -467,14 +475,18 @@ export function DramaAssetBoard({ series, episode }) {
   useEffect(() => {
     if (!selected || promptDirty) return;
     setPromptDraft(promptOf(selected));
-    setSummaryDraft(identityOf(selected));
   }, [selected?.imagePrompt, selected?.identityInvariants, selected?.description, promptDirty]);
 
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ["drama-assets", episodeId] });
-    queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
-    queryClient.invalidateQueries({ queryKey: ["drama-storyboard", episodeId] });
-  };
+  useEffect(() => {
+    if (summaryDirty) return;
+    setSummaryDraft(identityOf(selected));
+  }, [selected?.id, selected?.identityInvariants, summaryDirty]);
+
+  const invalidate = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["drama-assets", episodeId] }),
+    queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] }),
+    queryClient.invalidateQueries({ queryKey: ["drama-storyboard", episodeId] }),
+  ]);
 
   const markBusy = (id, action, on) => {
     setBusy((current) => {
@@ -647,6 +659,19 @@ export function DramaAssetBoard({ series, episode }) {
   const selectedBusy = isBusy(selected?.id, "lock") || isBusy(selected?.id, "save") || isBusy(selected?.id, "upload");
   const selectedGenerating = Boolean(selected?.generating) || isBusy(selected?.id, "generate");
   const promptChanged = Boolean(selected) && promptDraft.trim() !== promptOf(selected).trim();
+  const summaryChanged = Boolean(selected) && summaryDraft.trim() !== identityOf(selected);
+
+  async function saveSummary() {
+    if (!selected || !summaryChanged) return;
+    markBusy(selected.id, "summary", true);
+    try {
+      await saveFields(selected);
+      await invalidate();
+      setSummaryDirty(false);
+    } finally {
+      markBusy(selected.id, "summary", false);
+    }
+  }
 
   async function savePrompt() {
     if (!selected || !promptChanged) return;
@@ -863,16 +888,28 @@ export function DramaAssetBoard({ series, episode }) {
         busy={selectedBusy}
         promptChanged={promptChanged}
         promptSaving={isBusy(selected?.id, "save")}
+        summaryChanged={summaryChanged}
+        summarySaving={isBusy(selected?.id, "summary")}
         onNameChange={(event) => setNameDraft(event.target.value)}
         onNameBlur={() => {
           if (!selected || nameDraft.trim() === selected.name) return;
           saveFields(selected, { name: nameDraft }).then(invalidate).catch((err) => showToast(err.message));
         }}
-        onSummaryChange={(event) => setSummaryDraft(event.target.value)}
-        onSummaryBlur={() => {
-          if (!selected || summaryDraft.trim() === identityOf(selected)) return;
-          saveFields(selected).then(invalidate).catch((err) => showToast(err.message));
+        onSummaryChange={(event) => {
+          setSummaryDirty(true);
+          setSummaryDraft(event.target.value);
         }}
+        onSummaryBlur={() => {
+          if (!selected || summaryDraft.trim() === identityOf(selected)) {
+            setSummaryDirty(false);
+            return;
+          }
+          saveFields(selected)
+            .then(() => invalidate())
+            .then(() => setSummaryDirty(false))
+            .catch((err) => showToast(err.message));
+        }}
+        onSummarySave={() => saveSummary().catch((err) => showToast(err.message))}
         onPromptChange={(event) => {
           setPromptDirty(true);
           setPromptDraft(event.target.value);

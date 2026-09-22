@@ -159,36 +159,20 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
         </div>
       </aside>
       <section className="youxi-film-main">
-        {(film?.stale || (incomplete && readyCount > 0) || error || showAssemble) && (
-          <div className="youxi-film-toolbar">
-            {(film?.stale || (incomplete && readyCount > 0) || error || (showAssemble && selectedReadyCount === 0)) && (
-              <div className="youxi-film-banners">
-                {film?.stale && (
-                  <p className="youxi-film-banner youxi-film-banner--warn">分镜视频已更新，请重新拼接</p>
-                )}
-                {incomplete && readyCount > 0 && (
-                  <p className="youxi-film-banner">
-                    缺镜 {film.missingShotIndexes.join("、")}，未出片镜头不可入片
-                  </p>
-                )}
-                {showAssemble && selectedReadyCount === 0 && (
-                  <p className="youxi-film-banner">请至少勾选 1 个已出片镜头再拼接</p>
-                )}
-                {error && <p className="drama-form-error youxi-story-error">{error}</p>}
-              </div>
+        {(film?.stale || (incomplete && readyCount > 0) || error || (showAssemble && selectedReadyCount === 0)) && (
+          <div className="youxi-film-banners">
+            {film?.stale && (
+              <p className="youxi-film-banner youxi-film-banner--warn">分镜视频已更新，请重新拼接</p>
             )}
-            {showAssemble && (
-              <div className="youxi-film-actions">
-                <button
-                  className="button button--primary"
-                  type="button"
-                  disabled={!canAssemble}
-                  onClick={() => assembleMutation.mutate(readyIds.filter((id) => selectedIds.has(id)))}
-                >
-                  <Scissors size={14} /> {assembleMutation.isPending ? "拼接中…" : filmSrc ? (film?.stale ? "重新拼接" : "重新拼接成片") : "拼接成片"}
-                </button>
-              </div>
+            {incomplete && readyCount > 0 && (
+              <p className="youxi-film-banner">
+                缺镜 {film.missingShotIndexes.join("、")}，未出片镜头不可入片
+              </p>
             )}
+            {showAssemble && selectedReadyCount === 0 && (
+              <p className="youxi-film-banner">请至少勾选 1 个已出片镜头再拼接</p>
+            )}
+            {error && <p className="drama-form-error youxi-story-error">{error}</p>}
           </div>
         )}
         <div className="youxi-final-player">
@@ -227,6 +211,18 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
             </div>
           )}
         </div>
+        {showAssemble && (
+          <div className="youxi-film-actions">
+            <button
+              className="button button--primary"
+              type="button"
+              disabled={!canAssemble}
+              onClick={() => assembleMutation.mutate(readyIds.filter((id) => selectedIds.has(id)))}
+            >
+              <Scissors size={14} /> {assembleMutation.isPending ? "拼接中…" : filmSrc ? (film?.stale ? "重新拼接" : "重新拼接成片") : "拼接成片"}
+            </button>
+          </div>
+        )}
       </section>
     </div>
   );

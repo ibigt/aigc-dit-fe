@@ -20,7 +20,7 @@ import {
   generateDramaShotOpeningStill,
   attachDramaShotPrevTail,
 } from "../../api/drama.js";
-import { authenticatedApiUrl, mediaUrl } from "../../lib/media.js";
+import { mediaUrl } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 import { isRetryableRequestError } from "../../api/client.js";
 
@@ -1122,9 +1122,11 @@ export function DramaStoryboard({ series, episode }) {
     || (actionError ? { message: actionError } : null)
     || (persistedDraftError ? { message: persistedDraftError } : null);
   const videoSrc = mediaUrl(selected?.videoUrl || selected?.videoKey);
-  const captionSrc = videoSrc && selected?.id && selected?.dialogue?.trim()
-    ? authenticatedApiUrl(`/api/drama/shots/${selected.id}/captions.vtt?v=${encodeURIComponent(selected.updatedAt || "")}`)
-    : "";
+  // 暂关分镜预览字幕轨道，避免播放器自动叠中文字幕。
+  // const captionSrc = videoSrc && selected?.id && selected?.dialogue?.trim()
+  //   ? authenticatedApiUrl(`/api/drama/shots/${selected.id}/captions.vtt?v=${encodeURIComponent(selected.updatedAt || "")}`)
+  //   : "";
+  const captionSrc = "";
 
   return (
     <section className="youxi-storyboard-layout youxi-storyboard-layout--board">
