@@ -127,6 +127,22 @@ export function lockDramaAsset(assetId) {
   return api.post(`/drama/assets/${assetId}/lock`);
 }
 
+export function fetchDramaAssetGenerations(assetId) {
+  return api.get(`/drama/assets/${assetId}/generations`);
+}
+
+export function selectDramaAssetGeneration(assetId, generationId) {
+  return api.post(`/drama/assets/${assetId}/generations/${generationId}/select`);
+}
+
+export function deleteDramaAssetGeneration(assetId, generationId) {
+  return api.delete(`/drama/assets/${assetId}/generations/${generationId}`);
+}
+
+export function importDramaAssetGeneration(assetId, generationId) {
+  return api.post(`/drama/assets/${assetId}/generations/${generationId}/import-library`);
+}
+
 export function fetchDramaStoryboard(episodeId) {
   return api.get(`/drama/episodes/${episodeId}/storyboard`);
 }
@@ -198,6 +214,18 @@ export function attachDramaShotPrevTail(shotId) {
 
 export function fetchDramaShotGenerateTask(shotId, taskId) {
   return api.get(`/drama/shots/${shotId}/generate/tasks/${taskId}`);
+}
+
+export function fetchDramaShotGenerations(shotId) {
+  return api.get(`/drama/shots/${shotId}/generations`);
+}
+
+export function selectDramaShotGeneration(shotId, generationId) {
+  return api.post(`/drama/shots/${shotId}/generations/${generationId}/select`);
+}
+
+export function deleteDramaShotGeneration(shotId, generationId) {
+  return api.delete(`/drama/shots/${shotId}/generations/${generationId}`);
 }
 
 /** 拼接可能走重编码，超时需覆盖后端 ffmpeg encode 上限。 */

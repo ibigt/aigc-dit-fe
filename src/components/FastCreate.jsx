@@ -6,6 +6,7 @@ import { createSession, deleteSession, fetchSession, fetchSessions, saveCreation
 import { IMAGE_POLL_TIMEOUT_MS, pollGenerateTask, submitGenerate, VIDEO_POLL_TIMEOUT_MS } from "../api/generate.js";
 import { friendlyGenerateError, FRAMES_EMPTY_PROMPT_LABEL, materialToAsset, promptForResult, tasksToMessages, taskToResultMessage } from "../lib/createFlow.js";
 import { formatDateTime, mediaUrl, storageKeyOf } from "../lib/media.js";
+import { ConfirmDialog } from "./ConfirmDialog.jsx";
 
 const videoRatios = ["自动", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
 const imageRatios = ["21:9", "16:9", "5:4", "4:3", "3:2", "1:1", "2:3", "3:4", "4:5", "9:16"];
@@ -519,6 +520,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const [prompt, setPrompt] = useState("");
   const [generatingSessionIds, setGeneratingSessionIds] = useState([]);
   const [submitError, setSubmitError] = useState("");
+  const [deleteSessionTarget, setDeleteSessionTarget] = useState(null);
   const [savedCreationIds, setSavedCreationIds] = useState([]);
   const [savingId, setSavingId] = useState(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -758,20 +760,24 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     return id != null && id !== DEFAULT_SESSION_ID && /^\d+$/.test(String(id));
   }
 
-  async function deleteSessionLocal(session) {
+  function requestDeleteSession(session) {
     if (generatingSessionRef.current.has(String(session.id)) || sessionHasPending(session)) {
       setSubmitError("请等待当前生成完成后再删除该会话");
       return;
     }
-    if (!window.confirm(`确定删除会话「${session.title || "未命名创作"}」吗？侧栏对话记录会消失，已生成的作品仍保留在「我的创作」中。`)) {
-      return;
-    }
+    setDeleteSessionTarget(session);
+  }
+
+  async function confirmDeleteSession() {
+    const session = deleteSessionTarget;
+    if (!session) return;
     setSubmitError("");
     try {
       if (persistedSessionId(session.id)) {
         await deleteSession(session.id);
       }
       const remaining = sessions.filter((item) => item.id !== session.id);
+      setDeleteSessionTarget(null);
       if (!remaining.length) {
         const created = await createSession({ title: "未命名创作", category: generationType });
         const next = { id: created.id, title: created.title || "未命名创作", generationType, updated: "刚刚", messages: [] };
@@ -1095,7 +1101,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
               </button>
               {sessionMenuId === session.id && (
                 <div className="session-menu" role="menu">
-                  <button type="button" role="menuitem" className="danger" onClick={() => { setSessionMenuId(null); deleteSessionLocal(session); }}>
+                  <button type="button" role="menuitem" className="danger" onClick={() => { setSessionMenuId(null); requestDeleteSession(session); }}>
                     <Trash2 size={14} /> 删除
                   </button>
                 </div>
@@ -1198,6 +1204,17 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
           </section>
         </div>
       )}
+      <ConfirmDialog
+        open={Boolean(deleteSessionTarget)}
+        eyebrow="快速创作"
+        title="删除会话？"
+        message={deleteSessionTarget
+          ? `确定删除会话「${deleteSessionTarget.title || "未命名创作"}」吗？侧栏对话记录会消失，已生成的作品仍保留在「我的创作」中。`
+          : ""}
+        confirmLabel="删除"
+        onClose={() => setDeleteSessionTarget(null)}
+        onConfirm={() => { confirmDeleteSession().catch(() => {}); }}
+      />
     </div>
   );
 }

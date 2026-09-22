@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteAsset, fetchAssets, uploadAsset } from "../api/assets.js";
 import { MediaCover } from "../lib/MediaCover.jsx";
 import { formatDateTime, mediaUrl } from "../lib/media.js";
+import { ConfirmDialog } from "./ConfirmDialog.jsx";
 
 export function AssetLibrary() {
   const queryClient = useQueryClient();
@@ -11,6 +12,7 @@ export function AssetLibrary() {
   const [view, setView] = useState("grid");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [audioQueue, setAudioQueue] = useState([]);
   const [audioName, setAudioName] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -77,8 +79,7 @@ export function AssetLibrary() {
   }
 
   function confirmDelete(item) {
-    if (!window.confirm(`确定删除素材“${item.title || "未命名"}”吗？删除后不可恢复。`)) return;
-    deleteMutation.mutate(item.id);
+    setDeleteTarget(item);
   }
 
   return (
@@ -161,6 +162,24 @@ export function AssetLibrary() {
           </section>
         </div>
       )}
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        eyebrow="素材库"
+        title="删除素材？"
+        message={deleteTarget
+          ? `确定删除素材「${deleteTarget.title || "未命名"}」吗？删除后不可恢复。`
+          : ""}
+        confirmLabel="删除"
+        busy={deleteMutation.isPending}
+        busyLabel="删除中…"
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          deleteMutation.mutate(deleteTarget.id, {
+            onSuccess: () => setDeleteTarget(null),
+          });
+        }}
+      />
     </div>
   );
 }

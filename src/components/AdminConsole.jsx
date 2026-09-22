@@ -30,6 +30,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import {
   cancelAdminQueueTask,
   changeAdminModelEnabled,
@@ -521,6 +522,7 @@ function UserDialog({ user, onClose, onSave, saving }) {
 function UsersPage() {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
+  const [deleteUserTarget, setDeleteUserTarget] = useState(null);
   const [editing, setEditing] = useState(undefined);
   const [notice, setNotice] = useState("");
   const usersQuery = useQuery({
@@ -605,13 +607,28 @@ function UsersPage() {
                 <button title="编辑" aria-label={`编辑用户：${user.name}`} onClick={() => setEditing(user)}><Pencil size={14} /></button>
                 <button title="重置密码" aria-label={`重置密码：${user.name}`} onClick={() => resetMutation.mutate(user)}><KeyRound size={14} /></button>
                 <button title={user.status === "ENABLED" ? "禁用" : "启用"} aria-label={`${user.status === "ENABLED" ? "禁用" : "启用"}用户：${user.name}`} onClick={() => statusMutation.mutate(user)}>{user.status === "ENABLED" ? <Ban size={14} /> : <Play size={14} />}</button>
-                <button className="danger" title="删除" aria-label={`删除用户：${user.name}`} onClick={() => { if (window.confirm(`确定删除用户“${user.name}”吗？`)) deleteMutation.mutate(user); }}><Trash2 size={14} /></button>
+                <button className="danger" title="删除" aria-label={`删除用户：${user.name}`} onClick={() => setDeleteUserTarget(user)}><Trash2 size={14} /></button>
               </div>
             </td>
           </tr>)}</tbody>
         </table>
       </div>
     </div>
+    {deleteUserTarget && <ConfirmDialog
+      open
+      eyebrow="用户管理"
+      title="删除用户？"
+      message={`确定删除用户「${deleteUserTarget.name}」吗？`}
+      confirmLabel="删除"
+      busy={deleteMutation.isPending}
+      busyLabel="删除中…"
+      onClose={() => setDeleteUserTarget(null)}
+      onConfirm={() => {
+        deleteMutation.mutate(deleteUserTarget, {
+          onSuccess: () => setDeleteUserTarget(null),
+        });
+      }}
+    />}
     {editing !== undefined && <UserDialog user={editing} saving={saveMutation.isPending} onClose={() => setEditing(undefined)} onSave={(draft) => saveMutation.mutate(draft)} />}
   </div>;
 }
@@ -915,6 +932,7 @@ function toModelPayload(draft) {
 function ModelsPage() {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
+  const [deleteModelTarget, setDeleteModelTarget] = useState(null);
   const [provider, setProvider] = useState("全部来源");
   const [category, setCategory] = useState("all");
   const [view, setView] = useState("cards");
@@ -975,8 +993,23 @@ function ModelsPage() {
     <div className="model-category-tabs" role="tablist" aria-label="模型类型">{categoryTabs.map((tab) => <button role="tab" aria-selected={category === tab.id} className={category === tab.id ? "active" : ""} key={tab.id} onClick={() => setCategory(tab.id)}>{tab.label}<span>{tab.id === "all" ? modelItems.length : modelItems.filter((item) => item.category === tab.id).length}</span></button>)}</div>
     <div className="model-summary"><span><Server size={17} /><b>{modelItems.filter((item) => item.provider === "ComfyUI").length}</b> ComfyUI</span><span><CloudCog size={17} /><b>{modelItems.filter((item) => item.provider === "RunningHub").length}</b> RunningHub</span><span><Globe size={17} /><b>{modelItems.filter((item) => String(item.provider || "").startsWith("官方API")).length}</b> 官方API</span><span><Cpu size={17} /><b>{modelItems.filter((item) => item.provider === "自定义配置" || item.provider === "手动配置").length}</b> 自定义配置</span><em>已启用 {modelItems.filter((item) => item.enabled !== false).length} / {modelItems.length}</em></div>
     <div className="model-toolbar"><label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索模型名称或标识" /></label><select aria-label="筛选接入来源" value={provider} onChange={(event) => setProvider(event.target.value)}>{providerOptions.map((item) => <option key={item}>{item}</option>)}</select><div className="view-switch" role="group" aria-label="视图模式"><button className={view === "cards" ? "active" : ""} aria-label="卡片模式" onClick={() => setView("cards")}><Grid2X2 size={15} /></button><button className={view === "list" ? "active" : ""} aria-label="列表模式" onClick={() => setView("list")}><List size={15} /></button></div></div>
-    {view === "cards" ? <div className="model-card-grid">{visible.map((model) => <ModelCard key={model.id} model={model} onToggle={(enabled) => toggleMutation.mutate({ id: model.id, enabled })} onEdit={() => setEditing({ ...model, apiKey: "" })} onRemove={() => { if (window.confirm(`确定删除模型“${model.name}”吗？`)) removeMutation.mutate(model); }} />)}</div> : <div className="admin-table-card model-table"><div className="admin-table-scroll"><table><thead><tr><th>模型</th><th>类型</th><th>接入来源</th><th>语音能力</th><th>售价</th><th>成本</th><th>服务状态</th><th>创作端可用</th><th>操作</th></tr></thead><tbody>{visible.map((model) => <tr key={model.id}><td><span className="table-model-logo"><img src={modelLogoSrc(model)} alt="" /></span><span><strong>{model.name}</strong><small>{model.modelKey}</small></span></td><td><span className="category-chip">{categoryLabels[model.category]}</span></td><td>{model.provider}</td><td>{audioModelLabel(model)}</td><td><PriceCell title="售价" pricing={model.pricing} side="sale" /></td><td><PriceCell title="成本" pricing={model.pricing} side="cost" /></td><td><span className="service-ok"><i />{model.hasApiKey ? "密钥已配置" : "未配置密钥"}</span></td><td><label className="toggle-switch"><input aria-label={`${model.name} 创作端可用`} type="checkbox" checked={model.enabled !== false} onChange={(event) => toggleMutation.mutate({ id: model.id, enabled: event.target.checked })} /><span /></label></td><td><div className="table-actions"><button aria-label={`编辑模型：${model.name}`} onClick={() => setEditing({ ...model, apiKey: "" })}><Pencil size={14} /></button><button className="danger" aria-label={`删除模型：${model.name}`} onClick={() => { if (window.confirm(`确定删除模型“${model.name}”吗？`)) removeMutation.mutate(model); }}><Trash2 size={14} /></button></div></td></tr>)}</tbody></table></div></div>}
+    {view === "cards" ? <div className="model-card-grid">{visible.map((model) => <ModelCard key={model.id} model={model} onToggle={(enabled) => toggleMutation.mutate({ id: model.id, enabled })} onEdit={() => setEditing({ ...model, apiKey: "" })} onRemove={() => setDeleteModelTarget(model)} />)}</div> : <div className="admin-table-card model-table"><div className="admin-table-scroll"><table><thead><tr><th>模型</th><th>类型</th><th>接入来源</th><th>语音能力</th><th>售价</th><th>成本</th><th>服务状态</th><th>创作端可用</th><th>操作</th></tr></thead><tbody>{visible.map((model) => <tr key={model.id}><td><span className="table-model-logo"><img src={modelLogoSrc(model)} alt="" /></span><span><strong>{model.name}</strong><small>{model.modelKey}</small></span></td><td><span className="category-chip">{categoryLabels[model.category]}</span></td><td>{model.provider}</td><td>{audioModelLabel(model)}</td><td><PriceCell title="售价" pricing={model.pricing} side="sale" /></td><td><PriceCell title="成本" pricing={model.pricing} side="cost" /></td><td><span className="service-ok"><i />{model.hasApiKey ? "密钥已配置" : "未配置密钥"}</span></td><td><label className="toggle-switch"><input aria-label={`${model.name} 创作端可用`} type="checkbox" checked={model.enabled !== false} onChange={(event) => toggleMutation.mutate({ id: model.id, enabled: event.target.checked })} /><span /></label></td><td><div className="table-actions"><button aria-label={`编辑模型：${model.name}`} onClick={() => setEditing({ ...model, apiKey: "" })}><Pencil size={14} /></button><button className="danger" aria-label={`删除模型：${model.name}`} onClick={() => { setDeleteModelTarget(model); }}><Trash2 size={14} /></button></div></td></tr>)}</tbody></table></div></div>}
     {!visible.length && <div className="admin-empty"><Bot size={22} /><strong>没有匹配的模型</strong><span>接入模型或调整类型、来源、关键词后重试。</span></div>}
+    {deleteModelTarget && <ConfirmDialog
+      open
+      eyebrow="模型管理"
+      title="删除模型？"
+      message={`确定删除模型「${deleteModelTarget.name}」吗？`}
+      confirmLabel="删除"
+      busy={removeMutation.isPending}
+      busyLabel="删除中…"
+      onClose={() => setDeleteModelTarget(null)}
+      onConfirm={() => {
+        removeMutation.mutate(deleteModelTarget, {
+          onSuccess: () => setDeleteModelTarget(null),
+        });
+      }}
+    />}
     {editing !== undefined && <ModelDialog model={editing} saving={saveMutation.isPending} onClose={() => setEditing(undefined)} onSave={(draft) => saveMutation.mutate(draft)} />}
   </div>;
 }

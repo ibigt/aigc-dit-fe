@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteCreation, fetchCreations } from "../api/creations.js";
 import { MediaCover } from "../lib/MediaCover.jsx";
 import { formatDateTime, mediaUrl } from "../lib/media.js";
+import { ConfirmDialog } from "./ConfirmDialog.jsx";
 
 export function MyCreations() {
   const queryClient = useQueryClient();
@@ -11,6 +12,7 @@ export function MyCreations() {
   const [query, setQuery] = useState("");
   const [view, setView] = useState("grid");
   const [selected, setSelected] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const creationsQuery = useQuery({
     queryKey: ["creations", filter, query],
     queryFn: () => fetchCreations({ category: filter === "all" ? undefined : filter, q: query || undefined }),
@@ -34,8 +36,7 @@ export function MyCreations() {
   })), [creationsQuery.data]);
 
   function confirmDelete(item) {
-    if (!window.confirm(`确定删除作品“${item.title || "未命名"}”吗？删除后不可恢复。`)) return;
-    deleteMutation.mutate(item.id);
+    setDeleteTarget(item);
   }
 
   return (
@@ -107,6 +108,24 @@ export function MyCreations() {
           </section>
         </div>
       )}
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        eyebrow="我的创作"
+        title="删除作品？"
+        message={deleteTarget
+          ? `确定删除作品「${deleteTarget.title || "未命名"}」吗？删除后不可恢复。`
+          : ""}
+        confirmLabel="删除"
+        busy={deleteMutation.isPending}
+        busyLabel="删除中…"
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          deleteMutation.mutate(deleteTarget.id, {
+            onSuccess: () => setDeleteTarget(null),
+          });
+        }}
+      />
     </div>
   );
 }

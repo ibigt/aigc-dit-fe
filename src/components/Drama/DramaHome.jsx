@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { createDramaSeries, deleteDramaSeries, fetchDramaSeries, fetchDramaTextModels, updateDramaSeries } from "../../api/drama.js";
 import { formatDateTime, mediaUrl } from "../../lib/media.js";
+import { ConfirmDialog } from "../ConfirmDialog.jsx";
 
 const emptyForm = {
   name: "",
@@ -36,6 +37,7 @@ export function DramaHome() {
   const [menu, setMenu] = useState(null);
   const [renameTarget, setRenameTarget] = useState(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const listQuery = useQuery({
     queryKey: ["drama-series"],
     queryFn: fetchDramaSeries,
@@ -152,9 +154,7 @@ export function DramaHome() {
                       disabled={deleteMutation.isPending}
                       onClick={() => {
                         setMenu(null);
-                        if (window.confirm(`确定删除「${item.name}」？剧集、剧本、资产和分镜会一并删除，且不可恢复。`)) {
-                          deleteMutation.mutate(item.id);
-                        }
+                        setDeleteTarget(item);
                       }}
                     >
                       <Trash2 size={15} /> 删除项目
@@ -248,6 +248,24 @@ export function DramaHome() {
           </form>
         </DramaDialog>
       )}
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        eyebrow="短剧"
+        title="删除项目？"
+        message={deleteTarget
+          ? `确定删除「${deleteTarget.name}」？剧集、剧本、资产和分镜会一并删除，且不可恢复。`
+          : ""}
+        confirmLabel="删除"
+        busy={deleteMutation.isPending}
+        busyLabel="删除中…"
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          deleteMutation.mutate(deleteTarget.id, {
+            onSuccess: () => setDeleteTarget(null),
+          });
+        }}
+      />
     </section>
   );
 }

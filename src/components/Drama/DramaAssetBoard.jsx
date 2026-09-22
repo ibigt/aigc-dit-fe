@@ -20,19 +20,25 @@ import {
   bindDramaImageModel,
   createDramaAsset,
   deleteDramaAsset,
+  deleteDramaAssetGeneration,
   extractDramaAssets,
+  fetchDramaAssetGenerations,
   fetchDramaAssets,
   fetchDramaImageModels,
   generateDramaAssetImage,
+  importDramaAssetGeneration,
   lockDramaAsset,
   lockDramaScript,
   pollDramaAssetGenerate,
+  selectDramaAssetGeneration,
   updateDramaAsset,
   uploadDramaAssetImage,
   uploadDramaAssetVoiceReference,
 } from "../../api/drama.js";
 import { mediaUrl } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
+import { ConfirmDialog } from "../ConfirmDialog.jsx";
+import { GenerationHistoryPanel, SwitchFinalModal } from "./GenerationHistoryPanel.jsx";
 
 const TYPES = [
   { id: "角色", label: "角色", Icon: UsersRound },
@@ -217,9 +223,15 @@ function SubjectInspector({
   onVoiceSave,
   onVoiceUploadClick,
   voiceReferenceStatus,
-  onZoom,
+  generations = [],
+  generationsLoading = false,
+  historyBusy = false,
+  onSwitchFinal,
+  onPreviewGeneration,
+  onDeleteGeneration,
+  onImportGeneration,
 }) {
-  const src = mediaUrl(asset?.imageStorageKey || asset?.imageUrl);
+  const locked = asset?.status === "已锁定";
   const voiceDescriptionChanged = (voiceLock || "").trim() !== (asset?.voiceLock || "").trim();
   const effectiveVoiceReferenceStatus = asset?.voiceReferenceUrl && voiceReferenceStatus.state === "ready"
     ? { ...voiceReferenceStatus, state: "success", label: "已绑定参考音频" }
@@ -341,37 +353,24 @@ function SubjectInspector({
 
             {asset.genErrorMessage && <p className="drama-form-error">{asset.genErrorMessage}</p>}
 
-            <section className="youxi-material-block">
-              <header>
-                <strong>资产图</strong>
-                <span>{src ? "点击可放大" : "支持本地上传"}</span>
-              </header>
-              <div>
-                {src && (
-                  <button
-                    className="youxi-media-zoom youxi-asset-thumb"
-                    type="button"
-                    aria-label={`放大${asset.name}资产图`}
-                    onClick={onZoom}
-                  >
-                    <img
-                      key={src}
-                      src={src}
-                      alt={`${asset.name}资产图`}
-                    />
-                  </button>
-                )}
-                <button
-                  className="youxi-upload-tile youxi-upload-tile--local"
-                  type="button"
-                  onClick={onUploadClick}
-                  disabled={generating || busy}
-                >
-                  <Upload size={20} />
-                  <span>{src ? "更换图片" : "本地上传"}</span>
-                </button>
-              </div>
-            </section>
+            {!generationsLoading && (
+              <GenerationHistoryPanel
+                switchLabel="切换最终资产"
+                records={generations}
+                locked={locked}
+                mediaKind="image"
+                showImport
+                compactActions
+                busy={historyBusy || generating || busy}
+                onSwitchClick={onSwitchFinal}
+                onPreview={onPreviewGeneration}
+                onDelete={onDeleteGeneration}
+                onImport={onImportGeneration}
+                onUploadClick={onUploadClick}
+                uploadLabel="上传"
+              />
+            )}
+
             <p className="youxi-inspector-hint">在卡片右上角生成或锁定。锁定且有图后，才能作为分镜参考。改提示词或重生成会重新待确认。</p>
           </>
         ) : (
@@ -404,6 +403,8 @@ export function DramaAssetBoard({ series, episode }) {
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
   const [preview, setPreview] = useState(null);
+  const [switchFinalOpen, setSwitchFinalOpen] = useState(false);
+  const [deleteGenerationTarget, setDeleteGenerationTarget] = useState(null);
   const toastTimer = useRef(0);
 
   function showToast(message) {
@@ -458,6 +459,13 @@ export function DramaAssetBoard({ series, episode }) {
 
   const selected = filtered.find((item) => item.id === selectedId) || filtered[0] || null;
 
+  const generationsQuery = useQuery({
+    queryKey: ["drama-asset-generations", selected?.id],
+    queryFn: () => fetchDramaAssetGenerations(selected.id),
+    enabled: Boolean(selected?.id),
+  });
+  const generations = generationsQuery.data || [];
+
   useEffect(() => {
     if (selected && selected.id !== selectedId) setSelectedId(selected.id);
     if (!filtered.length && selectedId != null) setSelectedId(null);
@@ -484,6 +492,14 @@ export function DramaAssetBoard({ series, episode }) {
 
   const invalidate = () => Promise.all([
     queryClient.invalidateQueries({ queryKey: ["drama-assets", episodeId] }),
+    queryClient.invalidateQueries({ queryKey: ["drama-asset-generations", selected?.id] }),
+    queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] }),
+    queryClient.invalidateQueries({ queryKey: ["drama-storyboard", episodeId] }),
+  ]);
+
+  const invalidateAssetHistory = (assetId) => Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["drama-assets", episodeId] }),
+    queryClient.invalidateQueries({ queryKey: ["drama-asset-generations", assetId] }),
     queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] }),
     queryClient.invalidateQueries({ queryKey: ["drama-storyboard", episodeId] }),
   ]);
@@ -604,6 +620,54 @@ export function DramaAssetBoard({ series, episode }) {
       invalidate();
     } finally {
       markBusy(selected.id, "upload", false);
+    }
+  }
+
+  async function selectGeneration(record) {
+    if (!selected?.id || !record?.id) return;
+    markBusy(selected.id, "history", true);
+    try {
+      await selectDramaAssetGeneration(selected.id, record.id);
+      setSwitchFinalOpen(false);
+      await invalidateAssetHistory(selected.id);
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      markBusy(selected.id, "history", false);
+    }
+  }
+
+  function requestDeleteGeneration(record) {
+    if (!selected?.id || !record?.id) return;
+    setDeleteGenerationTarget(record);
+  }
+
+  async function confirmDeleteGeneration() {
+    const record = deleteGenerationTarget;
+    if (!selected?.id || !record?.id) return;
+    markBusy(selected.id, "history", true);
+    try {
+      await deleteDramaAssetGeneration(selected.id, record.id);
+      setDeleteGenerationTarget(null);
+      await invalidateAssetHistory(selected.id);
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      markBusy(selected.id, "history", false);
+    }
+  }
+
+  async function importGeneration(record) {
+    if (!selected?.id || !record?.id || record.imported || record.libraryAssetId) return;
+    markBusy(selected.id, "history", true);
+    try {
+      await importDramaAssetGeneration(selected.id, record.id);
+      await invalidateAssetHistory(selected.id);
+      showToast(`「${record.label}」已导入素材库`);
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      markBusy(selected.id, "history", false);
     }
   }
 
@@ -927,10 +991,44 @@ export function DramaAssetBoard({ series, episode }) {
           setVoiceLibraryOpen(true);
         }}
         voiceReferenceStatus={voiceReferenceStatus}
-        onZoom={() => selected && setPreview({
-          src: mediaUrl(selected.imageStorageKey || selected.imageUrl),
-          title: selected.name,
+        generations={generations}
+        generationsLoading={generationsQuery.isLoading}
+        historyBusy={isBusy(selected?.id, "history")}
+        onSwitchFinal={() => {
+          if (selected?.status === "已锁定") return;
+          setSwitchFinalOpen(true);
+        }}
+        onPreviewGeneration={(record) => setPreview({
+          src: mediaUrl(record.url || record.storageKey),
+          title: `${selected?.name || ""} · ${record.label}`,
         })}
+        onDeleteGeneration={requestDeleteGeneration}
+        onImportGeneration={importGeneration}
+      />
+
+      <SwitchFinalModal
+        open={switchFinalOpen}
+        title="切换最终资产"
+        records={generations}
+        locked={selected?.status === "已锁定"}
+        mediaKind="image"
+        busy={isBusy(selected?.id, "history")}
+        onClose={() => setSwitchFinalOpen(false)}
+        onConfirm={selectGeneration}
+      />
+
+      <ConfirmDialog
+        open={Boolean(deleteGenerationTarget)}
+        eyebrow="生成记录"
+        title="删除生成记录？"
+        message={deleteGenerationTarget
+          ? `确定删除「${deleteGenerationTarget.label}」？此操作不可撤销。`
+          : ""}
+        confirmLabel="删除"
+        busy={isBusy(selected?.id, "history")}
+        busyLabel="删除中…"
+        onClose={() => setDeleteGenerationTarget(null)}
+        onConfirm={confirmDeleteGeneration}
       />
 
       <input

@@ -4,6 +4,7 @@ import { Lock, Plus, Save, Sparkles, Trash2 } from "lucide-react";
 import { analyzeDramaScript, bindDramaTextModel, fetchDramaTextModels, fetchDramaVideoModels, lockDramaScript, updateDramaSeries } from "../../api/drama.js";
 import { DramaStylePicker } from "./DramaStylePicker.jsx";
 import { DEFAULT_DRAMA_STYLE_KEY } from "./dramaStyles.js";
+import { ConfirmDialog } from "../ConfirmDialog.jsx";
 
 const ASPECT_RATIOS = [
   { id: "21:9", label: "21:9" },
@@ -91,6 +92,7 @@ export function DramaScriptPanel({
   const [draft, setDraft] = useState(() => settingsDraftFrom(series));
   const [savedDraft, setSavedDraft] = useState(() => settingsDraftFrom(series));
   const [justSaved, setJustSaved] = useState(false);
+  const [deleteEpisodeTarget, setDeleteEpisodeTarget] = useState(null);
   const wasAnalyzing = useRef(false);
 
   useEffect(() => {
@@ -262,11 +264,7 @@ export function DramaScriptPanel({
                   aria-label={`删除${label}`}
                   title={episodes.length <= 1 ? "至少保留一集，无法删除" : "删除章节"}
                   disabled={episodes.length <= 1 || deletingEpisodeId === item.id}
-                  onClick={() => {
-                    if (window.confirm(`删除${label}？该集的资产、分镜与成片会一并删除，且不可恢复。`)) {
-                      onDeleteEpisode?.(item.id);
-                    }
-                  }}
+                  onClick={() => setDeleteEpisodeTarget(item)}
                 >
                   <Trash2 size={14} />
                 </button>
@@ -485,6 +483,24 @@ export function DramaScriptPanel({
           {settings.isError && <p className="drama-form-error">{settings.error.message}</p>}
         </footer>
       </aside>
+      <ConfirmDialog
+        open={Boolean(deleteEpisodeTarget)}
+        eyebrow="剧本"
+        title="删除章节？"
+        message={deleteEpisodeTarget
+          ? `删除第${deleteEpisodeTarget.episodeNumber ?? 1}章？该集的资产、分镜与成片会一并删除，且不可恢复。`
+          : ""}
+        confirmLabel="删除"
+        busy={Boolean(deleteEpisodeTarget && deletingEpisodeId === deleteEpisodeTarget.id)}
+        busyLabel="删除中…"
+        onClose={() => setDeleteEpisodeTarget(null)}
+        onConfirm={() => {
+          if (!deleteEpisodeTarget) return;
+          const id = deleteEpisodeTarget.id;
+          setDeleteEpisodeTarget(null);
+          onDeleteEpisode?.(id);
+        }}
+      />
     </div>
   );
 }

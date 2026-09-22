@@ -10,11 +10,14 @@ import {
   compileDramaStoryboard,
   createDramaShot,
   deleteDramaShot,
+  deleteDramaShotGeneration,
   draftDramaStoryboard,
+  fetchDramaShotGenerations,
   fetchDramaStoryboard,
   fetchDramaVideoModels,
   generateDramaShot,
   pollDramaShotGenerate,
+  selectDramaShotGeneration,
   updateDramaShot,
   uploadDramaShotFirstFrame,
   generateDramaShotOpeningStill,
@@ -23,6 +26,9 @@ import {
 import { mediaUrl } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 import { isRetryableRequestError } from "../../api/client.js";
+import { ConfirmDialog } from "../ConfirmDialog.jsx";
+import { GenerationHistoryPanel, SwitchFinalModal } from "./GenerationHistoryPanel.jsx";
+import { VideoLightbox } from "./VideoLightbox.jsx";
 
 const DURATIONS = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
@@ -226,6 +232,12 @@ function ShotInspector({
   onGenerateStill,
   onUsePrevTail,
   durationOptions,
+  generations = [],
+  generationsLoading = false,
+  historyBusy = false,
+  onSwitchFinal,
+  onPreviewGeneration,
+  onDeleteGeneration,
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [casting, setCasting] = useState(false);
@@ -234,6 +246,7 @@ function ShotInspector({
   const [savingPrompt, setSavingPrompt] = useState(false);
   const promptEditorRef = useRef(null);
   const frozen = generating || readOnly;
+  const locked = selected?.status === "已锁定";
   const serverPrompt = shotPromptText(selected);
   const visiblePrompt = promptTextForDisplay(serverPrompt);
   useEffect(() => {
@@ -611,6 +624,18 @@ function ShotInspector({
         {selected.narrativeGoal && selected.narrativeGoal !== selected.dialogue && (
           <p className="youxi-story-goal">{selected.narrativeGoal}</p>
         )}
+        {!generationsLoading && (
+          <GenerationHistoryPanel
+            switchLabel="切换最终分镜"
+            records={generations}
+            locked={locked}
+            mediaKind="video"
+            busy={historyBusy || frozen}
+            onSwitchClick={onSwitchFinal}
+            onPreview={onPreviewGeneration}
+            onDelete={onDeleteGeneration}
+          />
+        )}
       </div>
       {promptEditorOpen && createPortal(
         <div
@@ -677,7 +702,10 @@ export function DramaStoryboard({ series, episode }) {
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
   const [preview, setPreview] = useState(null);
+  const [videoPreview, setVideoPreview] = useState(null);
+  const [switchFinalOpen, setSwitchFinalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteGenerationTarget, setDeleteGenerationTarget] = useState(null);
   const [draftConfirmOpen, setDraftConfirmOpen] = useState(false);
   const [compileNotice, setCompileNotice] = useState("");
   const wasRecompiling = useRef(false);
@@ -728,6 +756,12 @@ export function DramaStoryboard({ series, episode }) {
   const shots = useMemo(() => chapters.flatMap((item) => item.shots || []), [chapters]);
   const lockedAssets = board?.lockedAssets || [];
   const selected = shots.find((item) => item.id === shotId) || shots[0];
+  const generationsQuery = useQuery({
+    queryKey: ["drama-shot-generations", selected?.id],
+    queryFn: () => fetchDramaShotGenerations(selected.id),
+    enabled: Boolean(selected?.id),
+  });
+  const generations = generationsQuery.data || [];
   const scriptLocked = activeEpisode?.status === "已锁定";
   const canUseTextModel = activeEpisode?.canGenerate !== false;
   const autoDrafting = Boolean(board?.drafting);
@@ -1033,6 +1067,55 @@ export function DramaStoryboard({ series, episode }) {
     }
   }
 
+  async function selectShotGeneration(record) {
+    if (!selected?.id || !record?.id) return;
+    setBusy((current) => ({ ...current, [selected.id]: "history" }));
+    setActionError("");
+    try {
+      const updated = await selectDramaShotGeneration(selected.id, record.id);
+      patchShot(updated);
+      setSwitchFinalOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
+      queryClient.invalidateQueries({ queryKey: ["drama-shot-generations", selected.id] });
+      queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
+    } catch (error) {
+      setActionError(error.message || "切换最终分镜失败");
+    } finally {
+      setBusy((current) => {
+        const next = { ...current };
+        delete next[selected.id];
+        return next;
+      });
+    }
+  }
+
+  function requestDeleteShotGeneration(record) {
+    if (!selected?.id || !record?.id) return;
+    setDeleteGenerationTarget(record);
+  }
+
+  async function confirmDeleteShotGeneration() {
+    const record = deleteGenerationTarget;
+    if (!selected?.id || !record?.id) return;
+    setBusy((current) => ({ ...current, [selected.id]: "history" }));
+    setActionError("");
+    try {
+      await deleteDramaShotGeneration(selected.id, record.id);
+      setDeleteGenerationTarget(null);
+      queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
+      queryClient.invalidateQueries({ queryKey: ["drama-shot-generations", selected.id] });
+      queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
+    } catch (error) {
+      setActionError(error.message || "删除生成记录失败");
+    } finally {
+      setBusy((current) => {
+        const next = { ...current };
+        delete next[selected.id];
+        return next;
+      });
+    }
+  }
+
   async function generate(shot) {
     if (!shot?.id) return;
     setBusy((current) => ({ ...current, [shot.id]: "generate" }));
@@ -1054,10 +1137,12 @@ export function DramaStoryboard({ series, episode }) {
         }
       }
       queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
+      queryClient.invalidateQueries({ queryKey: ["drama-shot-generations", shot.id] });
       queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
       queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
     } catch (error) {
       queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
+      queryClient.invalidateQueries({ queryKey: ["drama-shot-generations", shot.id] });
       if (!isRetryableRequestError(error)) {
         setActionError(error.message || "出片失败");
       }
@@ -1506,82 +1591,66 @@ export function DramaStoryboard({ series, episode }) {
         onGenerateStill={generateStill}
         onUsePrevTail={applyPrevTail}
         durationOptions={durationOptions}
+        generations={generations}
+        generationsLoading={generationsQuery.isLoading}
+        historyBusy={Boolean(selected && busy[selected.id] === "history")}
+        onSwitchFinal={() => {
+          if (selected?.status === "已锁定") return;
+          setSwitchFinalOpen(true);
+        }}
+        onPreviewGeneration={(record) => setVideoPreview({
+          src: mediaUrl(record.videoUrl || record.videoKey),
+          poster: mediaUrl(record.videoPosterUrl || record.videoPosterKey),
+          title: `镜 ${selected?.shotIndex || ""} · ${record.label}`,
+        })}
+        onDeleteGeneration={requestDeleteShotGeneration}
       />
-      {(deleteTarget || draftConfirmOpen) && createPortal(
-        <>
-          {deleteTarget && (
-            <div
-              className="drama-dialog-backdrop"
-              onMouseDown={(event) => {
-                if (event.target === event.currentTarget && !deleteShotMutation.isPending) setDeleteTarget(null);
-              }}
-            >
-              <section className="drama-dialog drama-dialog--confirm" role="dialog" aria-modal="true" aria-labelledby="drama-shot-delete-title">
-                <header>
-                  <div>
-                    <span>分镜</span>
-                    <h2 id="drama-shot-delete-title">删除这一镜？</h2>
-                  </div>
-                  <button type="button" aria-label="关闭" disabled={deleteShotMutation.isPending} onClick={() => setDeleteTarget(null)}>
-                    <X size={18} />
-                  </button>
-                </header>
-                <p className="drama-dialog__copy">
-                  确定删除镜 {deleteTarget.shotIndex}
-                  {deleteTarget.title ? `「${deleteTarget.title}」` : ""}？
-                  剩余分镜会重新编号。若本集已拼接成片，成片将作废并删除，需重新拼接。不可撤销。
-                </p>
-                <footer className="drama-dialog__actions">
-                  <button type="button" disabled={deleteShotMutation.isPending} onClick={() => setDeleteTarget(null)}>取消</button>
-                  <button
-                    type="button"
-                    className="button button--danger"
-                    disabled={deleteShotMutation.isPending}
-                    onClick={confirmRemoveShot}
-                  >
-                    {deleteShotMutation.isPending ? "删除中…" : "删除"}
-                  </button>
-                </footer>
-              </section>
-            </div>
-          )}
-          {draftConfirmOpen && (
-            <div
-              className="drama-dialog-backdrop"
-              onMouseDown={(event) => {
-                if (event.target === event.currentTarget && !draftMutation.isPending) setDraftConfirmOpen(false);
-              }}
-            >
-              <section className="drama-dialog drama-dialog--confirm" role="dialog" aria-modal="true" aria-labelledby="drama-redraft-title">
-                <header>
-                  <div>
-                    <span>分镜</span>
-                    <h2 id="drama-redraft-title">重新拆镜？</h2>
-                  </div>
-                  <button type="button" aria-label="关闭" disabled={draftMutation.isPending} onClick={() => setDraftConfirmOpen(false)}>
-                    <X size={18} />
-                  </button>
-                </header>
-                <p className="drama-dialog__copy">
-                  重新拆镜会删除本集全部 {shots.length} 个已生成分镜（含已出片镜头和手动修改的提示词），然后按当前剧本重新拆分。已拼接成片也会作废。此操作不可撤销。
-                </p>
-                <footer className="drama-dialog__actions">
-                  <button type="button" disabled={draftMutation.isPending} onClick={() => setDraftConfirmOpen(false)}>取消</button>
-                  <button
-                    type="button"
-                    className="button button--danger"
-                    disabled={draftMutation.isPending}
-                    onClick={() => draftMutation.mutate()}
-                  >
-                    确认重新拆镜
-                  </button>
-                </footer>
-              </section>
-            </div>
-          )}
-        </>,
-        document.body
-      )}
+      <SwitchFinalModal
+        open={switchFinalOpen}
+        title="切换最终分镜"
+        records={generations}
+        locked={selected?.status === "已锁定"}
+        mediaKind="video"
+        busy={Boolean(selected && busy[selected.id] === "history")}
+        onClose={() => setSwitchFinalOpen(false)}
+        onConfirm={selectShotGeneration}
+      />
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        eyebrow="分镜"
+        title="删除这一镜？"
+        message={deleteTarget
+          ? `确定删除镜 ${deleteTarget.shotIndex}${deleteTarget.title ? `「${deleteTarget.title}」` : ""}？剩余分镜会重新编号。若本集已拼接成片，成片将作废并删除，需重新拼接。不可撤销。`
+          : ""}
+        confirmLabel="删除"
+        busy={deleteShotMutation.isPending}
+        busyLabel="删除中…"
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={confirmRemoveShot}
+      />
+      <ConfirmDialog
+        open={draftConfirmOpen}
+        eyebrow="分镜"
+        title="重新拆镜？"
+        message={`重新拆镜会删除本集全部 ${shots.length} 个已生成分镜（含已出片镜头和手动修改的提示词），然后按当前剧本重新拆分。已拼接成片也会作废。此操作不可撤销。`}
+        confirmLabel="确认重新拆镜"
+        busy={draftMutation.isPending}
+        onClose={() => setDraftConfirmOpen(false)}
+        onConfirm={() => draftMutation.mutate()}
+      />
+      <ConfirmDialog
+        open={Boolean(deleteGenerationTarget)}
+        eyebrow="生成记录"
+        title="删除生成记录？"
+        message={deleteGenerationTarget
+          ? `确定删除「${deleteGenerationTarget.label}」？此操作不可撤销。`
+          : ""}
+        confirmLabel="删除"
+        busy={Boolean(selected && busy[selected.id] === "history")}
+        busyLabel="删除中…"
+        onClose={() => setDeleteGenerationTarget(null)}
+        onConfirm={confirmDeleteShotGeneration}
+      />
       {compileNotice && (
         <div className="drama-toast" role="status">
           <CircleCheck size={16} />
@@ -1589,6 +1658,7 @@ export function DramaStoryboard({ series, episode }) {
         </div>
       )}
       <ImageLightbox preview={preview} onClose={() => setPreview(null)} />
+      <VideoLightbox preview={videoPreview} onClose={() => setVideoPreview(null)} />
     </section>
   );
 }
