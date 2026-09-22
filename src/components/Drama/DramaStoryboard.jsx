@@ -4,7 +4,6 @@ import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   bindDramaVideoModel,
-  bindDramaVideoGenerateMode,
   clearDramaShotFirstFrame,
   compileDramaShot,
   compileDramaStoryboard,
@@ -707,6 +706,7 @@ export function DramaStoryboard({ series, episode }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteGenerationTarget, setDeleteGenerationTarget] = useState(null);
   const [draftConfirmOpen, setDraftConfirmOpen] = useState(false);
+  const [compileConfirmOpen, setCompileConfirmOpen] = useState(false);
   const [compileNotice, setCompileNotice] = useState("");
   const wasRecompiling = useRef(false);
 
@@ -726,6 +726,7 @@ export function DramaStoryboard({ series, episode }) {
   useEffect(() => {
     setCompileNotice("");
     setDraftConfirmOpen(false);
+    setCompileConfirmOpen(false);
   }, [activeEpisodeId]);
 
   useEffect(() => {
@@ -769,7 +770,6 @@ export function DramaStoryboard({ series, episode }) {
   const selectedVideoModel = videoModels.find((item) => String(item.id) === String(videoModelId));
   const generateMode = shotModeOf(selected);
   const chainPrevTail = shotChainOf(selected);
-  const projectGenerateMode = (board?.videoGenerateMode || series?.videoGenerateMode) === "i2v" ? "i2v" : "r2v";
   const firstInChapter = isFirstInChapter(selected, shots);
   const recompiling = Boolean(board?.promptRecompiling || series?.promptRecompiling);
   const supportsI2v = modelSupportsI2v(selectedVideoModel);
@@ -819,7 +819,10 @@ export function DramaStoryboard({ series, episode }) {
 
   const compileAllMutation = useMutation({
     mutationFn: () => compileDramaStoryboard(activeEpisodeId),
-    onMutate: () => setCompileNotice(""),
+    onMutate: () => {
+      setCompileConfirmOpen(false);
+      setCompileNotice("");
+    },
     onSuccess: (data) => {
       queryClient.setQueryData(["drama-storyboard", activeEpisodeId], data);
       setActionError("");
@@ -902,16 +905,6 @@ export function DramaStoryboard({ series, episode }) {
       setActionError("");
     },
     onError: (error) => setActionError(error.message || "绑定视频模型失败"),
-  });
-
-  const modeMutation = useMutation({
-    mutationFn: (videoGenerateMode) => bindDramaVideoGenerateMode(seriesId, { videoGenerateMode }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
-      queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
-      setActionError("");
-    },
-    onError: (error) => setActionError(error.message || "切换连续分镜模式失败"),
   });
 
   async function uploadFirstFrame(shot, file) {
@@ -1031,9 +1024,12 @@ export function DramaStoryboard({ series, episode }) {
       setDraftDurationSec(Number(patch.durationSec));
     }
     const result = await runShot(shot.id, "save", () => updateDramaShot(shot.id, payload));
-    // 后端把清空的 promptOverride 置 null，Jackson 省略该字段，patchShot 浅合并会残留旧值；这里权威回写，保证「恢复自动编译」即时生效。
+    // 后端把清空的 promptOverride / locationName 置 null，Jackson 省略该字段，patchShot 浅合并会残留旧值。
     if (Object.prototype.hasOwnProperty.call(patch, "promptOverride")) {
       patchShot({ id: shot.id, promptOverride: (patch.promptOverride || "").trim() || null });
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "locationName")) {
+      patchShot({ id: shot.id, locationName: (patch.locationName || "").trim() || null });
     }
     if (Object.prototype.hasOwnProperty.call(patch, "videoGenerateMode")
         || Object.prototype.hasOwnProperty.call(patch, "videoChainPrevTail")) {
@@ -1203,7 +1199,7 @@ export function DramaStoryboard({ series, episode }) {
     ? boardQuery.error
     : null;
   const persistedDraftError = !drafting && board?.draftError ? board.draftError : "";
-  const error = queryError || bindMutation.error || modeMutation.error
+  const error = queryError || bindMutation.error
     || (actionError ? { message: actionError } : null)
     || (persistedDraftError ? { message: persistedDraftError } : null);
   const videoSrc = mediaUrl(selected?.videoUrl || selected?.videoKey);
@@ -1270,18 +1266,6 @@ export function DramaStoryboard({ series, episode }) {
                 ))}
               </select>
             </label>
-            <label className="youxi-shot-model">
-              <span>分镜衔接</span>
-              <select
-                aria-label="项目分镜衔接模式"
-                value={projectGenerateMode}
-                disabled={!videoModelId || frozenByRecompile || drafting || modeMutation.isPending}
-                onChange={(event) => modeMutation.mutate(event.target.value)}
-              >
-                <option value="r2v">独立分镜（参考图）</option>
-                <option value="i2v" disabled={!supportsI2v}>连续分镜（尾帧接首帧）</option>
-              </select>
-            </label>
             {(selectedVideoModel?.supportsNativeAudio || selectedVideoModel?.supportsAudioReference) && (
               <span className="youxi-native-audio-badge">
                 <AudioLines size={13} /> {selectedVideoModel.supportsNativeAudio ? "视频与声音一次生成" : "支持参考音频"}
@@ -1289,12 +1273,12 @@ export function DramaStoryboard({ series, episode }) {
               </span>
             )}
           </div>
-          <div>
+          <div className="youxi-shot-center-toolbar__actions">
             <button
               type="button"
               title="按当前动作、台词和锁定资产，重算本集所有分镜的视频提示词，不会生成视频"
               disabled={compileAllMutation.isPending || frozenByRecompile || !shots.length || drafting}
-              onClick={() => compileAllMutation.mutate()}
+              onClick={() => setCompileConfirmOpen(true)}
             >
               <RefreshCw size={14} /> {compileAllMutation.isPending || frozenByRecompile ? "编译中…" : "重新编译"}
             </button>
@@ -1637,6 +1621,18 @@ export function DramaStoryboard({ series, episode }) {
         busy={draftMutation.isPending}
         onClose={() => setDraftConfirmOpen(false)}
         onConfirm={() => draftMutation.mutate()}
+      />
+      <ConfirmDialog
+        open={compileConfirmOpen}
+        eyebrow="分镜"
+        title="重新编译本集提示词？"
+        message={`将按当前动作、台词和锁定资产，重算本集全部 ${shots.length} 个分镜的视频提示词（不会生成视频）。手动编辑过的完整提示词会被清除并恢复为自动编译结果；已锁定且未过期的分镜会跳过。`}
+        confirmLabel="确认重新编译"
+        busy={compileAllMutation.isPending}
+        busyLabel="编译中…"
+        danger={false}
+        onClose={() => setCompileConfirmOpen(false)}
+        onConfirm={() => compileAllMutation.mutate()}
       />
       <ConfirmDialog
         open={Boolean(deleteGenerationTarget)}

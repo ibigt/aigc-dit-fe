@@ -186,10 +186,6 @@ export function bindDramaVideoModel(seriesId, videoModelId) {
   return api.put(`/drama/series/${seriesId}/video-model`, { videoModelId });
 }
 
-export function bindDramaVideoGenerateMode(seriesId, payload) {
-  return api.put(`/drama/series/${seriesId}/video-generate-mode`, payload);
-}
-
 export function generateDramaShot(shotId) {
   return api.post(`/drama/shots/${shotId}/generate`);
 }

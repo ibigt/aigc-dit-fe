@@ -1642,7 +1642,13 @@
   padding-bottom: 8px;
 }
 .youxi-storyboard-layout--board .youxi-shot-center-toolbar > div {
-  display: contents;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+.youxi-storyboard-layout--board .youxi-shot-center-toolbar__actions {
+  margin-left: auto;
 }
 .youxi-storyboard-layout--board .youxi-shot-center-toolbar .youxi-shot-model {
   display: flex;
