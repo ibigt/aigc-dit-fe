@@ -1,6 +1,6 @@
 import { ArrowLeftRight, AtSign, AudioLines, Box, Check, CheckCircle2, ChevronDown, Coins, Download, Film, Image, Images, Layers3, Maximize2, MoreHorizontal, Pencil, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, RotateCcw, Save, ScanLine, Sparkles, Square, Trash2, Video, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchAssets } from "../api/assets.js";
 import { createSession, deleteSession, fetchSession, fetchSessions, saveCreationToAsset } from "../api/creations.js";
 import { IMAGE_POLL_TIMEOUT_MS, pollGenerateTask, submitGenerate, VIDEO_POLL_TIMEOUT_MS } from "../api/generate.js";
@@ -510,35 +510,50 @@ function AssetPicker({ assets, selectedItems, onToggle, onClose, onConfirm, titl
   );
 }
 
+const SESSION_DRAFT_KEY = "fastcreate.composer.drafts";
+function readAllSessionDrafts() {
+  try {
+    const raw = window.sessionStorage.getItem(SESSION_DRAFT_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 /**
- * 把字符串草稿落到 sessionStorage，切换 tab 后重新挂载能读回。
+ * 把 prompt 草稿按 session 持久化：
+ * - 在同一 session 内切走再切回，草稿还在；
+ * - 切到「历史创作」等 tab 再返回，整页重新挂载 FastCreate 时按 session 读回；
+ * - 切到其他 session 后再切回来，原 session 的草稿仍在。
  *
- * 父容器按 active tab 卸载 FastCreate，{@code useState} 的 prompt 会随卸载丢失，
- * 用户在创作框写一半的字、切到「历史创作」再回来就没了。把 prompt 临时缓存到这里，
- * 切换 tab 不丢，关闭页面后自动清，不会泄露到别的 tab。
- *
- * 用法跟 useState 一致；写入空串会自动清掉缓存，避免重启 tab 时还残留旧草稿。
+ * 草稿统一存到 sessionStorage 的一个 JSON map（key = sessionId），关页面自动清。
  */
-function useSessionDraft(key, initial = "") {
-  const [value, setValue] = useState(() => {
-    try {
-      const stored = window.sessionStorage.getItem(key);
-      return stored !== null && stored !== undefined ? stored : initial;
-    } catch {
-      return initial;
-    }
-  });
+function usePerSessionDraft(activeSessionId, initial = "") {
+  const [drafts, setDrafts] = useState(readAllSessionDrafts);
+  const value = drafts[activeSessionId] ?? initial;
+  const setValue = useCallback(
+    (next) => {
+      setDrafts((current) => {
+        const updated = { ...current };
+        const draft = typeof next === "function" ? next(updated[activeSessionId] ?? initial) : next;
+        if (draft) updated[activeSessionId] = draft;
+        else delete updated[activeSessionId];
+        return updated;
+      });
+    },
+    [activeSessionId, initial]
+  );
   useEffect(() => {
     try {
-      if (value) {
-        window.sessionStorage.setItem(key, value);
+      if (Object.keys(drafts).length > 0) {
+        window.sessionStorage.setItem(SESSION_DRAFT_KEY, JSON.stringify(drafts));
       } else {
-        window.sessionStorage.removeItem(key);
+        window.sessionStorage.removeItem(SESSION_DRAFT_KEY);
       }
     } catch {
-      // 隐私模式 / quota / 关闭了 storage 时降级为纯内存，不影响功能
+      // 隐私模式 / quota 降级为纯内存，不影响功能
     }
-  }, [key, value]);
+  }, [drafts]);
   return [value, setValue];
 }
 
@@ -549,8 +564,8 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const [generationType, setGenerationType] = useState("video");
   const availableModels = useMemo(() => (config.models || []).filter((item) => item.enabled !== false && (item.category === generationType || item.capabilities?.includes(generationType))), [config.models, generationType]);
   const [model, setModel] = useState(() => String(config.models.find((item) => item.enabled !== false && (item.category === "video" || item.capabilities?.includes("video")))?.id || config.models[0]?.id || ""));
-  // 创作框内容走 sessionStorage 兜底，tab 切换不丢；其余状态按需再扩。
-  const [prompt, setPrompt] = useSessionDraft("fastcreate.composer.prompt", "");
+  // 创作框内容按 session 持久化，切走/切回不丢；关 tab 自动清。
+  const [prompt, setPrompt] = usePerSessionDraft(activeSessionId, "");
   const [generatingSessionIds, setGeneratingSessionIds] = useState([]);
   const [submitError, setSubmitError] = useState("");
   const [deleteSessionTarget, setDeleteSessionTarget] = useState(null);
@@ -776,7 +791,6 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   function switchSession(session) {
     setActiveSessionId(session.id);
     setGenerationType(session.generationType);
-    setPrompt("");
     fetchSession(session.id).then(applySessionDetail).catch(() => {});
   }
 

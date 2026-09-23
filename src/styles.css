@@ -688,7 +688,7 @@ a { color: inherit; text-decoration: none; }
 .composer-kind-tabs button.active { color: #18202b; background: white; box-shadow: 0 1px 5px rgba(23,31,42,.08); font-weight: 650; }
 .creation-composer { position: relative; min-height: 202px; padding: 16px; border-color: #d8dde3; border-radius: 18px; box-shadow: 0 10px 30px rgba(27,35,45,.065); transition: border-color .18s ease, box-shadow .18s ease; }
 .creation-composer:focus-within { border-color: #b9c1ea; box-shadow: 0 10px 32px rgba(73,84,183,.11), 0 0 0 3px rgba(84,97,218,.06); }
-.creation-composer__body { min-height: 128px; display: flex; align-items: flex-start; gap: 16px; }
+.creation-composer__body { position: relative; min-height: 128px; display: flex; align-items: flex-start; gap: 16px; }
 .create-submit-error { margin: 0 4px 8px; color: #c2414a; font-size: 12px; }
 .creation-reference-slots { position: absolute; z-index: 5; left: 15px; top: -45px; max-width: calc(100% - 170px); padding: 8px 7px 8px 4px; flex: 0 0 auto; display: flex; align-items: center; gap: 7px; overflow-x: auto; overflow-y: hidden; color: #9098a3; scrollbar-width: none; }
 .creation-reference-slots::-webkit-scrollbar { display: none; }
