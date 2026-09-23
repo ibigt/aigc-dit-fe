@@ -78,6 +78,11 @@ const MODE_CAP_OPTIONS = [
 
 const ADAPTER_OPTIONS = [
   { key: "gpt-image-2", label: "GPT Image 2", category: "image", provider: "RunningHub", defaultEndpoint: "https://www.runninghub.ai", modes: ["t2i", "i2i"], defaultPaths: { t2iPath: "rhart-image-g-2/text-to-image", i2iPath: "rhart-image-g-2/image-to-image" } },
+  { key: "gpt-image-2.0", label: "GPT Image 2.0", category: "image", provider: "官方API", defaultEndpoint: "https://api.openai.com/v1", modes: ["t2i", "i2i"], defaultPaths: {}, defaultModelKey: "gpt-image-2" },
+  { key: "gpt-image-2.5", label: "GPT Image 2.5", category: "image", provider: "官方API", defaultEndpoint: "https://api.openai.com/v1", modes: ["t2i", "i2i"], defaultPaths: {}, defaultModelKey: "gpt-image-2.5-sunburst" },
+  { key: "seedream-4.0", label: "Seedream 4.0", category: "image", provider: "官方API", defaultEndpoint: "https://ark.cn-beijing.volces.com/api/v3", modes: ["t2i", "i2i"], defaultPaths: {}, defaultModelKey: "doubao-seedream-4-0-250828" },
+  { key: "seedream-4.5", label: "Seedream 4.5", category: "image", provider: "官方API", defaultEndpoint: "https://ark.cn-beijing.volces.com/api/v3", modes: ["t2i", "i2i"], defaultPaths: {}, defaultModelKey: "doubao-seedream-4-5-251128" },
+  { key: "seedream-5.0", label: "Seedream 5.0", category: "image", provider: "官方API（token plan）", providers: ["官方API（token plan）"], defaultEndpoint: "https://ark.cn-beijing.volces.com/api/v3", modes: ["t2i", "i2i"], defaultPaths: {}, defaultModelKey: "doubao-seedream-5.0-lite" },
   { key: "agnes-image-2.5", label: "Agnes Image 2.5", category: "image", provider: "官方API", defaultEndpoint: "https://api.agnes-ai.cn/v1", modes: ["t2i", "i2i"], defaultPaths: {}, defaultModelKey: "agnes-image-2.5-flash" },
   { key: "seedance-2", label: "Seedance 2.x", category: "video", provider: "RunningHub", defaultEndpoint: "https://www.runninghub.ai", modes: ["t2v", "r2v"], defaultPaths: { t2vPath: "rhart-video/sparkvideo-2.0/text-to-video", r2vPath: "rhart-video/sparkvideo-2.0/multimodal-video" } },
   { key: "seedance-2.0", label: "Seedance 2.0", category: "video", provider: "官方API", providers: ["官方API", "官方API（token plan）"], defaultEndpoint: "https://ark.cn-beijing.volces.com/api/v3", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "doubao-seedance-2-0-260128" },
@@ -163,6 +168,10 @@ function isSeedanceOfficial(adapterKey) {
   return adapterKey === "seedance-2.0" || adapterKey === "seedance-2.5";
 }
 
+function isSeedreamOfficial(adapterKey) {
+  return adapterKey === "seedream-4.0" || adapterKey === "seedream-4.5" || adapterKey === "seedream-5.0";
+}
+
 function isMiniMaxH3(adapterKey) {
   return adapterKey === "minimax-h3";
 }
@@ -235,6 +244,21 @@ function officialHint(adapterKey, isText, provider) {
       ? "地址填 ComfyUI 服务，如 http://127.0.0.1:8188。模型标识可用 minimax-h3。本地网关无鉴权时 API Key 可留空。"
       : "地址填 https://api.minimax.cn。模型标识填 MiniMax-H3 或 MiniMax-H3-Max。Key 用按量「接口密钥」，不要用 Token Plan 订阅 Key。H3 支持 768P/2K、4–15 秒、文生/图生/参考生；H3-Max 仅文生/图生，480P/768P、5–15 秒。";
   }
+  if (adapterKey === "gpt-image-2.0") {
+    return "地址填 https://api.openai.com/v1。模型标识默认 gpt-image-2。走官方 /images/generations 与 /images/edits；需 OpenAI API Key，组织可能需完成 Image 验证。";
+  }
+  if (adapterKey === "gpt-image-2.5") {
+    return "地址填 https://api.openai.com/v1。模型标识默认 gpt-image-2.5-sunburst（也可改为 gpt-image-2.5-flare）。字段与 2.0 相同，仅模型标识不同。";
+  }
+  if (adapterKey === "seedream-4.0") {
+    return "地址填 https://ark.cn-beijing.volces.com/api/v3。模型标识默认 doubao-seedream-4-0-250828。走方舟 /images/generations；Key 用按量 API Key。";
+  }
+  if (adapterKey === "seedream-4.5") {
+    return "地址填 https://ark.cn-beijing.volces.com/api/v3。模型标识默认 doubao-seedream-4-5-251128。走方舟 /images/generations；Key 用按量 API Key。";
+  }
+  if (adapterKey === "seedream-5.0") {
+    return "来源为官方API（token plan），地址 /api/plan/v3。模型标识默认 doubao-seedream-5.0-lite，也可改为 doubao-seedream-5.0-pro 等控制台给出的名。Key 用订阅页专属 Key。";
+  }
   return seedanceOfficialHint(adapterKey, isText, provider);
 }
 
@@ -265,11 +289,20 @@ function inferAdapterKey(model) {
   }
   if (category === "audio" && (key.startsWith("speech-") || key.includes("minimax") || provider.includes("minimax") || provider.includes("稀宇"))) return "minimax-speech";
   if (key.includes("agnes-image") || (key.includes("agnes") && category === "image")) return "agnes-image-2.5";
+  if (key.includes("seedream-5") || key.includes("doubao-seedream-5")) return "seedream-5.0";
+  if (key.includes("seedream-4.5") || key.includes("seedream-4-5") || key.includes("doubao-seedream-4-5") || key.includes("doubao-seedream-4.5")) return "seedream-4.5";
+  if (key.includes("seedream-4.0") || key.includes("seedream-4-0") || key.includes("doubao-seedream-4-0") || key.includes("doubao-seedream-4.0")) return "seedream-4.0";
   if (key.includes("seedance-2.5") || key.includes("seedance-2-5") || key.includes("doubao-seedance-2-5")) return "seedance-2.5";
   if (key.includes("doubao-seedance-2-0") || key.includes("doubao-seedance-2.0") || key.includes("seedance-2-0-fast") || key.includes("seedance-2.0-fast") || provider.includes("ark") || provider.includes("火山") || provider.includes("方舟")) return "seedance-2.0";
   if (key.includes("agnes")) return "agnes-video-2.5";
   if (key.includes("minimax") || (provider.includes("comfy") && category === "video")) return "minimax-h3";
   if (key.includes("seedance") || (provider.includes("running") && category === "video")) return "seedance-2";
+  if (key.includes("gpt-image-2.5") || key.includes("2.5-sunburst") || key.includes("2.5-flare")) return "gpt-image-2.5";
+  if (key.includes("gpt-image-2.0")
+      || ((provider.includes("官方") || provider.includes("openai"))
+        && (key === "gpt-image-2" || key.startsWith("gpt-image-2")))) {
+    return "gpt-image-2.0";
+  }
   if (key.includes("gpt-image") || (provider.includes("running") && category === "image")) return "gpt-image-2";
   return defaultAdapterKey(category);
 }
@@ -688,7 +721,11 @@ function ModelDialog({ model, onClose, onSave, saving }) {
     const adapterKey = inferAdapterKey(model);
     const provider = isMiniMaxH3(adapterKey)
       ? miniMaxSource(model)
-      : (isSeedanceOfficial(adapterKey) ? seedanceOfficialSource(model) : normalizeProviderSource(adapterOf(adapterKey)?.provider || model.provider));
+      : (isSeedanceOfficial(adapterKey)
+        ? seedanceOfficialSource(model)
+        : (isSeedreamOfficial(adapterKey)
+          ? (adapterKey === "seedream-5.0" ? PROVIDER_OFFICIAL_TOKEN_PLAN : "官方API")
+          : normalizeProviderSource(adapterOf(adapterKey)?.provider || model.provider)));
     return {
       ...model,
       adapterKey,
@@ -832,7 +869,9 @@ function ModelDialog({ model, onClose, onSave, saving }) {
         ? "先选接入来源「自定义配置」，再选 OpenAI 兼容语音协议。请填写 Base URL、模型标识、音色与输出格式。"
         : "先选接入来源「自定义配置」，再选 OpenAI 兼容文本协议。请填写 Base URL 与模型标识；本地网关无鉴权时可留空 API Key。")
       : draft.provider === PROVIDER_OFFICIAL_TOKEN_PLAN
-        ? "先选接入来源「官方API（token plan）」，再选 Seedance 协议；走订阅 /api/plan/v3。"
+        ? (adapter?.key === "seedream-5.0"
+          ? "先选接入来源「官方API（token plan）」，再选 Seedream 5.0；走订阅 /api/plan/v3。"
+          : "先选接入来源「官方API（token plan）」，再选 Seedance 协议；走订阅 /api/plan/v3。")
         : isOfficialSource(draft.provider)
           ? (isMiniMaxAudio
             ? "先选接入来源「官方API」，再选 MiniMax Speech；走 /v1/t2a_v2。"
@@ -842,7 +881,11 @@ function ModelDialog({ model, onClose, onSave, saving }) {
                 ? "先选接入来源「官方API」，再选 MiniMax-H3；走云端视频 V2（按量接口密钥）。"
                 : isSeedanceOfficial(adapter?.key)
                   ? "先选接入来源「官方API」，再选 Seedance 协议；走按量 /api/v3。"
-                  : "先选接入来源「官方API」，再选该来源下的适配协议；默认带出官方地址。")
+                  : (adapter?.key === "gpt-image-2.0" || adapter?.key === "gpt-image-2.5")
+                    ? "先选接入来源「官方API」，再选 GPT Image 2.0 / 2.5；共用 OpenAI Images 接口，仅模型标识不同。"
+                    : isSeedreamOfficial(adapter?.key)
+                      ? "先选接入来源「官方API」，再选 Seedream 4.0 / 4.5；走方舟 /api/v3/images/generations。"
+                      : "先选接入来源「官方API」，再选该来源下的适配协议；默认带出官方地址。")
           : "先选接入来源 RunningHub，再选该来源下的适配协议；默认 API 地址已自动带出。";
   async function onTestConnection() {
     setTesting(true);
