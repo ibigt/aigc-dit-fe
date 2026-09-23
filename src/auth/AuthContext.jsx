@@ -39,6 +39,14 @@ export function AuthProvider({ children }) {
     }
   }, [meQuery.error]);
 
+  useEffect(() => {
+    function onUnauthorized() {
+      clearSession();
+    }
+    window.addEventListener("dit:unauthorized", onUnauthorized);
+    return () => window.removeEventListener("dit:unauthorized", onUnauthorized);
+  }, []);
+
   function persistSession(tokenResp) {
     window.localStorage.setItem(TOKEN_KEY, tokenResp.token);
     const next = normalizeUser(tokenResp.user);

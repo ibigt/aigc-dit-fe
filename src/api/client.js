@@ -22,19 +22,36 @@ api.interceptors.response.use(
   (response) => {
     const body = response.data;
     if (body && typeof body.code === "number" && body.code !== 200) {
+      if (body.code === 401) {
+        clearLocalAuth();
+      }
       throw makeApiError(body.message, body.code);
     }
     return body && Object.prototype.hasOwnProperty.call(body, "data") ? body.data : body;
   },
   (error) => {
     const body = error.response?.data;
+    const status = error.response?.status;
+    const code = body?.code || status;
+    if (code === 401 || status === 401) {
+      clearLocalAuth();
+    }
     const timedOut = error.code === "ECONNABORTED" || /timeout/i.test(error.message || "");
     throw makeApiError(
         body?.message || (timedOut ? "请求超时。文本模型较慢时请稍候刷新，失败后仍可重新分析。" : (error.message || "网络错误")),
-      body?.code || error.response?.status,
+      code,
     );
   },
 );
+
+function clearLocalAuth() {
+  const hadToken = Boolean(window.localStorage.getItem(TOKEN_KEY));
+  window.localStorage.removeItem(TOKEN_KEY);
+  window.localStorage.removeItem("lightflow-user");
+  if (hadToken) {
+    window.dispatchEvent(new CustomEvent("dit:unauthorized"));
+  }
+}
 
 function makeApiError(message, code) {
   const err = new Error(message || "请求失败");
