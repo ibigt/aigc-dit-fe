@@ -510,6 +510,38 @@ function AssetPicker({ assets, selectedItems, onToggle, onClose, onConfirm, titl
   );
 }
 
+/**
+ * 把字符串草稿落到 sessionStorage，切换 tab 后重新挂载能读回。
+ *
+ * 父容器按 active tab 卸载 FastCreate，{@code useState} 的 prompt 会随卸载丢失，
+ * 用户在创作框写一半的字、切到「历史创作」再回来就没了。把 prompt 临时缓存到这里，
+ * 切换 tab 不丢，关闭页面后自动清，不会泄露到别的 tab。
+ *
+ * 用法跟 useState 一致；写入空串会自动清掉缓存，避免重启 tab 时还残留旧草稿。
+ */
+function useSessionDraft(key, initial = "") {
+  const [value, setValue] = useState(() => {
+    try {
+      const stored = window.sessionStorage.getItem(key);
+      return stored !== null && stored !== undefined ? stored : initial;
+    } catch {
+      return initial;
+    }
+  });
+  useEffect(() => {
+    try {
+      if (value) {
+        window.sessionStorage.setItem(key, value);
+      } else {
+        window.sessionStorage.removeItem(key);
+      }
+    } catch {
+      // 隐私模式 / quota / 关闭了 storage 时降级为纯内存，不影响功能
+    }
+  }, [key, value]);
+  return [value, setValue];
+}
+
 export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light", onOpenAssets }) {
   const queryClient = useQueryClient();
   const [sessions, setSessions] = useState(() => [makeInitialSession()]);
@@ -517,7 +549,8 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const [generationType, setGenerationType] = useState("video");
   const availableModels = useMemo(() => (config.models || []).filter((item) => item.enabled !== false && (item.category === generationType || item.capabilities?.includes(generationType))), [config.models, generationType]);
   const [model, setModel] = useState(() => String(config.models.find((item) => item.enabled !== false && (item.category === "video" || item.capabilities?.includes("video")))?.id || config.models[0]?.id || ""));
-  const [prompt, setPrompt] = useState("");
+  // 创作框内容走 sessionStorage 兜底，tab 切换不丢；其余状态按需再扩。
+  const [prompt, setPrompt] = useSessionDraft("fastcreate.composer.prompt", "");
   const [generatingSessionIds, setGeneratingSessionIds] = useState([]);
   const [submitError, setSubmitError] = useState("");
   const [deleteSessionTarget, setDeleteSessionTarget] = useState(null);
