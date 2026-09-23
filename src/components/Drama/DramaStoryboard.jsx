@@ -14,9 +14,12 @@ import {
   fetchDramaShotGenerations,
   fetchDramaStoryboard,
   fetchDramaVideoModels,
+  fetchActiveDramaShotBatchGenerate,
   generateDramaShot,
+  pollDramaShotBatchGenerate,
   pollDramaShotGenerate,
   selectDramaShotGeneration,
+  startDramaShotBatchGenerate,
   updateDramaShot,
   uploadDramaShotFirstFrame,
   generateDramaShotOpeningStill,
@@ -26,6 +29,7 @@ import { mediaUrl } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 import { isRetryableRequestError } from "../../api/client.js";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
+import { BatchGenerateModal } from "./BatchGenerateModal.jsx";
 import { GenerationHistoryPanel, SwitchFinalModal } from "./GenerationHistoryPanel.jsx";
 import { VideoLightbox } from "./VideoLightbox.jsx";
 
@@ -102,10 +106,11 @@ function isInFlightStatus(status) {
   return status === "PENDING" || status === "RUNNING";
 }
 
-function isShotGenerating(shot, busy) {
+function isShotGenerating(shot, busy, batchLocked = false) {
   const status = shot?.genTaskStatus;
   return Boolean(
-    shot?.generating
+    batchLocked
+    || shot?.generating
     || shot?.generatingStill
     || isInFlightStatus(status)
     || (shot?.id && (busy?.[shot.id] === "generate" || busy?.[shot.id] === "still"))
@@ -126,8 +131,8 @@ function shotPoster(shot) {
   return mediaUrl(shot?.videoPosterUrl || shot?.videoPosterKey);
 }
 
-function ShotThumbPreview({ shot, busy }) {
-  const generating = isShotGenerating(shot, busy);
+function ShotThumbPreview({ shot, busy, batchLocked = false }) {
+  const generating = isShotGenerating(shot, busy, batchLocked);
   const ready = Boolean(shot?.videoKey) && !generating;
   const poster = shotPoster(shot);
   const video = mediaUrl(shot?.videoUrl || shot?.videoKey);
@@ -708,7 +713,13 @@ export function DramaStoryboard({ series, episode }) {
   const [draftConfirmOpen, setDraftConfirmOpen] = useState(false);
   const [compileConfirmOpen, setCompileConfirmOpen] = useState(false);
   const [compileNotice, setCompileNotice] = useState("");
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [batchModalOpen, setBatchModalOpen] = useState(false);
+  const [batchJob, setBatchJob] = useState(null);
+  const [batchToast, setBatchToast] = useState("");
+  const [batchSubmitting, setBatchSubmitting] = useState(false);
   const wasRecompiling = useRef(false);
+  const batchPollRef = useRef(0);
 
   const activeEpisode = episodes.find((item) => item.id === episodeId) || episodes[0] || episode;
   const activeEpisodeId = activeEpisode?.id;
@@ -727,6 +738,10 @@ export function DramaStoryboard({ series, episode }) {
     setCompileNotice("");
     setDraftConfirmOpen(false);
     setCompileConfirmOpen(false);
+    setSelectedIds(new Set());
+    setBatchModalOpen(false);
+    setBatchJob(null);
+    setBatchToast("");
   }, [activeEpisodeId]);
 
   useEffect(() => {
@@ -734,6 +749,12 @@ export function DramaStoryboard({ series, episode }) {
     const timer = window.setTimeout(() => setCompileNotice(""), 3200);
     return () => window.clearTimeout(timer);
   }, [compileNotice]);
+
+  useEffect(() => {
+    if (!batchToast) return undefined;
+    const timer = window.setTimeout(() => setBatchToast(""), 3200);
+    return () => window.clearTimeout(timer);
+  }, [batchToast]);
 
   const videoModelsQuery = useQuery({
     queryKey: ["drama-video-models"],
@@ -747,7 +768,8 @@ export function DramaStoryboard({ series, episode }) {
       const data = query.state.data;
       const chapters = data?.chapters || [];
       const list = chapters.flatMap((item) => item.shots || []);
-      if (data?.drafting || data?.promptRecompiling || activeEpisode?.analyzing || inFlightShots(list).length) return 1500;
+      if (data?.drafting || data?.promptRecompiling || data?.activeBatchJobId
+        || activeEpisode?.analyzing || inFlightShots(list).length) return 1500;
       return false;
     },
   });
@@ -778,6 +800,19 @@ export function DramaStoryboard({ series, episode }) {
     [videoModels, videoModelId]
   );
   const ratio = series?.aspectRatio || "16:9";
+  const batchRunning = batchJob?.status === "RUNNING" || batchJob?.status === "PENDING";
+  const batchLockedIds = useMemo(() => {
+    if (!batchRunning || !batchJob?.items?.length) return new Set();
+    return new Set(
+      batchJob.items
+        .filter((item) => item.status === "PENDING" || item.status === "RUNNING")
+        .map((item) => item.shotId)
+    );
+  }, [batchRunning, batchJob]);
+  const selectionHasFirstInChapter = useMemo(() => {
+    if (!selectedIds.size) return false;
+    return shots.some((shot) => selectedIds.has(shot.id) && isFirstInChapter(shot, shots));
+  }, [selectedIds, shots]);
 
   useEffect(() => {
     setDraftDurationSec((current) => clampDuration(durationOptions, current));
@@ -794,6 +829,117 @@ export function DramaStoryboard({ series, episode }) {
     }
     wasRecompiling.current = recompiling;
   }, [recompiling]);
+
+  useEffect(() => {
+    if (!activeEpisodeId) return undefined;
+    let cancelled = false;
+    const jobId = board?.activeBatchJobId;
+    if (!jobId) {
+      if (!batchPollRef.current) setBatchJob(null);
+      return undefined;
+    }
+    if (batchJob?.id && Number(batchJob.id) === Number(jobId) && batchRunning) {
+      return undefined;
+    }
+    const token = ++batchPollRef.current;
+    (async () => {
+      try {
+        const active = await fetchActiveDramaShotBatchGenerate(activeEpisodeId);
+        if (cancelled || token !== batchPollRef.current) return;
+        if (!active?.id) {
+          setBatchJob(null);
+          return;
+        }
+        setBatchJob(active);
+        if (active.status === "RUNNING" || active.status === "PENDING") {
+          const done = await pollDramaShotBatchGenerate(activeEpisodeId, active.id, {
+            onProgress: (progress) => {
+              if (!cancelled && token === batchPollRef.current) setBatchJob(progress);
+            },
+          });
+          if (cancelled || token !== batchPollRef.current) return;
+          setBatchJob(done);
+          await queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
+          if (done?.status === "FAILED") {
+            setActionError(done.errorMessage || "批量出片失败");
+          } else if (done?.status === "SUCCEEDED") {
+            setCompileNotice("批量出片完成");
+            setSelectedIds(new Set());
+          }
+        }
+      } catch (error) {
+        if (!cancelled && token === batchPollRef.current) {
+          setActionError(error.message || "恢复批量出片进度失败");
+        }
+      } finally {
+        if (token === batchPollRef.current) batchPollRef.current = 0;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeEpisodeId, board?.activeBatchJobId]);
+
+  function toggleShotSelect(shot, event) {
+    event?.stopPropagation?.();
+    if (!shot?.id || batchRunning) return;
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(shot.id)) {
+        next.delete(shot.id);
+        return next;
+      }
+      if (next.size > 0) {
+        const firstSelected = shots.find((item) => next.has(item.id));
+        if (firstSelected && firstSelected.chapterId !== shot.chapterId) {
+          setBatchToast("不能跨场次选择分镜");
+          return current;
+        }
+      }
+      next.add(shot.id);
+      return next;
+    });
+  }
+
+  async function confirmBatchGenerate(config) {
+    if (!activeEpisodeId || !selectedIds.size || batchRunning) return;
+    setBatchSubmitting(true);
+    setActionError("");
+    const token = ++batchPollRef.current;
+    try {
+      const job = await startDramaShotBatchGenerate(activeEpisodeId, {
+        shotIds: [...selectedIds],
+        videoGenerateMode: config.videoGenerateMode,
+        chainPrevTail: Boolean(config.chainPrevTail),
+        i2vFirstFrameMode: config.i2vFirstFrameMode,
+        firstShotAutoStill: config.firstShotAutoStill,
+      });
+      setBatchModalOpen(false);
+      setBatchJob(job);
+      queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
+      if (job?.status === "RUNNING" || job?.status === "PENDING") {
+        const done = await pollDramaShotBatchGenerate(activeEpisodeId, job.id, {
+          onProgress: (progress) => {
+            if (token === batchPollRef.current) setBatchJob(progress);
+          },
+        });
+        if (token !== batchPollRef.current) return;
+        setBatchJob(done);
+        await queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
+        if (done?.status === "FAILED") {
+          setActionError(done.errorMessage || "批量出片失败");
+        } else if (done?.status === "SUCCEEDED") {
+          setCompileNotice("批量出片完成");
+          setSelectedIds(new Set());
+        }
+      }
+    } catch (error) {
+      setActionError(error.message || "批量出片失败");
+    } finally {
+      setBatchSubmitting(false);
+      if (token === batchPollRef.current) batchPollRef.current = 0;
+    }
+  }
 
   const draftMutation = useMutation({
     mutationFn: () => draftDramaStoryboard(activeEpisodeId, draftDurationSec),
@@ -892,6 +1038,7 @@ export function DramaStoryboard({ series, episode }) {
   function deleteBlockedReason(shot) {
     if (autoDrafting || draftMutation.isPending) return "正在拆镜，请稍候";
     if (recompiling) return "正在重新编译提示词，请稍候";
+    if (batchLockedIds.has(shot?.id)) return "该镜正在批量生成中";
     if (shots.length <= 1) return "至少保留一个分镜";
     if (isShotGenerating(shot, busy)) return "该镜正在生成，请等任务结束再删除";
     return "";
@@ -1114,6 +1261,10 @@ export function DramaStoryboard({ series, episode }) {
 
   async function generate(shot) {
     if (!shot?.id) return;
+    if (batchLockedIds.has(shot.id)) {
+      setActionError("该镜正在批量生成中");
+      return;
+    }
     setBusy((current) => ({ ...current, [shot.id]: "generate" }));
     setActionError("");
     patchShot({
@@ -1188,13 +1339,19 @@ export function DramaStoryboard({ series, episode }) {
     };
   }, [inflightKey]);
 
-  const generating = Boolean(selected && isShotGenerating(selected, busy));
+  const selectedBatchLocked = Boolean(selected?.id && batchLockedIds.has(selected.id));
+  const generating = Boolean(selected && isShotGenerating(selected, busy, selectedBatchLocked));
   const drafting = autoDrafting || draftMutation.isPending;
   const frozenByRecompile = recompiling;
-  const generateDisabled = !selected || generating || drafting || frozenByRecompile || !videoModelId;
-  const generateTitle = generateMode === "i2v" && selected?.firstFrameSource === "none"
-    ? "将先自动画开场静帧，再生成视频"
-    : undefined;
+  const batchButtonDisabled = batchRunning || selectedIds.size === 0 || drafting || frozenByRecompile || !videoModelId;
+  const generateDisabled = !selected || generating || drafting || frozenByRecompile || !videoModelId || selectedBatchLocked;
+  const generateTitle = selectedBatchLocked
+    ? "该镜正在批量生成中"
+    : frozenByRecompile
+      ? "正在重新编译提示词，暂不可出片"
+      : generateMode === "i2v" && selected?.firstFrameSource === "none"
+        ? "将先自动画开场静帧，再生成视频"
+        : undefined;
   const queryError = boardQuery.error && !isRetryableRequestError(boardQuery.error)
     ? boardQuery.error
     : null;
@@ -1297,10 +1454,22 @@ export function DramaStoryboard({ series, episode }) {
               <Wand2 size={14} /> {drafting ? "拆镜中…" : shots.length ? "重新拆镜" : "智能分镜"}
             </button>
             <button
+              type="button"
+              disabled={batchButtonDisabled}
+              title={batchRunning
+                ? "分镜批量生成中"
+                : selectedIds.size === 0
+                  ? "请先在胶片条勾选同场分镜"
+                  : "批量生成选中镜头"}
+              onClick={() => setBatchModalOpen(true)}
+            >
+              <Sparkles size={14} /> {batchRunning ? "分镜批量生成中" : "批量生成镜头"}
+            </button>
+            <button
               className="youxi-toolbar-primary"
               type="button"
               disabled={generateDisabled}
-              title={frozenByRecompile ? "正在重新编译提示词，暂不可出片" : generateTitle}
+              title={generateTitle}
               onClick={() => generate(selected)}
             >
               <Video size={14} /> {generating ? "出片中…" : "生成当前镜头"}
@@ -1442,7 +1611,9 @@ export function DramaStoryboard({ series, episode }) {
                     <strong>{generating ? "正在生成视频" : "尚未生成视频"}</strong>
                     <span>
                       {generating
-                        ? (generateMode === "i2v"
+                        ? (selectedBatchLocked && !isInFlightStatus(selected?.genTaskStatus) && !selected?.generating
+                          ? "已加入批量队列，等待出片"
+                          : generateMode === "i2v"
                           ? (selected?.generatingStill
                             ? "正在画开场静帧，完成后自动出片"
                             : "正在按侧栏首帧出片")
@@ -1480,10 +1651,12 @@ export function DramaStoryboard({ series, episode }) {
             <div className="youxi-filmstrip" role="list">
               {shots.map((shot, shotPos) => {
                 const active = selected?.id === shot.id;
-                const generatingShot = isShotGenerating(shot, busy);
+                const batchLocked = batchLockedIds.has(shot.id);
+                const generatingShot = isShotGenerating(shot, busy, batchLocked);
                 const ready = Boolean(shot.videoKey) && !generatingShot;
                 const deleteReason = deleteBlockedReason(shot);
-                const addDisabled = createShotMutation.isPending || deleteShotMutation.isPending || drafting || frozenByRecompile;
+                const checked = selectedIds.has(shot.id);
+                const addDisabled = createShotMutation.isPending || deleteShotMutation.isPending || drafting || frozenByRecompile || batchRunning;
                 return (
                   <div className="youxi-filmstrip-unit" key={shot.id}>
                     {shotPos === 0 && (
@@ -1498,7 +1671,16 @@ export function DramaStoryboard({ series, episode }) {
                         <Plus size={14} />
                       </button>
                     )}
-                    <article className={`youxi-shot-thumb ${active ? "active" : ""}`}>
+                    <article className={`youxi-shot-thumb ${active ? "active" : ""} ${checked ? "is-batch-selected" : ""} ${batchLocked ? "is-batch-locked" : ""}`}>
+                      <button
+                        type="button"
+                        className={`youxi-shot-thumb__check ${checked ? "is-checked" : ""}`}
+                        disabled={batchRunning}
+                        title={batchRunning ? "批量生成中" : checked ? "取消选择" : "加入批量"}
+                        aria-label={checked ? `取消选择镜 ${shot.shotIndex}` : `选择镜 ${shot.shotIndex}`}
+                        aria-pressed={checked}
+                        onClick={(event) => toggleShotSelect(shot, event)}
+                      />
                       <button
                         type="button"
                         className="youxi-shot-thumb__preview"
@@ -1511,7 +1693,7 @@ export function DramaStoryboard({ series, episode }) {
                           <b>镜 {shot.shotIndex}</b>
                           <em title={shot.title || ""}>{shot.title?.trim() || "未命名"}</em>
                         </span>
-                        <ShotThumbPreview shot={shot} busy={busy} />
+                        <ShotThumbPreview shot={shot} busy={busy} batchLocked={batchLocked} />
                         <small className={ready ? "is-ready" : ""}>
                           {generatingShot
                             ? "生成中"
@@ -1561,7 +1743,7 @@ export function DramaStoryboard({ series, episode }) {
         key={drafting ? "drafting" : (selected?.id || "none")}
         selected={drafting || !shots.length ? null : selected}
         generating={generating}
-        readOnly={drafting || frozenByRecompile || Boolean(selected && busy[selected.id])}
+        readOnly={drafting || frozenByRecompile || selectedBatchLocked || Boolean(selected && busy[selected.id])}
         lockedAssets={lockedAssets}
         generateMode={generateMode}
         chainPrevTail={chainPrevTail}
@@ -1653,6 +1835,19 @@ export function DramaStoryboard({ series, episode }) {
           {compileNotice}
         </div>
       )}
+      {batchToast && (
+        <div className="drama-toast" role="status">
+          {batchToast}
+        </div>
+      )}
+      <BatchGenerateModal
+        open={batchModalOpen}
+        onClose={() => !batchSubmitting && setBatchModalOpen(false)}
+        onConfirm={confirmBatchGenerate}
+        supportsI2v={supportsI2v}
+        selectionHasFirstInChapter={selectionHasFirstInChapter}
+        busy={batchSubmitting}
+      />
       <ImageLightbox preview={preview} onClose={() => setPreview(null)} />
       <VideoLightbox preview={videoPreview} onClose={() => setVideoPreview(null)} />
     </section>

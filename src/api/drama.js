@@ -190,6 +190,51 @@ export function generateDramaShot(shotId) {
   return api.post(`/drama/shots/${shotId}/generate`);
 }
 
+export function startDramaShotBatchGenerate(episodeId, body) {
+  return api.post(`/drama/episodes/${episodeId}/shots/batch-generate`, body);
+}
+
+export function fetchDramaShotBatchGenerate(episodeId, jobId) {
+  return api.get(`/drama/episodes/${episodeId}/shots/batch-generate/${jobId}`);
+}
+
+export function fetchActiveDramaShotBatchGenerate(episodeId) {
+  return api.get(`/drama/episodes/${episodeId}/shots/batch-generate/active`);
+}
+
+export function pollDramaShotBatchGenerate(
+  episodeId,
+  jobId,
+  { interval = 2000, timeout = 60 * 60 * 1000, onProgress } = {},
+) {
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const tick = async () => {
+      try {
+        const result = await fetchDramaShotBatchGenerate(episodeId, jobId);
+        onProgress?.(result);
+        const status = result?.status;
+        if (status === "SUCCEEDED" || status === "FAILED" || status === "CANCELLED") {
+          resolve(result);
+          return;
+        }
+        if (Date.now() - started > timeout) {
+          reject(Object.assign(new Error("批量出片仍在进行"), { result, stillGoing: true }));
+          return;
+        }
+        window.setTimeout(tick, interval);
+      } catch (error) {
+        if (isRetryableRequestError(error) && Date.now() - started <= timeout) {
+          window.setTimeout(tick, interval);
+          return;
+        }
+        reject(error);
+      }
+    };
+    tick();
+  });
+}
+
 export function generateDramaShotOpeningStill(shotId) {
   return api.post(`/drama/shots/${shotId}/first-frame/generate`);
 }

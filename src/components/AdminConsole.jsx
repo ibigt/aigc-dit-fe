@@ -80,15 +80,30 @@ const ADAPTER_OPTIONS = [
   { key: "gpt-image-2", label: "GPT Image 2", category: "image", provider: "RunningHub", defaultEndpoint: "https://www.runninghub.ai", modes: ["t2i", "i2i"], defaultPaths: { t2iPath: "rhart-image-g-2/text-to-image", i2iPath: "rhart-image-g-2/image-to-image" } },
   { key: "agnes-image-2.5", label: "Agnes Image 2.5", category: "image", provider: "官方API", defaultEndpoint: "https://api.agnes-ai.cn/v1", modes: ["t2i", "i2i"], defaultPaths: {}, defaultModelKey: "agnes-image-2.5-flash" },
   { key: "seedance-2", label: "Seedance 2.x", category: "video", provider: "RunningHub", defaultEndpoint: "https://www.runninghub.ai", modes: ["t2v", "r2v"], defaultPaths: { t2vPath: "rhart-video/sparkvideo-2.0/text-to-video", r2vPath: "rhart-video/sparkvideo-2.0/multimodal-video" } },
-  { key: "seedance-2.0", label: "Seedance 2.0", category: "video", provider: "官方API", defaultEndpoint: "https://ark.cn-beijing.volces.com/api/v3", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "doubao-seedance-2-0-260128" },
-  { key: "seedance-2.5", label: "Seedance 2.5", category: "video", provider: "官方API", defaultEndpoint: "https://ark.cn-beijing.volces.com/api/v3", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "doubao-seedance-2-5-260628" },
-  { key: "minimax-h3", label: "MiniMax-H3", category: "video", provider: "官方API", defaultEndpoint: "https://api.minimax.cn", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "MiniMax-H3" },
+  { key: "seedance-2.0", label: "Seedance 2.0", category: "video", provider: "官方API", providers: ["官方API", "官方API（token plan）"], defaultEndpoint: "https://ark.cn-beijing.volces.com/api/v3", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "doubao-seedance-2-0-260128" },
+  { key: "seedance-2.5", label: "Seedance 2.5", category: "video", provider: "官方API", providers: ["官方API", "官方API（token plan）"], defaultEndpoint: "https://ark.cn-beijing.volces.com/api/v3", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "doubao-seedance-2-5-260628" },
+  { key: "minimax-h3", label: "MiniMax-H3", category: "video", provider: "官方API", providers: ["官方API", "ComfyUI"], defaultEndpoint: "https://api.minimax.cn", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "MiniMax-H3" },
   { key: "agnes-video-2.5", label: "Agnes Video 2.5", category: "video", provider: "官方API", defaultEndpoint: "https://api.agnes-ai.cn/v1", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "agnes-video-2.5-flash" },
   { key: "minimax-speech", label: "MiniMax Speech", category: "audio", provider: "官方API", defaultEndpoint: "https://api.minimax.cn/v1/t2a_v2", modes: ["t2a"], defaultPaths: {}, defaultModelKey: "speech-2.8-hd" },
   { key: "openai-speech", label: "OpenAI 兼容语音", category: "audio", provider: "自定义配置", defaultEndpoint: "https://api.openai.com/v1", modes: ["t2a"], defaultPaths: {}, defaultModelKey: "gpt-4o-mini-tts" },
   { key: "agnes-text", label: "Agnes 对话", category: "text", provider: "官方API", defaultEndpoint: "https://api.agnes-ai.cn/v1", modes: [], defaultPaths: {}, defaultModelKey: "agnes-2.5-flash" },
   { key: "openai-compat", label: "OpenAI 兼容", category: "text", provider: "自定义配置", defaultEndpoint: "", modes: [], defaultPaths: {}, defaultModelKey: "" },
 ];
+
+const PROVIDER_SOURCE_ORDER = ["官方API", "官方API（token plan）", "RunningHub", "ComfyUI", "自定义配置"];
+const PROVIDER_OFFICIAL_TOKEN_PLAN = "官方API（token plan）";
+
+function isComfyUiSource(provider) {
+  return /comfy/i.test(String(provider || ""));
+}
+
+function isOfficialTokenPlan(provider) {
+  return /token\s*plan|agent plan/i.test(String(provider || ""));
+}
+
+function isOfficialSource(provider) {
+  return String(provider || "").startsWith("官方API");
+}
 
 function adaptersForCategory(category) {
   return ADAPTER_OPTIONS.filter((item) => item.category === category);
@@ -98,13 +113,46 @@ function adapterOf(key) {
   return ADAPTER_OPTIONS.find((item) => item.key === key);
 }
 
-function defaultAdapterKey(category) {
-  return adaptersForCategory(category)[0]?.key || "";
+function providersOfAdapter(adapter) {
+  if (!adapter) return [];
+  if (Array.isArray(adapter.providers) && adapter.providers.length) return adapter.providers;
+  return adapter.provider ? [adapter.provider] : [];
+}
+
+function normalizeProviderSource(provider) {
+  if (isOfficialTokenPlan(provider)) return PROVIDER_OFFICIAL_TOKEN_PLAN;
+  if (isComfyUiSource(provider)) return "ComfyUI";
+  if (isOfficialSource(provider)) return "官方API";
+  if (String(provider || "").includes("自定义") || String(provider || "").includes("手动")) return "自定义配置";
+  if (String(provider || "").toLowerCase().includes("running")) return "RunningHub";
+  return String(provider || "").trim();
+}
+
+function adaptersForCategoryAndProvider(category, provider) {
+  const source = normalizeProviderSource(provider);
+  return adaptersForCategory(category).filter((item) => providersOfAdapter(item).includes(source));
+}
+
+function providersForCategory(category) {
+  const available = new Set();
+  for (const item of adaptersForCategory(category)) {
+    for (const provider of providersOfAdapter(item)) available.add(provider);
+  }
+  return PROVIDER_SOURCE_ORDER.filter((item) => available.has(item));
+}
+
+function defaultProviderForCategory(category) {
+  return providersForCategory(category)[0] || "官方API";
+}
+
+function defaultAdapterKey(category, provider = defaultProviderForCategory(category)) {
+  return adaptersForCategoryAndProvider(category, provider)[0]?.key
+    || adaptersForCategory(category)[0]?.key
+    || "";
 }
 
 const ARK_PAYG_ENDPOINT = "https://ark.cn-beijing.volces.com/api/v3";
 const ARK_PLAN_ENDPOINT = "https://ark.cn-beijing.volces.com/api/plan/v3";
-const PROVIDER_OFFICIAL_TOKEN_PLAN = "官方API（token plan）";
 const MINIMAX_OFFICIAL_ENDPOINT = "https://api.minimax.cn";
 const MINIMAX_COMFY_ENDPOINT = "http://127.0.0.1:8188";
 const MINIMAX_OFFICIAL_MODEL_KEY = "MiniMax-H3";
@@ -156,18 +204,6 @@ function audioModelLabel(model) {
     return `${voices || 1} 个音色 · ${formats || "MP3"}`;
   }
   return audioCapabilityLabel(model);
-}
-
-function isComfyUiSource(provider) {
-  return /comfy/i.test(String(provider || ""));
-}
-
-function isOfficialTokenPlan(provider) {
-  return /token\s*plan|agent plan/i.test(String(provider || ""));
-}
-
-function isOfficialSource(provider) {
-  return String(provider || "").startsWith("官方API");
 }
 
 function arkPlanModelKey(adapterKey) {
@@ -643,17 +679,20 @@ function ModelDialog({ model, onClose, onSave, saving }) {
   const [testing, setTesting] = useState(false);
   const [draft, setDraft] = useState(() => {
     if (!model) {
-      const adapterKey = defaultAdapterKey("image");
+      const category = "image";
+      const provider = defaultProviderForCategory(category);
+      const adapterKey = defaultAdapterKey(category, provider);
       const adapter = adapterOf(adapterKey);
-      return { name: "", category: "image", adapterKey, provider: adapter.provider, modelKey: "", endpoint: adapter.defaultEndpoint, description: "", enabled: true, apiKey: "", concurrentLimit: 1, instanceType: "", proxy: "", pricing: emptyPricing, logo: FALLBACK_LOGO, capabilities: ["image", ...adapter.modes], adapterConfig: {}, defaultVoice: "alloy", voicesText: "alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer", formatsText: "mp3, wav, aac, flac, opus", minSpeed: 0.25, maxSpeed: 4, t2iPath: adapter.defaultPaths.t2iPath || "", i2iPath: "", t2vPath: "", r2vPath: "", i2vPath: "", enableThinking: false };
+      return { name: "", category, adapterKey, provider, modelKey: "", endpoint: adapter?.defaultEndpoint || "", description: "", enabled: true, apiKey: "", concurrentLimit: 1, instanceType: "", proxy: "", pricing: emptyPricing, logo: FALLBACK_LOGO, capabilities: ["image", ...(adapter?.modes || [])], adapterConfig: {}, defaultVoice: "alloy", voicesText: "alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer", formatsText: "mp3, wav, aac, flac, opus", minSpeed: 0.25, maxSpeed: 4, t2iPath: adapter?.defaultPaths?.t2iPath || "", i2iPath: "", t2vPath: "", r2vPath: "", i2vPath: "", enableThinking: false };
     }
     const adapterKey = inferAdapterKey(model);
+    const provider = isMiniMaxH3(adapterKey)
+      ? miniMaxSource(model)
+      : (isSeedanceOfficial(adapterKey) ? seedanceOfficialSource(model) : normalizeProviderSource(adapterOf(adapterKey)?.provider || model.provider));
     return {
       ...model,
       adapterKey,
-      provider: isMiniMaxH3(adapterKey)
-        ? miniMaxSource(model)
-        : (isSeedanceOfficial(adapterKey) ? seedanceOfficialSource(model) : (adapterOf(adapterKey)?.provider || model.provider)),
+      provider,
       capabilities: filterCapsForAdapter(model.capabilities, model.category || "image", adapterKey),
       t2iPath: pathValue(model, "t2iPath"),
       i2iPath: pathValue(model, "i2iPath"),
@@ -679,17 +718,20 @@ function ModelDialog({ model, onClose, onSave, saving }) {
     }
     return next;
   });
-  const applyAdapter = (current, adapterKey, category = current.category) => {
+  const applyAdapter = (current, adapterKey, category = current.category, preferredProvider = current.provider) => {
     const adapter = adapterOf(adapterKey);
     if (!adapter) return current;
     const prevDefault = adapterOf(current.adapterKey)?.defaultEndpoint;
+    const allowedProviders = providersOfAdapter(adapter);
+    const preferred = normalizeProviderSource(preferredProvider);
+    const provider = allowedProviders.includes(preferred)
+      ? preferred
+      : (allowedProviders[0] || adapter.provider);
     const next = {
       ...current,
       category,
       adapterKey: adapter.key,
-      provider: isMiniMaxH3(adapter.key)
-        ? (isMiniMaxH3(current.adapterKey) && isComfyUiSource(current.provider) ? "ComfyUI" : "官方API")
-        : (isSeedanceOfficial(adapter.key) && isOfficialTokenPlan(current.provider) ? PROVIDER_OFFICIAL_TOKEN_PLAN : adapter.provider),
+      provider,
       capabilities: filterCapsForAdapter(current.capabilities, category, adapter.key),
     };
     if (category === "audio" && current.adapterKey !== adapter.key) {
@@ -708,14 +750,28 @@ function ModelDialog({ model, onClose, onSave, saving }) {
     }
     if (!current.endpoint || current.endpoint === prevDefault || current.endpoint === ARK_PAYG_ENDPOINT || current.endpoint === ARK_PLAN_ENDPOINT || current.endpoint === MINIMAX_OFFICIAL_ENDPOINT || current.endpoint === MINIMAX_COMFY_ENDPOINT) {
       next.endpoint = isMiniMaxH3(adapter.key)
-        ? (next.provider === "ComfyUI" ? MINIMAX_COMFY_ENDPOINT : MINIMAX_OFFICIAL_ENDPOINT)
-        : (isOfficialTokenPlan(next.provider) ? ARK_PLAN_ENDPOINT : adapter.defaultEndpoint);
+        ? (provider === "ComfyUI" ? MINIMAX_COMFY_ENDPOINT : MINIMAX_OFFICIAL_ENDPOINT)
+        : (isOfficialTokenPlan(provider) ? ARK_PLAN_ENDPOINT : adapter.defaultEndpoint);
     }
     const prevModelKey = adapterOf(current.adapterKey)?.defaultModelKey;
-    if (!current.modelKey || current.modelKey === prevModelKey || current.modelKey === MINIMAX_OFFICIAL_MODEL_KEY || current.modelKey === MINIMAX_COMFY_MODEL_KEY) {
-      next.modelKey = isMiniMaxH3(adapter.key) && next.provider === "ComfyUI"
-        ? MINIMAX_COMFY_MODEL_KEY
-        : (adapter.defaultModelKey || "");
+    const paygDefault = adapter.defaultModelKey || "";
+    const planDefault = arkPlanModelKey(adapter.key);
+    const knownDefaults = new Set([
+      prevModelKey,
+      paygDefault,
+      planDefault,
+      MINIMAX_OFFICIAL_MODEL_KEY,
+      MINIMAX_COMFY_MODEL_KEY,
+      MINIMAX_MAX_MODEL_KEY,
+    ].filter(Boolean));
+    if (!current.modelKey || knownDefaults.has(current.modelKey)) {
+      if (isMiniMaxH3(adapter.key) && provider === "ComfyUI") {
+        next.modelKey = MINIMAX_COMFY_MODEL_KEY;
+      } else if (isSeedanceOfficial(adapter.key) && isOfficialTokenPlan(provider) && planDefault) {
+        next.modelKey = planDefault;
+      } else {
+        next.modelKey = paygDefault;
+      }
     }
     for (const [pathKey, path] of Object.entries(adapter.defaultPaths || {})) {
       if (!pathValue(next, pathKey)) next[pathKey] = path;
@@ -725,35 +781,25 @@ function ModelDialog({ model, onClose, onSave, saving }) {
     if (!current.logo || current.logo === prevAuto || current.logo === FALLBACK_LOGO) next.logo = auto;
     return next;
   };
-  const changeAdapter = (adapterKey) => setDraft((current) => applyAdapter(current, adapterKey));
-  const changeCategory = (category) => setDraft((current) => applyAdapter(current, defaultAdapterKey(category), category));
-  const changeOfficialSource = (provider) => setDraft((current) => {
-    const next = { ...current, provider, endpoint: isOfficialTokenPlan(provider) ? ARK_PLAN_ENDPOINT : ARK_PAYG_ENDPOINT };
-    const paygDefault = adapterOf(current.adapterKey)?.defaultModelKey || "";
-    const planDefault = arkPlanModelKey(current.adapterKey);
-    if (isOfficialTokenPlan(provider) && planDefault && (!current.modelKey || current.modelKey === paygDefault)) {
-      next.modelKey = planDefault;
-    }
-    if (!isOfficialTokenPlan(provider) && paygDefault && (!current.modelKey || current.modelKey === planDefault)) {
-      next.modelKey = paygDefault;
-    }
-    return next;
+  const changeAdapter = (adapterKey) => setDraft((current) => applyAdapter(current, adapterKey, current.category, current.provider));
+  const changeProvider = (provider) => setDraft((current) => {
+    const adapters = adaptersForCategoryAndProvider(current.category, provider);
+    const adapterKey = adapters.some((item) => item.key === current.adapterKey)
+      ? current.adapterKey
+      : (adapters[0]?.key || "");
+    if (!adapterKey) return { ...current, provider };
+    return applyAdapter({ ...current, provider }, adapterKey, current.category, provider);
   });
-  const changeMiniMaxSource = (provider) => setDraft((current) => {
-    const next = { ...current, provider };
-    if (!current.endpoint || current.endpoint === MINIMAX_OFFICIAL_ENDPOINT || current.endpoint === MINIMAX_COMFY_ENDPOINT
-        || current.endpoint === ARK_PAYG_ENDPOINT || current.endpoint === ARK_PLAN_ENDPOINT
-        || current.endpoint === adapterOf(current.adapterKey)?.defaultEndpoint) {
-      next.endpoint = provider === "ComfyUI" ? MINIMAX_COMFY_ENDPOINT : MINIMAX_OFFICIAL_ENDPOINT;
-    }
-    if (provider === "ComfyUI") {
-      if (!current.modelKey || current.modelKey === MINIMAX_OFFICIAL_MODEL_KEY || current.modelKey === MINIMAX_MAX_MODEL_KEY) {
-        next.modelKey = MINIMAX_COMFY_MODEL_KEY;
-      }
-    } else if (!current.modelKey || current.modelKey === MINIMAX_COMFY_MODEL_KEY) {
-      next.modelKey = MINIMAX_OFFICIAL_MODEL_KEY;
-    }
-    return next;
+  const changeCategory = (category) => setDraft((current) => {
+    const providers = providersForCategory(category);
+    const provider = providers.includes(normalizeProviderSource(current.provider))
+      ? normalizeProviderSource(current.provider)
+      : (providers[0] || defaultProviderForCategory(category));
+    const adapters = adaptersForCategoryAndProvider(category, provider);
+    const adapterKey = adapters.some((item) => item.key === current.adapterKey)
+      ? current.adapterKey
+      : (adapters[0]?.key || defaultAdapterKey(category, provider));
+    return applyAdapter({ ...current, provider }, adapterKey, category, provider);
   });
   const toggleCap = (cap) => setDraft((current) => {
     const allowed = capsForAdapter(current.category, current.adapterKey).some((item) => item.id === cap);
@@ -774,26 +820,30 @@ function ModelDialog({ model, onClose, onSave, saving }) {
   const caps = filterCapsForAdapter(draft.capabilities, draft.category, draft.adapterKey);
   const updatePrice = (side, key, value) => setDraft((current) => ({ ...current, pricing: { ...(current.pricing || emptyPricing), [side]: { ...(current.pricing?.[side] || emptyPricing[side]), [key]: value } } }));
   const adapter = adapterOf(draft.adapterKey);
+  const sourceProviders = providersForCategory(draft.category);
+  const sourceAdapters = adaptersForCategoryAndProvider(draft.category, draft.provider);
   const isText = draft.category === "text";
   const isAudio = draft.category === "audio";
   const isMiniMaxAudio = isMiniMaxSpeech(draft.adapterKey);
-  const providerCopy = adapter?.provider === "ComfyUI"
-    ? "适配协议决定字段翻译；来源 ComfyUI 与默认服务地址已自动带出。"
-    : adapter?.provider === "自定义配置"
+  const providerCopy = draft.provider === "ComfyUI"
+    ? "先选接入来源 ComfyUI，再选该来源下的适配协议；默认带出本地服务地址。"
+    : draft.provider === "自定义配置"
       ? (isAudio
-        ? "语音通道走 OpenAI 兼容 /audio/speech。请填写 Base URL、模型标识、音色与输出格式。"
-        : "文本通道走 OpenAI 兼容 /v1/chat/completions。请填写 Base URL 与模型标识；本地网关无鉴权时可留空 API Key。")
-      : adapter?.provider === "官方API"
-        ? (isMiniMaxAudio
-          ? "MiniMax Speech 走 /v1/t2a_v2，支持系统音色或自定义 voice_id，并解析返回的音频数据。"
-          : isText
-            ? "文本通道走官方对话接口。默认地址与 Agnes 图/视频相同，模型标识填 agnes-2.5-flash。"
-          : isSeedanceOfficial(adapter?.key)
-            ? "适配协议只负责 t2v/r2v/i2v 字段翻译。接入来源选「官方API」走按量 /api/v3，选「官方API（token plan）」走订阅 /api/plan/v3。"
-            : adapter?.key === "minimax-h3"
-              ? "适配协议 MiniMax-H3。接入来源选「官方API」走云端视频 V2（按量接口密钥）；选「ComfyUI」走本地工作流。"
-              : "适配协议决定字段翻译；来源「官方API」与 Agnes 默认地址已自动带出。请填写官方 API Key，模型标识使用官方 model ID。")
-        : "适配协议决定字段翻译；来源 RunningHub 与默认 API 地址已自动带出。";
+        ? "先选接入来源「自定义配置」，再选 OpenAI 兼容语音协议。请填写 Base URL、模型标识、音色与输出格式。"
+        : "先选接入来源「自定义配置」，再选 OpenAI 兼容文本协议。请填写 Base URL 与模型标识；本地网关无鉴权时可留空 API Key。")
+      : draft.provider === PROVIDER_OFFICIAL_TOKEN_PLAN
+        ? "先选接入来源「官方API（token plan）」，再选 Seedance 协议；走订阅 /api/plan/v3。"
+        : isOfficialSource(draft.provider)
+          ? (isMiniMaxAudio
+            ? "先选接入来源「官方API」，再选 MiniMax Speech；走 /v1/t2a_v2。"
+            : isText
+              ? "先选接入来源「官方API」，再选 Agnes 对话协议。"
+              : isMiniMaxH3(adapter?.key)
+                ? "先选接入来源「官方API」，再选 MiniMax-H3；走云端视频 V2（按量接口密钥）。"
+                : isSeedanceOfficial(adapter?.key)
+                  ? "先选接入来源「官方API」，再选 Seedance 协议；走按量 /api/v3。"
+                  : "先选接入来源「官方API」，再选该来源下的适配协议；默认带出官方地址。")
+          : "先选接入来源 RunningHub，再选该来源下的适配协议；默认 API 地址已自动带出。";
   async function onTestConnection() {
     setTesting(true);
     setTestHint({ ok: false, text: "" });
@@ -829,12 +879,8 @@ function ModelDialog({ model, onClose, onSave, saving }) {
         <div className="model-form-grid">
           <label>名称<input required value={draft.name} onChange={(event) => updateIdentity({ name: event.target.value })} placeholder={isText ? "例如：Agnes 对话" : isAudio ? "例如：品牌旁白语音" : "例如：自有视频模型"} /></label>
           <label>模型类型<select value={draft.category} onChange={(event) => changeCategory(event.target.value)}><option value="image">图像模型</option><option value="video">视频模型</option><option value="audio">语音模型</option><option value="text">文本模型</option></select></label>
-          <label>适配协议<select required value={draft.adapterKey} onChange={(event) => changeAdapter(event.target.value)}>{adaptersForCategory(draft.category).map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
-          {isSeedanceOfficial(draft.adapterKey)
-            ? <label>接入来源<select value={isOfficialTokenPlan(draft.provider) ? PROVIDER_OFFICIAL_TOKEN_PLAN : "官方API"} onChange={(event) => changeOfficialSource(event.target.value)}><option value="官方API">官方API</option><option value={PROVIDER_OFFICIAL_TOKEN_PLAN}>官方API（token plan）</option></select></label>
-            : isMiniMaxH3(draft.adapterKey)
-              ? <label>接入来源<select value={isComfyUiSource(draft.provider) ? "ComfyUI" : "官方API"} onChange={(event) => changeMiniMaxSource(event.target.value)}><option value="官方API">官方API</option><option value="ComfyUI">ComfyUI</option></select></label>
-            : <label>接入来源<input value={draft.provider || ""} readOnly /></label>}
+          <label>接入来源<select required value={normalizeProviderSource(draft.provider) || sourceProviders[0] || ""} onChange={(event) => changeProvider(event.target.value)}>{sourceProviders.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          <label>适配协议<select required value={draft.adapterKey} onChange={(event) => changeAdapter(event.target.value)}>{sourceAdapters.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
           <label>模型标识<input required value={draft.modelKey} onChange={(event) => updateIdentity({ modelKey: event.target.value })} placeholder={adapter?.key === "openai-compat" ? "如 deepseek-v3-flash" : (adapter?.defaultModelKey || (isText ? "对话模型名，如 gpt-4o-mini" : "商品标识，如 seedance-2.0"))} /></label>
           <label className="model-form-wide">{endpointLabel(draft.provider)}<input required value={draft.endpoint || ""} onChange={(event) => update("endpoint", event.target.value)} placeholder={draft.provider === "自定义配置" ? "https://api.openai.com/v1 或兼容网关" : ""} />{(isOfficialSource(draft.provider) || (isMiniMaxH3(adapter?.key) && isComfyUiSource(draft.provider))) && <small className="model-logo-hint">{officialHint(adapter?.key, isText, draft.provider)}</small>}</label>
           <label className="model-form-wide">API Key<input type="password" value={draft.apiKey || ""} onChange={(event) => update("apiKey", event.target.value)} placeholder={draft.hasApiKey ? "已加密保存，留空则保持不变" : ((adapter?.provider === "自定义配置" || (isMiniMaxH3(adapter?.key) && isComfyUiSource(draft.provider))) ? "可留空（本地网关无鉴权）" : "明文仅提交一次，服务端加密落库")} />{isOfficialSource(draft.provider) && !isText && <small className="model-logo-hint">{draft.hasApiKey ? "卡片显示「密钥已配置」后才会用这条 Key 调官方接口。" : (adapter?.key === "minimax-h3" ? "当前尚未落库。请粘贴 MiniMax 按量接口密钥（不要用 Token Plan 订阅 Key），再点右下角保存配置。" : (isOfficialTokenPlan(draft.provider) ? "当前尚未落库。请粘贴 Agent Plan 订阅 Key，再点右下角保存配置。" : "当前尚未落库。请粘贴火山方舟 API Key（不要用 IAM AK/SK），再点右下角保存配置。"))}</small>}</label>
@@ -910,9 +956,7 @@ function toModelPayload(draft) {
     name: draft.name,
     modelKey: draft.modelKey,
     adapterKey,
-    provider: isSeedanceOfficial(adapterKey) || isMiniMaxH3(adapterKey)
-      ? (draft.provider || adapter?.provider)
-      : (adapter?.provider || draft.provider),
+    provider: draft.provider || adapter?.provider,
     endpoint: draft.endpoint,
     apiKey: draft.apiKey || undefined,
     category,
