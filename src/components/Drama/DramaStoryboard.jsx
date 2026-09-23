@@ -1339,6 +1339,14 @@ export function DramaStoryboard({ series, episode }) {
     };
   }, [inflightKey]);
 
+  useEffect(() => {
+    if (!selected?.id || !["PENDING", "RUNNING"].includes(selected.captionStatus)) return undefined;
+    const timer = window.setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [selected?.id, selected?.captionStatus, activeEpisodeId, queryClient]);
+
   const selectedBatchLocked = Boolean(selected?.id && batchLockedIds.has(selected.id));
   const generating = Boolean(selected && isShotGenerating(selected, busy, selectedBatchLocked));
   const drafting = autoDrafting || draftMutation.isPending;
@@ -1359,7 +1367,15 @@ export function DramaStoryboard({ series, episode }) {
   const error = queryError || bindMutation.error
     || (actionError ? { message: actionError } : null)
     || (persistedDraftError ? { message: persistedDraftError } : null);
-  const videoSrc = mediaUrl(selected?.videoUrl || selected?.videoKey);
+  const captionReady = selected?.captionStatus === "READY" && selected?.captionVideoUrl;
+  const selectedVideoUrl = mediaUrl(
+    captionReady ? selected.captionVideoUrl : (selected?.videoUrl || selected?.videoKey),
+  );
+  // captionVideoKey is intentionally stable per source video; add the processor
+  // version so a browser cannot reuse the previous VAD-burned object from cache.
+  const videoSrc = captionReady && selectedVideoUrl
+    ? `${selectedVideoUrl}${selectedVideoUrl.includes("?") ? "&" : "?"}captionVersion=caption-3`
+    : selectedVideoUrl;
   // 暂关分镜预览字幕轨道，避免播放器自动叠中文字幕。
   // const captionSrc = videoSrc && selected?.id && selected?.dialogue?.trim()
   //   ? authenticatedApiUrl(`/api/drama/shots/${selected.id}/captions.vtt?v=${encodeURIComponent(selected.updatedAt || "")}`)
