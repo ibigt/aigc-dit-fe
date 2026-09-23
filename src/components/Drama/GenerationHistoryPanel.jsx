@@ -2,6 +2,12 @@ import { createPortal } from "react-dom";
 import { Trash2, Upload, X } from "lucide-react";
 import { mediaUrl } from "../../lib/media.js";
 
+function sourceMeta(source, record) {
+  if (source === "library" || record?.libraryAssetId) return "引用";
+  if (source === "upload") return "上传";
+  return "生成";
+}
+
 /**
  * 资产 / 分镜侧栏生成记录区。
  * 缩略图点击仅预览；选用走 SwitchFinalModal。
@@ -20,6 +26,8 @@ export function GenerationHistoryPanel({
   onPreview,
   onDelete,
   onImport,
+  onCiteClick,
+  citeLabel = "引用素材",
   onUploadClick,
   uploadLabel = "上传",
 }) {
@@ -45,6 +53,17 @@ export function GenerationHistoryPanel({
           >
             {switchLabel}
           </button>
+          {onCiteClick && (
+            <button
+              type="button"
+              className="button button--primary youxi-history-switch youxi-history-cite"
+              disabled={busy}
+              title={citeLabel}
+              onClick={onCiteClick}
+            >
+              {citeLabel}
+            </button>
+          )}
           {onUploadClick && (
             <button
               type="button"
@@ -71,8 +90,8 @@ export function GenerationHistoryPanel({
               ? mediaUrl(record.videoUrl || record.videoKey)
               : null;
             const meta = mediaKind === "video"
-              ? (record.source === "upload" ? "上传" : "生成")
-              : [record.resolution, record.source === "upload" ? "上传" : "生成"].filter(Boolean).join(" · ");
+              ? sourceMeta(record.source, record)
+              : [record.resolution, sourceMeta(record.source, record)].filter(Boolean).join(" · ");
             return (
               <article className={selected ? "active" : ""} key={record.id}>
                 {selected && <em className="generation-selected-badge">当前选用</em>}

@@ -887,6 +887,9 @@
   transform: none;
   cursor: pointer;
 }
+.youxi-history-block__actions .youxi-history-cite {
+  padding: 0 10px;
+}
 .youxi-history-block__actions .youxi-history-upload {
   color: #596575;
   border: 1px solid #dfe4eb;
@@ -927,6 +930,9 @@
   gap: 3px;
   font-size: 11px;
   line-height: 1;
+}
+.asset-generation-records--compact .youxi-history-block__actions .youxi-history-cite {
+  padding: 0 6px;
 }
 .youxi-history-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .youxi-history-grid article { position: relative; min-width: 0; overflow: hidden; border: 1px solid #e0e4ea; border-radius: 9px; background: #fff; }

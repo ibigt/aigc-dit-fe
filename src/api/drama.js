@@ -105,6 +105,10 @@ export function uploadDramaAssetImage(assetId, file) {
   return api.post(`/drama/assets/${assetId}/upload`, data);
 }
 
+export function bindDramaAssetImageFromLibrary(assetId, libraryAssetId) {
+  return api.post(`/drama/assets/${assetId}/upload/library/${libraryAssetId}`);
+}
+
 export function uploadDramaAssetVoiceReference(assetId, file) {
   const data = new FormData();
   data.append("file", file);
