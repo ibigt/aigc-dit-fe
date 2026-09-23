@@ -414,8 +414,6 @@ a { color: inherit; text-decoration: none; }
 .console-shell[data-theme="dark"] .creation-mode-popover > button,
 .console-shell[data-theme="dark"] .creation-model-popover > button,
 .console-shell[data-theme="dark"] .creation-copy-popover button,
-.console-shell[data-theme="dark"] .creation-option-grid button,
-.console-shell[data-theme="dark"] .creation-voice-grid button,
 .console-shell[data-theme="dark"] .creation-icon-action,
 .console-shell[data-theme="dark"] .creation-pill,
 .console-shell[data-theme="dark"] .creation-asset-dialog > footer button,
@@ -1547,8 +1545,7 @@ button.asset-card__preview {
 .console-shell[data-theme="dark"] .model-select,
 .console-shell[data-theme="dark"] .generation-settings > span,
 .console-shell[data-theme="dark"] .creation-type-toggle button,
-.console-shell[data-theme="dark"] .creation-copy-button,
-.console-shell[data-theme="dark"] .creation-option-grid button .ratio-option svg {
+.console-shell[data-theme="dark"] .creation-copy-button {
   color: #c5ced9;
 }
 .console-shell[data-theme="dark"] .creation-type-toggle { background: #202731; }
@@ -1556,6 +1553,97 @@ button.asset-card__preview {
   color: #c8ceff;
   background: #2a3340;
   box-shadow: none;
+}
+.console-shell[data-theme="dark"] .creation-option-grid {
+  background: #f1f3f6;
+  border: 0;
+}
+.console-shell[data-theme="dark"] .creation-option-grid button {
+  color: #56616d;
+}
+.console-shell[data-theme="dark"] .creation-option-grid button:hover {
+  color: #202834;
+  background: #e5e9ef;
+}
+.console-shell[data-theme="dark"] .creation-option-grid button.active {
+  color: #18202a;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(25, 33, 43, .12);
+}
+.console-shell[data-theme="dark"] .creation-option-grid button .ratio-option svg {
+  color: #68727e;
+}
+.console-shell[data-theme="dark"] .creation-option-grid button.active > svg,
+.console-shell[data-theme="dark"] .creation-option-grid button.active .ratio-option svg {
+  color: #5261d8;
+}
+/* 参数面板在深色页面中仍使用浅色选项板，文字必须按浅色表面取色。 */
+.console-shell[data-theme="dark"] .creation-parameter-popover section > label {
+  color: #59636e;
+}
+.console-shell[data-theme="dark"] .creation-parameter-popover .creation-option-grid > button {
+  color: #6b7682 !important;
+  -webkit-text-fill-color: #6b7682;
+  opacity: 1;
+}
+.console-shell[data-theme="dark"] .creation-parameter-popover .creation-option-grid > button.active {
+  color: #18202a !important;
+  -webkit-text-fill-color: #18202a;
+  font-weight: 650;
+}
+.console-shell[data-theme="dark"] .creation-parameter-popover .creation-option-grid > button .ratio-option,
+.console-shell[data-theme="dark"] .creation-parameter-popover .creation-option-grid > button .ratio-option small {
+  color: inherit !important;
+  -webkit-text-fill-color: inherit;
+}
+.console-shell[data-theme="dark"] .creation-parameter-popover .creation-option-grid > button .ratio-option svg {
+  color: #68727e;
+}
+.console-shell[data-theme="dark"] .creation-parameter-popover .creation-option-grid > button.active > svg,
+.console-shell[data-theme="dark"] .creation-parameter-popover .creation-option-grid > button.active .ratio-option svg {
+  color: #5261d8;
+}
+.console-shell[data-theme="dark"] .creation-voice-grid button {
+  color: #59636e;
+  background: #fff;
+  border-color: #e3e6ea;
+}
+.console-shell[data-theme="dark"] .creation-voice-grid button small {
+  color: #89919c;
+}
+.console-shell[data-theme="dark"] .creation-voice-grid button:hover {
+  color: #202834;
+  background: #f8f9ff;
+  border-color: #c6cce8;
+}
+.console-shell[data-theme="dark"] .creation-voice-grid button.active {
+  color: #28338f;
+  background: #f0f2ff;
+  border-color: #9da8ee;
+  box-shadow: 0 0 0 2px rgba(89, 99, 239, .08);
+}
+.console-shell[data-theme="dark"] .creation-voice-grid button.active small {
+  color: #626b78;
+}
+.console-shell[data-theme="dark"] .creation-voice-grid button.active svg {
+  color: #5261d8;
+}
+.console-shell[data-theme="dark"] .creation-voice-section .creation-voice-grid::-webkit-scrollbar-track {
+  background: #eef0f4;
+}
+.console-shell[data-theme="dark"] .creation-voice-section .creation-voice-grid::-webkit-scrollbar-thumb {
+  border-color: #eef0f4;
+  background: #aab2c4;
+}
+.console-shell[data-theme="dark"] .creation-icon-action {
+  color: #c5ced9;
+  background: #111720;
+  border-color: #303a47;
+}
+.console-shell[data-theme="dark"] .creation-icon-action:hover {
+  color: #eef2f8;
+  background: #252e39;
+  border-color: #465366;
 }
 .console-shell[data-theme="dark"] .creation-voice-tools input,
 .console-shell[data-theme="dark"] .creation-voice-tools select {
