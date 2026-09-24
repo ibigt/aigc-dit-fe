@@ -20,8 +20,28 @@ export function updateScriptModel(id, modelId) {
   return api.put(`/scripts/tasks/${id}/model`, { modelId: Number(modelId) });
 }
 
+export function updateScriptTitle(id, title) {
+  return api.put(`/scripts/tasks/${id}/title`, { title });
+}
+
 export function generateScriptTask(id) {
   return api.post(`/scripts/tasks/${id}/generate`, null, { timeout: 12 * 60 * 1000 });
+}
+
+export function completeScriptTask(id) {
+  return api.post(`/scripts/tasks/${id}/complete`);
+}
+
+export function deleteScriptTask(id) {
+  return api.delete(`/scripts/tasks/${id}`);
+}
+
+export function repairScriptStructure(id) {
+  return api.post(`/scripts/tasks/${id}/structure`, null, { timeout: 6 * 60 * 1000 });
+}
+
+export function continueScriptTask(id) {
+  return api.post(`/scripts/tasks/${id}/continue`, null, { timeout: 12 * 60 * 1000 });
 }
 
 export function createDramaFromScript(id) {
