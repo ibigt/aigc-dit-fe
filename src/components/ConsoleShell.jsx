@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Clapperboard, Film, Images, LogOut, Moon, ShieldCheck, Sparkles, Sun, UserRound, Zap } from "lucide-react";
+import { ChevronDown, Clapperboard, FileText, Film, Images, LogOut, Moon, ShieldCheck, Sparkles, Sun, UserRound, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useMatch, useNavigate } from "react-router-dom";
 import { rechargeCredits } from "../api/credits.js";
@@ -12,11 +12,13 @@ import { DramaWorkbench } from "./Drama/DramaWorkbench.jsx";
 import { FastCreate } from "./FastCreate.jsx";
 import { MyCreations } from "./MyCreations.jsx";
 import { ProfileModal } from "./ProfileModal.jsx";
+import { ScriptCreation } from "./ScriptCreation.jsx";
 import { AdminConsole } from "./AdminConsole.jsx";
 
 const tabs = [
   { id: "create", label: "快速创作", icon: Sparkles },
   { id: "drama", label: "短剧创作", icon: Film },
+  { id: "script", label: "剧本创作", icon: FileText },
   { id: "creations", label: "我的创作", icon: Clapperboard },
   { id: "assets", label: "素材库", icon: Images },
 ];
@@ -93,6 +95,7 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
           if (details?.refresh === false) return;
         }} />}
         {active === "drama" && (dramaId ? <DramaWorkbench seriesId={dramaId} /> : <DramaHome />)}
+        {active === "script" && <ScriptCreation />}
         {active === "creations" && <MyCreations />}
         {active === "assets" && <AssetLibrary />}
         {active === "admin" && isAdmin && <AdminConsole />}
