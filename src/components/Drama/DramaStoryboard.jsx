@@ -1394,7 +1394,7 @@ export function DramaStoryboard({ series, episode }) {
   // captionVideoKey is intentionally stable per source video; add the processor
   // version so a browser cannot reuse the previous VAD-burned object from cache.
   const videoSrc = captionReady && selectedVideoUrl
-    ? `${selectedVideoUrl}${selectedVideoUrl.includes("?") ? "&" : "?"}captionVersion=caption-3`
+    ? `${selectedVideoUrl}${selectedVideoUrl.includes("?") ? "&" : "?"}captionVersion=caption-6`
     : selectedVideoUrl;
   // 暂关分镜预览字幕轨道，避免播放器自动叠中文字幕。
   // const captionSrc = videoSrc && selected?.id && selected?.dialogue?.trim()
