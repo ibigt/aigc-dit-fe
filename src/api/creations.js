@@ -20,6 +20,10 @@ export function fetchCreations(params = {}) {
   return api.get("/creations", { params });
 }
 
+export function fetchCreationProjects() {
+  return api.get("/creations/projects");
+}
+
 export function saveCreationToAsset(id) {
   return api.post(`/creations/${id}/to-asset`);
 }

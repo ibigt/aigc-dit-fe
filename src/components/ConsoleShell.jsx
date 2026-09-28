@@ -33,6 +33,7 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
   const [profileMode, setProfileMode] = useState(null);
   const [creditsOpen, setCreditsOpen] = useState(false);
   const [recentTransactions, setRecentTransactions] = useState([]);
+  const [creationReuse, setCreationReuse] = useState(null);
   const modelsQuery = useQuery({
     queryKey: ["public-models"],
     queryFn: fetchEnabledModels,
@@ -56,6 +57,11 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
   function goTab(tabId) {
     setActive(tabId);
     if (location.pathname !== "/console") navigate("/console", { replace: true, state: tabId === "drama" ? { tab: "drama" } : {} });
+  }
+
+  function reuseCreation(seed) {
+    setCreationReuse(seed);
+    goTab("create");
   }
 
   return (
@@ -86,14 +92,14 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
         </div>
       </header>
       <main className="console-content">
-        {active === "create" && <FastCreate config={{ ...config, models }} theme={theme} onOpenAssets={() => goTab("assets")} onConsumeCredits={(_points, details) => {
+        {active === "create" && <FastCreate config={{ ...config, models }} theme={theme} reuse={creationReuse} onReuseApplied={() => setCreationReuse(null)} onOpenAssets={() => goTab("assets")} onConsumeCredits={(_points, details) => {
           queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
           queryClient.invalidateQueries({ queryKey: ["credits"] });
           queryClient.invalidateQueries({ queryKey: ["creations"] });
           if (details?.refresh === false) return;
         }} />}
         {active === "drama" && (dramaId ? <DramaWorkbench seriesId={dramaId} /> : <DramaHome />)}
-        {active === "creations" && <MyCreations />}
+        {active === "creations" && <MyCreations onReuse={reuseCreation} />}
         {active === "assets" && <AssetLibrary />}
         {active === "admin" && isAdmin && <AdminConsole />}
       </main>
