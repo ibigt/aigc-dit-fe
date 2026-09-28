@@ -22,8 +22,39 @@ export async function downloadDramaFilm(filmUrl, filename = "成片.mp4") {
   URL.revokeObjectURL(href);
 }
 
+function asShotId(value) {
+  if (value == null || value === "") return null;
+  const id = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(id) ? id : null;
+}
+
 function readyShotIds(shots) {
-  return (shots || []).filter((item) => item.ready && item.id != null).map((item) => item.id);
+  return (shots || [])
+    .filter((item) => item.ready && item.id != null)
+    .map((item) => asShotId(item.id))
+    .filter((id) => id != null);
+}
+
+/** 成片对象 key 固定，需带 assembledAt 破浏览器/代理缓存，否则重拼后仍播旧片。 */
+function withCacheBust(url, version) {
+  if (!url) return "";
+  if (!version) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}v=${encodeURIComponent(version)}`;
+}
+
+function selectedShotIds(readyIds, selectedIds) {
+  return readyIds.filter((id) => selectedIds.has(id));
+}
+
+function durationOf(shots, ids) {
+  const want = new Set(ids);
+  return (shots || []).reduce((sum, shot) => {
+    const id = asShotId(shot?.id);
+    if (id == null || !want.has(id)) return sum;
+    const sec = Number(shot.durationSec);
+    return sum + (Number.isFinite(sec) ? sec : 0);
+  }, 0);
 }
 
 export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode }) {
@@ -40,12 +71,17 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
   const shots = film?.shots || [];
   const readyIds = useMemo(() => readyShotIds(shots), [shots]);
   const readyKey = readyIds.join(",");
-  const includedKey = (film?.includedShotIds || []).join(",");
+  const includedIds = useMemo(
+    () => (Array.isArray(film?.includedShotIds) ? film.includedShotIds.map(asShotId).filter((id) => id != null) : []),
+    [film?.includedShotIds],
+  );
+  const includedKey = includedIds.join(",");
   const readyCount = film?.readyShotCount ?? readyIds.length;
-  const filmSrc = mediaUrl(film?.filmUrl);
-  const posterSrc = mediaUrl(film?.posterUrl);
+  const filmVersion = film?.assembledAt || "";
+  const filmSrc = withCacheBust(mediaUrl(film?.filmUrl), filmVersion);
+  const posterSrc = withCacheBust(mediaUrl(film?.posterUrl), filmVersion);
   const captionSrc = filmSrc && film?.hasCaptions && !film?.stale
-    ? authenticatedApiUrl(`/api/drama/episodes/${episodeId}/film/captions.vtt?v=${encodeURIComponent(film?.assembledAt || "")}`)
+    ? authenticatedApiUrl(`/api/drama/episodes/${episodeId}/film/captions.vtt?v=${encodeURIComponent(filmVersion)}`)
     : "";
 
   useEffect(() => {
@@ -53,17 +89,24 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
       setSelectedIds(new Set());
       return;
     }
-    const included = Array.isArray(film.includedShotIds) ? film.includedShotIds : [];
     const ready = new Set(readyShotIds(film.shots));
-    if (film.filmUrl && included.length > 0) {
-      setSelectedIds(new Set(included.filter((id) => ready.has(id))));
+    if (film.filmUrl && includedIds.length > 0) {
+      setSelectedIds(new Set(includedIds.filter((id) => ready.has(id))));
     } else {
       setSelectedIds(new Set(ready));
     }
   }, [episodeId, film?.assembledAt, film?.filmUrl, includedKey, readyKey]);
 
   const assembleMutation = useMutation({
-    mutationFn: (shotIds) => assembleDramaFilm(episodeId, { shotIds }),
+    mutationFn: (shotIds) => {
+      const ids = (Array.isArray(shotIds) ? shotIds : [])
+        .map(asShotId)
+        .filter((id) => id != null);
+      if (!ids.length) {
+        return Promise.reject(new Error("请至少勾选 1 个已出片镜头再拼接"));
+      }
+      return assembleDramaFilm(episodeId, { shotIds: ids });
+    },
     onSuccess: (data) => {
       queryClient.setQueryData(["drama-film", episodeId], data);
       queryClient.invalidateQueries({ queryKey: ["drama-series", series?.id] });
@@ -71,7 +114,19 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
     },
   });
 
-  const selectedReadyCount = readyIds.filter((id) => selectedIds.has(id)).length;
+  const pickedIds = selectedShotIds(readyIds, selectedIds);
+  const selectedReadyCount = pickedIds.length;
+  const selectedDurationSec = durationOf(shots, pickedIds);
+  const includedDurationSec = durationOf(shots, includedIds);
+  const selectionDiffersFromFilm = Boolean(
+    filmSrc
+    && includedIds.length > 0
+    && (
+      pickedIds.length !== includedIds.length
+      || pickedIds.some((id) => !includedIds.includes(id))
+      || includedIds.some((id) => !pickedIds.includes(id))
+    ),
+  );
   const allReadySelected = readyIds.length > 0 && readyIds.every((id) => selectedIds.has(id));
   const canAssemble = selectedReadyCount > 0 && !assembleMutation.isPending;
   const showAssemble = readyCount > 0;
@@ -80,11 +135,12 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
   const episodeList = episodes.length ? episodes : (episode ? [episode] : []);
 
   function toggleShot(shotId, ready) {
-    if (!ready || shotId == null) return;
+    const id = asShotId(shotId);
+    if (!ready || id == null) return;
     setSelectedIds((current) => {
       const next = new Set(current);
-      if (next.has(shotId)) next.delete(shotId);
-      else next.add(shotId);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
@@ -131,7 +187,8 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
         </header>
         <div className="youxi-film-side-shots" aria-label="本集镜头">
           {shots.map((shot) => {
-            const checked = selectedIds.has(shot.id);
+            const shotId = asShotId(shot.id);
+            const checked = shotId != null && selectedIds.has(shotId);
             return (
               <label
                 key={shot.id || shot.shotIndex}
@@ -141,7 +198,7 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
                   type="checkbox"
                   checked={checked}
                   disabled={!shot.ready}
-                  onChange={() => toggleShot(shot.id, shot.ready)}
+                  onChange={() => toggleShot(shotId, shot.ready)}
                 />
                 <span>
                   <strong>{shot.title || `镜 ${shot.shotIndex}`}</strong>
@@ -159,7 +216,7 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
         </div>
       </aside>
       <section className="youxi-film-main">
-        {(film?.stale || (incomplete && readyCount > 0) || error || (showAssemble && selectedReadyCount === 0)) && (
+        {(film?.stale || (incomplete && readyCount > 0) || error || (showAssemble && selectedReadyCount === 0) || selectionDiffersFromFilm) && (
           <div className="youxi-film-banners">
             {film?.stale && (
               <p className="youxi-film-banner youxi-film-banner--warn">分镜视频已更新，请重新拼接</p>
@@ -167,6 +224,11 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
             {incomplete && readyCount > 0 && (
               <p className="youxi-film-banner">
                 缺镜 {film.missingShotIndexes.join("、")}，未出片镜头不可入片
+              </p>
+            )}
+            {selectionDiffersFromFilm && (
+              <p className="youxi-film-banner youxi-film-banner--warn">
+                当前预览是上次成片（{includedIds.length} 镜 / {includedDurationSec}s）；已勾选 {selectedReadyCount} 镜 / {selectedDurationSec}s，点下方按钮才会按勾选重拼
               </p>
             )}
             {showAssemble && selectedReadyCount === 0 && (
@@ -178,7 +240,7 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
         <div className="youxi-final-player">
           {filmSrc ? (
             <video
-              key={filmSrc}
+              key={`${filmSrc}|${filmVersion}`}
               controls
               playsInline
               preload="metadata"
@@ -217,9 +279,15 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
               className="button button--primary"
               type="button"
               disabled={!canAssemble}
-              onClick={() => assembleMutation.mutate(readyIds.filter((id) => selectedIds.has(id)))}
+              onClick={() => assembleMutation.mutate(pickedIds)}
             >
-              <Scissors size={14} /> {assembleMutation.isPending ? "拼接中…" : filmSrc ? (film?.stale ? "重新拼接" : "重新拼接成片") : "拼接成片"}
+              <Scissors size={14} />
+              {" "}
+              {assembleMutation.isPending
+                ? "拼接中…"
+                : filmSrc
+                  ? (film?.stale || selectionDiffersFromFilm ? "按勾选重新拼接" : "重新拼接成片")
+                  : `拼接成片（${selectedReadyCount} 镜）`}
             </button>
           </div>
         )}

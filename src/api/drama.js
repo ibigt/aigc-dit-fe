@@ -281,8 +281,15 @@ export function fetchDramaFilm(episodeId) {
 }
 
 export function assembleDramaFilm(episodeId, { shotIds } = {}) {
-  const body = Array.isArray(shotIds) ? { shotIds } : null;
-  return api.post(`/drama/episodes/${episodeId}/film/assemble`, body, { timeout: FILM_ASSEMBLE_TIMEOUT_MS });
+  // 必须显式传 shotIds：后端空列表会回退为「全部已出片」，不能省略。
+  const ids = (Array.isArray(shotIds) ? shotIds : [])
+    .map((id) => (typeof id === "number" ? id : Number(id)))
+    .filter((id) => Number.isFinite(id));
+  return api.post(
+    `/drama/episodes/${episodeId}/film/assemble`,
+    { shotIds: ids },
+    { timeout: FILM_ASSEMBLE_TIMEOUT_MS },
+  );
 }
 
 export function pollDramaAssetGenerate(assetId, taskId, { interval = 2000, timeout = 8 * 60 * 1000 } = {}) {
