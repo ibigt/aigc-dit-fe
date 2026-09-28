@@ -273,6 +273,105 @@ html[data-theme="dark"] .drama-dialog--confirm .drama-dialog__copy { color: #aab
 html[data-theme="dark"] .drama-dialog--confirm .drama-dialog__actions button { color: #e8edf5; background: #232b36; border-color: #3a4554; }
 html[data-theme="dark"] .drama-dialog--confirm .drama-dialog__actions .button--danger { color: #f0a3a8; background: #322028; border-color: #5a3338; }
 html[data-theme="dark"] .drama-dialog--confirm .drama-dialog__actions .button--primary { color: #fff; background: #6572ed; border-color: #7481f0; }
+/* 短剧资产页「引用素材」弹框走 createPortal → body，逃出 .console-shell[data-theme="dark"] 作用域，用 html 主题兜底 */
+html[data-theme="dark"] .creation-asset-backdrop { background: rgba(8,12,18,.55); }
+html[data-theme="dark"] .creation-asset-dialog { color: #e8edf5; background: #171d26; border-color: #303a47; }
+html[data-theme="dark"] .creation-asset-dialog > header { border-bottom-color: #2d3643; }
+html[data-theme="dark"] .creation-asset-dialog > header small { color: #8f9bff; }
+html[data-theme="dark"] .creation-asset-dialog > header button { color: #c5ced9; background: #232b36; }
+html[data-theme="dark"] .creation-asset-dialog > footer { border-top-color: #2d3643; color: #c5ced9; }
+html[data-theme="dark"] .creation-asset-dialog > footer button { color: #e8edf5; background: #232b36; border-color: #3a4554; }
+html[data-theme="dark"] .creation-asset-dialog > footer button.primary { color: #fff; background: #6572ed; border-color: #6572ed; }
+html[data-theme="dark"] .creation-asset-dialog .creation-asset-empty { color: #c5ced9; }
+html[data-theme="dark"] .creation-asset-grid > button { background: #171d26; border-color: #303a47; }
+html[data-theme="dark"] .creation-asset-grid > button.selected { border-color: #22c55e; }
+html[data-theme="dark"] .creation-asset-grid strong { color: #e8edf5; }
+html[data-theme="dark"] .creation-asset-grid small { color: #9aa5b3; }
+html[data-theme="dark"] .creation-asset-grid img { background: #202731; }
+/* 短剧分镜页「编辑完整提示词」弹框：createPortal → body，html 主题兜底 */
+html[data-theme="dark"] .drama-dialog.drama-dialog--prompt {
+  color: #e8edf5;
+  background: #171d26;
+  border-color: #303a47;
+}
+html[data-theme="dark"] .drama-dialog.drama-dialog--prompt > header {
+  border-bottom-color: #2d3643;
+}
+html[data-theme="dark"] .drama-dialog.drama-dialog--prompt > header span {
+  color: #8f9bff;
+}
+html[data-theme="dark"] .drama-dialog.drama-dialog--prompt > header button {
+  color: #c5ced9;
+  background: #232b36;
+  border-color: #3a4554;
+}
+html[data-theme="dark"] .drama-dialog.drama-dialog--prompt .drama-prompt-editor {
+  color: #e8edf5;
+}
+html[data-theme="dark"] .drama-dialog.drama-dialog--prompt .drama-prompt-editor__meta {
+  color: #c5ced9;
+}
+html[data-theme="dark"] .drama-dialog.drama-dialog--prompt .drama-prompt-editor__meta em {
+  color: #9aa5b3;
+}
+html[data-theme="dark"] .drama-dialog.drama-dialog--prompt .drama-prompt-editor textarea {
+  color: #e5eaf2;
+  background: #111720;
+  border-color: #3a4553;
+}
+html[data-theme="dark"] .drama-dialog.drama-dialog--prompt .drama-dialog__actions button {
+  color: #e8edf5;
+  background: #232b36;
+  border-color: #3a4554;
+}
+html[data-theme="dark"] .drama-dialog.drama-dialog--prompt .drama-dialog__actions .button--primary {
+  color: #fff;
+  border-color: #7481f0;
+  background: #6572ed;
+}
+/* 短剧「切换最终分镜/资产」弹框：createPortal → body，html 主题兜底 */
+html[data-theme="dark"] .drama-dialog.drama-dialog--switch-final {
+  color: #e8edf5;
+  background: #171d26;
+  border-color: #303a47;
+}
+html[data-theme="dark"] .drama-dialog.drama-dialog--switch-final > header {
+  border-bottom-color: #2d3643;
+}
+html[data-theme="dark"] .drama-dialog.drama-dialog--switch-final > header span {
+  color: #8f9bff;
+}
+html[data-theme="dark"] .drama-dialog.drama-dialog--switch-final > header button {
+  color: #c5ced9;
+  background: #232b36;
+  border-color: #3a4554;
+}
+html[data-theme="dark"] .drama-dialog.drama-dialog--switch-final .drama-dialog__copy {
+  color: #c5ced9;
+}
+html[data-theme="dark"] .drama-dialog.drama-dialog--switch-final .switch-final-grid article {
+  color: #e5eaf2;
+  border-color: #35404e;
+  background: #171d26;
+}
+html[data-theme="dark"] .drama-dialog.drama-dialog--switch-final .switch-final-grid article > div strong {
+  color: #e8edf5;
+}
+html[data-theme="dark"] .drama-dialog.drama-dialog--switch-final .switch-final-grid article > div span {
+  color: #aeb9c6;
+}
+html[data-theme="dark"] .drama-dialog.drama-dialog--switch-final .switch-final-grid img,
+html[data-theme="dark"] .drama-dialog.drama-dialog--switch-final .switch-final-grid video {
+  background: #202731;
+}
+html[data-theme="dark"] .drama-dialog.drama-dialog--switch-final .drama-dialog__actions {
+  border-top-color: #2d3643;
+}
+html[data-theme="dark"] .drama-dialog.drama-dialog--switch-final .drama-dialog__actions button {
+  color: #e8edf5;
+  background: #232b36;
+  border-color: #3a4554;
+}
 .console-shell[data-theme="dark"] .creation-composer textarea,
 .console-shell[data-theme="dark"] .creation-composer textarea::placeholder { color: #aab3c0; }
 .console-shell[data-theme="dark"] .create-welcome__title { color: #eef2f8; }
@@ -340,7 +439,8 @@ html[data-theme="dark"] .drama-dialog--confirm .drama-dialog__actions .button--p
 .console-shell[data-theme="dark"] .save-success-dialog__actions .primary { color: #fff; background: #6673ec; border-color: #6673ec; }
 .console-shell[data-theme="dark"] .creation-card__body footer button,
 .console-shell[data-theme="dark"] .creation-card__body footer a { color: #aab4c1; background: #252d38; }
-.console-shell[data-theme="dark"] .creation-card__body footer button.danger { color: #f0a3a8; background: #322028; }
+.console-shell[data-theme="dark"] .creation-card__body footer button.danger,
+.console-shell[data-theme="dark"] .asset-menu { color: #f0a3a8; background: #322028; }
 .console-shell[data-theme="dark"] .button--danger { color: #f0a3a8; border-color: #5a3338; background: #322028; }
 .console-shell[data-theme="dark"] .library-summary button { color: #c5ced9; }
 .console-shell[data-theme="dark"] .creation-viewer__meta p,
@@ -1142,8 +1242,8 @@ html[data-theme="dark"] .drama-dialog--confirm .drama-dialog__actions .button--p
 .asset-card__preview { width: 100%; height: 100%; padding: 0; border: 0; display: block; text-align: left; color: inherit; background: transparent; }
 .asset-card__media video, .asset-card__media img { width: 100%; height: 100%; object-fit: cover; transition: transform .35s ease; }.asset-card:hover .asset-card__media video, .asset-card:hover .asset-card__media img { transform: scale(1.03); }
 .asset-card__type { position: absolute; left: 7px; bottom: 7px; display: flex; gap: 5px; align-items: center; border-radius: 999px; padding: 4px 7px; background: rgba(15,21,28,.68); color: white; font-size: 11px; backdrop-filter: blur(7px); }
-.asset-menu { position: absolute; right: 7px; top: 7px; width: 27px; height: 27px; border: 0; border-radius: 8px; background: #c53d50; color: white; display: grid; place-items: center; box-shadow: 0 2px 8px rgba(15,21,28,.3); transition: background .15s ease, transform .15s ease; }
-.asset-menu:hover { background: #d6485c; transform: scale(1.06); }
+.asset-menu { position: absolute; right: 7px; top: 7px; width: 28px; height: 28px; border: 0; border-radius: 8px; color: #c05a61; background: #f3f5f6; display: grid; place-items: center; transition: background .15s ease, color .15s ease, box-shadow .15s ease; }
+.asset-menu:hover { color: #c05a61; background: #e9ecf0; box-shadow: 0 1px 4px rgba(192,90,97,.18); }
 .asset-card__pick { position: absolute; left: 7px; top: 7px; width: 24px; height: 24px; display: grid; place-items: center; cursor: pointer; }
 .asset-card__pick input { appearance: none; -webkit-appearance: none; width: 18px; height: 18px; margin: 0; border: 2px solid rgba(255,255,255,.85); border-radius: 6px; background: rgba(15,21,28,.45); display: grid; place-items: center; cursor: pointer; transition: background .15s ease, border-color .15s ease; color: white; font-size: 0; }
 .asset-card__pick input:checked { background: var(--primary); border-color: var(--primary); }
