@@ -40,6 +40,17 @@ export function AuthProvider({ children }) {
   }, [meQuery.error]);
 
   useEffect(() => {
+    const onInvalid = () => clearSession();
+    const onRefresh = () => meQuery.refetch();
+    window.addEventListener("lightflow:auth-invalid", onInvalid);
+    window.addEventListener("lightflow:auth-refresh", onRefresh);
+    return () => {
+      window.removeEventListener("lightflow:auth-invalid", onInvalid);
+      window.removeEventListener("lightflow:auth-refresh", onRefresh);
+    };
+  }, [meQuery.refetch]);
+
+  useEffect(() => {
     function onUnauthorized() {
       clearSession();
     }

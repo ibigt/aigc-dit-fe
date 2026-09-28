@@ -1,26 +1,46 @@
 import { AudioLines, Check, Clock3, Download, Filter, Grid3X3, Image, List, Plus, Search, Trash2, Upload, Video, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteAsset, fetchAssets, uploadAsset } from "../api/assets.js";
 import { MediaCover } from "../lib/MediaCover.jsx";
 import { formatDateTime, mediaUrl } from "../lib/media.js";
+import { validateAssetFile } from "../lib/assetUpload.js";
+import { formatMediaMeta, runBatchDelete } from "../lib/assetBatch.js";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
+
+const AUTO_DISMISS_DELAY_MS = 3000;
+const ORDER_OPTIONS = [
+  { value: "time_desc", label: "最新上传" },
+  { value: "time_asc", label: "最早上传" },
+];
 
 export function AssetLibrary() {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState("all");
   const [view, setView] = useState("grid");
   const [query, setQuery] = useState("");
+  const [orderBy, setOrderBy] = useState("time_desc");
   const [selected, setSelected] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [batchDelete, setBatchDelete] = useState(null);
+  const [pickedIds, setPickedIds] = useState(() => new Set());
+  const [batchToast, setBatchToast] = useState(null);
   const [audioQueue, setAudioQueue] = useState([]);
   const [audioName, setAudioName] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [batchUploads, setBatchUploads] = useState([]);
+  const [batchExpanded, setBatchExpanded] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const fileRef = useRef(null);
+  const dropRef = useRef(null);
   const audioFile = audioQueue[0] || null;
   const assetsQuery = useQuery({
-    queryKey: ["assets", filter, query],
-    queryFn: () => fetchAssets({ kind: filter === "all" ? undefined : filter, q: query || undefined }),
+    queryKey: ["assets", filter, query, orderBy],
+    queryFn: () => fetchAssets({
+      kind: filter === "all" ? undefined : filter,
+      q: query || undefined,
+      orderBy: orderBy === "time_desc" ? undefined : orderBy,
+    }),
   });
   const uploadMutation = useMutation({
     mutationFn: ({ file, name, onProgress }) => uploadAsset(file, { name, onProgress }),
@@ -31,6 +51,12 @@ export function AssetLibrary() {
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ["assets"] });
       setSelected((current) => (current?.id === id ? null : current));
+      setPickedIds((current) => {
+        if (!current.has(id)) return current;
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
     },
   });
   const assets = useMemo(
@@ -40,10 +66,44 @@ export function AssetLibrary() {
       type: item.type || item.kind,
       src: mediaUrl(item.src || item.storageKey),
       poster: mediaUrl(item.poster || item.posterKey),
+      meta: formatMediaMeta(item),
       createdAt: formatDateTime(item.createdAt),
     })),
     [assetsQuery.data],
   );
+
+  const pickedItems = useMemo(
+    () => assets.filter((item) => pickedIds.has(item.id)),
+    [assets, pickedIds],
+  );
+
+  const batchSummary = useMemo(() => {
+    if (batchUploads.length === 0) return null;
+    const total = batchUploads.length;
+    const done = batchUploads.filter((item) => item.status === "done").length;
+    const errored = batchUploads.filter((item) => item.status === "error").length;
+    const inFlight = total - done - errored;
+    const totalProgress = batchUploads.reduce((sum, item) => sum + (item.progress || 0), 0);
+    const overall = total === 0 ? 0 : Math.round(totalProgress / total);
+    return { total, done, errored, inFlight, overall };
+  }, [batchUploads]);
+
+  useEffect(() => {
+    if (pickedIds.size === 0 || batchDelete) return;
+    const known = new Set(assets.map((item) => item.id));
+    setPickedIds((current) => {
+      let changed = false;
+      const next = new Set();
+      for (const id of current) {
+        if (known.has(id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [assets, pickedIds, batchDelete]);
 
   useEffect(() => {
     if (!audioFile) return;
@@ -51,14 +111,97 @@ export function AssetLibrary() {
     setUploadProgress(0);
   }, [audioFile]);
 
+  useEffect(() => {
+    if (!batchToast) return;
+    const delay = batchToast.failed.length > 0 ? 8000 : 3000;
+    const timer = setTimeout(() => setBatchToast(null), delay);
+    return () => clearTimeout(timer);
+  }, [batchToast]);
+
+  function updateBatchUpload(id, patch) {
+    setBatchUploads((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
+  }
+
+  async function uploadBatchFile(item) {
+    try {
+      await uploadAsset(item.file, { onProgress: (progress) => updateBatchUpload(item.id, { progress }) });
+      updateBatchUpload(item.id, { progress: 100, status: "done" });
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
+      setTimeout(() => {
+        setBatchUploads((current) => current.filter((entry) => entry.id !== item.id));
+      }, AUTO_DISMISS_DELAY_MS);
+    } catch (error) {
+      updateBatchUpload(item.id, { status: "error", error: error?.message || "上传失败" });
+    }
+  }
+
   function onUpload(event) {
     const files = Array.from(event.target.files || []);
-    const audioFiles = files.filter((file) => file.type.startsWith("audio/"));
-    files.filter((file) => !file.type.startsWith("audio/"))
-      .forEach((file) => uploadMutation.mutate({ file }));
-    if (audioFiles.length) setAudioQueue((current) => [...current, ...audioFiles]);
+    enqueueFiles(files);
     event.target.value = "";
   }
+
+  const enqueueFiles = useCallback((files) => {
+    if (!files.length) return;
+    const checked = files.map((file, index) => ({
+      file,
+      validation: validateAssetFile(file),
+      id: `${Date.now()}-${index}-${file.name}`,
+    }));
+    const audioFiles = checked.filter((item) => item.validation.valid && item.validation.kind === "audio").map((item) => item.file);
+    const batchItems = checked.filter((item) => item.validation.kind !== "audio").map((item) => ({
+      id: item.id,
+      file: item.file,
+      progress: 0,
+      status: item.validation.valid ? "uploading" : "error",
+      error: item.validation.message,
+    }));
+    if (batchItems.length) {
+      setBatchUploads((current) => [...batchItems, ...current].slice(0, 20));
+      batchItems.filter((item) => item.status === "uploading").forEach(uploadBatchFile);
+    }
+    if (audioFiles.length) setAudioQueue((current) => [...current, ...audioFiles]);
+    const invalidAudio = checked.filter((item) => !item.validation.valid && item.validation.kind === "audio").map((item) => ({ id: item.id, file: item.file, progress: 0, status: "error", error: item.validation.message }));
+    if (invalidAudio.length) setBatchUploads((current) => [...invalidAudio, ...current].slice(0, 20));
+  }, [uploadBatchFile]);
+
+  useEffect(() => {
+    const node = dropRef.current;
+    if (!node) return;
+    let counter = 0;
+    const onEnter = (event) => {
+      if (!event.dataTransfer?.types?.includes("Files")) return;
+      event.preventDefault();
+      counter += 1;
+      setIsDragging(true);
+    };
+    const onOver = (event) => {
+      if (!event.dataTransfer?.types?.includes("Files")) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    };
+    const onLeave = (event) => {
+      counter = Math.max(0, counter - 1);
+      if (counter === 0) setIsDragging(false);
+    };
+    const onDrop = (event) => {
+      event.preventDefault();
+      counter = 0;
+      setIsDragging(false);
+      const files = Array.from(event.dataTransfer?.files || []);
+      enqueueFiles(files);
+    };
+    node.addEventListener("dragenter", onEnter);
+    node.addEventListener("dragover", onOver);
+    node.addEventListener("dragleave", onLeave);
+    node.addEventListener("drop", onDrop);
+    return () => {
+      node.removeEventListener("dragenter", onEnter);
+      node.removeEventListener("dragover", onOver);
+      node.removeEventListener("dragleave", onLeave);
+      node.removeEventListener("drop", onDrop);
+    };
+  }, [enqueueFiles]);
 
   function confirmAudioUpload(event) {
     event.preventDefault();
@@ -82,6 +225,43 @@ export function AssetLibrary() {
     setDeleteTarget(item);
   }
 
+  function togglePicked(item) {
+    setPickedIds((current) => {
+      const next = new Set(current);
+      if (next.has(item.id)) {
+        next.delete(item.id);
+      } else {
+        next.add(item.id);
+      }
+      return next;
+    });
+  }
+
+  function clearPicked() {
+    setPickedIds(new Set());
+  }
+
+  function askBatchDelete() {
+    if (pickedItems.length === 0) return;
+    setBatchDelete({ items: pickedItems });
+  }
+
+  async function runBatchDeleteNow() {
+    if (!batchDelete || batchDelete.busy) return;
+    setBatchDelete({ items: batchDelete.items, busy: true });
+    const result = await runBatchDelete(batchDelete.items, deleteAsset);
+    queryClient.invalidateQueries({ queryKey: ["assets"] });
+    setPickedIds((current) => {
+      if (current.size === 0) return current;
+      const next = new Set(current);
+      for (const failed of result.failed) next.delete(failed.id);
+      for (const item of result.succeeded) next.delete(item.id);
+      return next;
+    });
+    setBatchToast(result);
+    setBatchDelete(null);
+  }
+
   return (
     <div className="library-page">
       <header className="page-heading">
@@ -94,31 +274,105 @@ export function AssetLibrary() {
           const Icon = item.icon;
           return <button className={filter === item.id ? "active" : ""} type="button" key={item.id} onClick={() => setFilter(item.id)}><Icon size={15} />{item.label}</button>;
         })}</div>
-        <div className="library-tools">
-          <label><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索素材" /></label>
-          <button type="button" aria-label="筛选素材"><Filter size={16} /></button>
-          <span />
-          <button type="button" aria-label="网格视图" className={view === "grid" ? "active" : ""} onClick={() => setView("grid")}><Grid3X3 size={16} /></button>
-          <button type="button" aria-label="列表视图" className={view === "list" ? "active" : ""} onClick={() => setView("list")}><List size={16} /></button>
+        <div className="library-toolbar__right">
+          {pickedIds.size > 0 && (
+            <div className="asset-batch-bar" role="status">
+              <strong>已选 {pickedIds.size} 项</strong>
+              <button type="button" onClick={clearPicked}>取消选择</button>
+              <button className="button button--danger" type="button" onClick={askBatchDelete}><Trash2 size={15} /> 删除所选</button>
+            </div>
+          )}
+          {batchToast && (
+            <div className="asset-batch-toast" role="status">
+              <span>已删除 {batchToast.succeeded.length} 个素材{batchToast.failed.length > 0 ? `，${batchToast.failed.length} 个失败` : ""}</span>
+              {batchToast.failed.length > 0 && (
+                <small>{batchToast.failed.map((entry) => entry.name).join("、")}</small>
+              )}
+              <button type="button" onClick={() => setBatchToast(null)}><X size={14} /></button>
+            </div>
+          )}
+          <div className="library-tools">
+
+            <div className="asset-order">
+              <select value={orderBy} onChange={(event) => setOrderBy(event.target.value)} aria-label="素材排序">
+                {ORDER_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </div>
+            <label><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索素材" /></label>
+            <button type="button" aria-label="筛选素材"><Filter size={16} /></button>
+            <span />
+            <button type="button" aria-label="网格视图" className={view === "grid" ? "active" : ""} onClick={() => setView("grid")}><Grid3X3 size={16} /></button>
+            <button type="button" aria-label="列表视图" className={view === "list" ? "active" : ""} onClick={() => setView("list")}><List size={16} /></button>
+          </div>
         </div>
       </section>
-      <section className={`asset-grid ${view === "list" ? "asset-grid--list" : ""}`}>
-        <button className="upload-card" type="button" onClick={() => fileRef.current?.click()}><span><Plus size={22} /></span><strong>上传新素材</strong><small>图片、视频或音频</small></button>
-        {assets.map((item) => (
-          <article className="asset-card" key={item.id}>
-            <div className="asset-card__media">
-              <button className="asset-card__preview" type="button" onClick={() => setSelected(item)} aria-label={`查看素材：${item.title}`}>
-                <MediaCover item={item} />
-                <div className="asset-card__type">{item.type === "audio" ? <><AudioLines size={13} /> 音频</> : item.type === "video" ? <><Video size={13} /> 视频</> : <><Image size={13} /> 图片</>}</div>
+      {batchSummary && (
+        <section className="asset-upload-batch" aria-live="polite">
+          <header>
+            <strong>上传队列</strong>
+            <span>
+              {batchSummary.done}/{batchSummary.total} 完成
+              {batchSummary.errored > 0 ? ` · ${batchSummary.errored} 失败` : ""}
+            </span>
+            <i className="asset-upload-batch__bar"><b style={{ width: `${batchSummary.overall}%` }} /></i>
+            <em>{batchSummary.inFlight > 0 ? `${batchSummary.overall}%` : "已完成"}</em>
+            {batchSummary.done + batchSummary.errored > 0 && (
+              <button type="button" onClick={() => setBatchUploads((current) => current.filter((item) => item.status === "uploading"))}>清除已结束</button>
+            )}
+            {batchSummary.errored > 0 && (
+              <button type="button" onClick={() => setBatchExpanded((value) => !value)}>
+                {batchExpanded ? "收起详情" : "查看失败"}
               </button>
-              <button className="asset-menu" type="button" aria-label={`删除素材：${item.title}`} onClick={() => confirmDelete(item)}><Trash2 size={15} /></button>
-            </div>
-            <div className="asset-card__info">
-              <div><strong>{item.title}</strong><small>{item.createdAt}</small></div>
-              <span title="已入库"><Check size={13} /></span>
-            </div>
-          </article>
-        ))}
+            )}
+          </header>
+          {batchExpanded && batchSummary.errored > 0 && (
+            <ul>
+              {batchUploads.filter((item) => item.status === "error").map((item) => (
+                <li key={item.id} className="asset-upload-batch__item asset-upload-batch__item--error">
+                  <span className="asset-upload-batch__name" title={item.error}>{item.file.name}</span>
+                  <span className="asset-upload-batch__pct">{item.error || "上传失败"}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+      <section className={`asset-grid ${view === "list" ? "asset-grid--list" : ""} ${isDragging ? "asset-grid--drag" : ""}`} ref={dropRef}>
+        <button className="upload-card" type="button" onClick={() => fileRef.current?.click()}><span><Plus size={22} /></span><strong>{isDragging ? "松开即可上传" : "上传新素材"}</strong><small>图片、视频或音频</small></button>
+        {isDragging && <div className="asset-grid__drop-mask" aria-hidden="true" />}
+        {assets.map((item) => {
+          const isPicked = pickedIds.has(item.id);
+          const meta = item.meta;
+          return (
+            <article className={`asset-card ${isPicked ? "asset-card--picked" : ""}`} key={item.id}>
+              <div className="asset-card__media">
+                <button className="asset-card__preview" type="button" onClick={() => setSelected(item)} aria-label={`查看素材：${item.title}`}>
+                  <MediaCover item={item} />
+                  <div className="asset-card__type">{item.type === "audio" ? <><AudioLines size={13} /> 音频</> : item.type === "video" ? <><Video size={13} /> 视频</> : <><Image size={13} /> 图片</>}</div>
+                </button>
+                <label className="asset-card__pick" onClick={(event) => event.stopPropagation()}>
+                  <input type="checkbox" checked={isPicked} onChange={() => togglePicked(item)} aria-label={`选择素材：${item.title}`} />
+                </label>
+                <button className="asset-menu" type="button" aria-label={`删除素材：${item.title}`} onClick={() => confirmDelete(item)}><Trash2 size={15} /></button>
+              </div>
+              <div className="asset-card__info">
+                <div>
+                  <strong>{item.title}</strong>
+                  {(meta.size || meta.duration) ? (
+                    <small>
+                      {meta.size ? <span>{meta.size}</span> : null}
+                      {meta.size && meta.duration ? <i aria-hidden="true">·</i> : null}
+                      {meta.duration ? <span>{meta.duration}</span> : null}
+                    </small>
+                  ) : (
+                    <small>{item.createdAt}</small>
+                  )}
+                </div>
+                <span title="已入库"><Check size={13} /></span>
+              </div>
+            </article>
+          );
+        })}
       </section>
       <div className="library-summary"><Clock3 size={15} /> 共 {assets.length} 个素材<button type="button"><Download size={15} /> 导出清单</button></div>
       {audioFile && (
@@ -179,6 +433,19 @@ export function AssetLibrary() {
             onSuccess: () => setDeleteTarget(null),
           });
         }}
+      />
+      <ConfirmDialog
+        open={Boolean(batchDelete)}
+        eyebrow="素材库"
+        title="批量删除所选素材？"
+        message={batchDelete
+          ? `即将删除 ${batchDelete.items.length} 个素材，操作不可恢复。`
+          : ""}
+        confirmLabel="删除"
+        busy={Boolean(batchDelete?.busy)}
+        busyLabel="删除中…"
+        onClose={() => { if (!batchDelete?.busy) setBatchDelete(null); }}
+        onConfirm={runBatchDeleteNow}
       />
     </div>
   );

@@ -42,6 +42,8 @@ import {
 import { mediaUrl } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
+import { AssetPickerDialog } from "../AssetPickerDialog.jsx";
+import { sameAsset } from "../../lib/assetPicker.js";
 import { GenerationHistoryPanel, SwitchFinalModal } from "./GenerationHistoryPanel.jsx";
 
 const TYPES = [
@@ -492,6 +494,7 @@ export function DramaAssetBoard({ series, episode }) {
   const [imageLibraryOpen, setImageLibraryOpen] = useState(false);
   const [imageLibraryError, setImageLibraryError] = useState("");
   const [voiceTarget, setVoiceTarget] = useState(null);
+  const [voicePending, setVoicePending] = useState([]);
   const [promptDirty, setPromptDirty] = useState(false);
   const [summaryDirty, setSummaryDirty] = useState(false);
   const [busy, setBusy] = useState({});
@@ -1117,6 +1120,7 @@ export function DramaAssetBoard({ series, episode }) {
         onVoiceUploadClick={() => {
           if (!selected) return;
           setVoiceTarget({ id: selected.id, name: selected.name });
+          setVoicePending([]);
           setVoiceLibraryOpen(true);
         }}
         voiceReferenceStatus={voiceReferenceStatus}
@@ -1173,17 +1177,29 @@ export function DramaAssetBoard({ series, episode }) {
       />
 
       {voiceLibraryOpen && (
-        <VoiceLibraryDialog
-          targetName={voiceTarget?.name || "当前角色"}
+        <AssetPickerDialog
+          title={`为“${voiceTarget?.name || "当前角色"}”选择参考音频`}
+          hint="角色音色参考"
+          emptyText="音频素材库暂无可用素材"
           assets={voiceLibraryQuery.data || []}
+          selectedItems={voicePending}
           loading={voiceLibraryQuery.isLoading}
-          busy={isBusy(voiceTarget?.id, "voice")}
+          error={voiceLibraryQuery.error?.message || ""}
+          maxSelection={1}
+          onToggle={(item) => setVoicePending((current) => current.some((selectedItem) => sameAsset(selectedItem, item)) ? [] : [item])}
           onClose={() => {
             setVoiceLibraryOpen(false);
             setVoiceTarget(null);
+            setVoicePending([]);
           }}
-          onSelect={(item) => onVoiceLibrarySelect(item).catch((err) => showToast(err.message))}
-          onUpload={() => voiceFileRef.current?.click()}
+          onConfirm={() => {
+            const item = voicePending[0];
+            if (!item) {
+              showToast("请选择一段参考音频");
+              return;
+            }
+            onVoiceLibrarySelect(item).catch((err) => showToast(err.message));
+          }}
         />
       )}
 

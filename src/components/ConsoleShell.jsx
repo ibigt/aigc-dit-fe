@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation, useMatch, useNavigate } from "react-router-dom";
 import { rechargeCredits } from "../api/credits.js";
 import { fetchEnabledModels } from "../api/models.js";
+import { resolveConsoleTheme } from "../lib/theme.js";
+import { managedModelCatalog } from "../lib/modelCatalog.js";
 import { AssetLibrary } from "./AssetLibrary.jsx";
 import { Brand } from "./Brand.jsx";
 import { CreditsModal } from "./CreditsModal.jsx";
@@ -30,7 +32,10 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
   const dramaId = dramaMatch?.params?.id;
   const queryClient = useQueryClient();
   const [active, setActive] = useState(() => (dramaId || location.state?.tab === "drama" ? "drama" : "create"));
-  const [theme, setTheme] = useState(() => window.localStorage.getItem("lightflow-console-theme") || "light");
+  const [theme, setTheme] = useState(() => resolveConsoleTheme(
+    window.localStorage.getItem("lightflow-console-theme"),
+    window.matchMedia?.("(prefers-color-scheme: dark)")?.matches,
+  ));
   const [userMenu, setUserMenu] = useState(false);
   const [profileMode, setProfileMode] = useState(null);
   const [creditsOpen, setCreditsOpen] = useState(false);
@@ -40,7 +45,7 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
     queryKey: ["public-models"],
     queryFn: fetchEnabledModels,
   });
-  const models = modelsQuery.data?.length ? modelsQuery.data : config.models;
+  const models = managedModelCatalog(modelsQuery.data);
   const menuRef = useRef(null);
   const isAdmin = user.isAdmin === true;
   const visibleTabs = isAdmin ? [...tabs, { id: "admin", label: "管理后台", icon: ShieldCheck }] : tabs;
@@ -50,7 +55,14 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, []);
-  useEffect(() => { window.localStorage.setItem("lightflow-console-theme", theme); }, [theme]);
+  useEffect(() => {
+    window.localStorage.setItem("lightflow-console-theme", theme);
+    document.documentElement.style.colorScheme = theme;
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+  useEffect(() => {
+    if (active === "admin" && !isAdmin) setActive("create");
+  }, [active, isAdmin]);
   useEffect(() => {
     if (dramaId) setActive("drama");
     else if (location.state?.tab === "drama") setActive("drama");
@@ -94,7 +106,7 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
         </div>
       </header>
       <main className="console-content">
-        {active === "create" && <FastCreate config={{ ...config, models }} theme={theme} reuse={creationReuse} onReuseApplied={() => setCreationReuse(null)} onOpenAssets={() => goTab("assets")} onConsumeCredits={(_points, details) => {
+        {active === "create" && <FastCreate config={{ ...config, models }} modelCatalogLoading={modelsQuery.isLoading} modelCatalogError={modelsQuery.error} theme={theme} reuse={creationReuse} onReuseApplied={() => setCreationReuse(null)} onOpenAssets={() => goTab("assets")} credits={user?.credits ?? null} onNeedRecharge={() => setCreditsOpen(true)} onConsumeCredits={(_points, details) => {
           queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
           queryClient.invalidateQueries({ queryKey: ["credits"] });
           queryClient.invalidateQueries({ queryKey: ["creations"] });
@@ -107,8 +119,8 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
         {active === "admin" && isAdmin && <AdminConsole />}
       </main>
       <ProfileModal open={Boolean(profileMode)} mode={profileMode} user={user} onClose={() => setProfileMode(null)} onSave={(next) => { onUserUpdate(next); setProfileMode(null); }} />
-      <CreditsModal open={creditsOpen} user={user} recentTransactions={recentTransactions} onClose={() => setCreditsOpen(false)} onRecharge={async (amountYuan, payment) => {
-        const profile = await rechargeCredits({ amountYuan, payment });
+      <CreditsModal open={creditsOpen} user={user} recentTransactions={recentTransactions} onClose={() => setCreditsOpen(false)} onRecharge={async (amountYuan, payment, requestId) => {
+        const profile = await rechargeCredits({ amountYuan, payment, requestId });
         onUserUpdate(profile);
         queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
         queryClient.invalidateQueries({ queryKey: ["credits"] });

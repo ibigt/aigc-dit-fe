@@ -28,6 +28,26 @@ export function deleteAdminUser(id) {
   return api.delete(`/admin/users/${id}`);
 }
 
+export function fetchAdminRecharges(params = {}) {
+  return api.get("/admin/recharges", { params: { pageNum: 1, pageSize: 50, ...params } });
+}
+
+export function fetchAdminRechargeSummary() {
+  return api.get("/admin/recharges/summary");
+}
+
+export function fetchAdminTextUsage(params = {}) {
+  return api.get("/admin/text-usage", { params: { pageNum: 1, pageSize: 20, days: 30, ...params } });
+}
+
+export function fetchAdminTextUsageSummary(params = {}) {
+  return api.get("/admin/text-usage/summary", { params: { days: 30, ...params } });
+}
+
+export function fetchModelObservability(params = {}) {
+  return api.get("/admin/model-observability", { params: { days: 7, ...params } });
+}
+
 export function fetchAdapterCatalog() {
   return api.get("/admin/models/adapters");
 }
@@ -53,7 +73,7 @@ export function deleteAdminModel(id) {
 }
 
 export function testAdminModelConnection(payload) {
-  return api.post("/admin/models/test-connection", payload, { timeout: 20000 });
+  return api.post("/admin/models/test-connection", payload, { timeout: 45000 });
 }
 
 export function fetchAdminRequests(params = {}) {

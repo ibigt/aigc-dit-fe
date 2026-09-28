@@ -31,10 +31,16 @@ api.interceptors.response.use(
   },
   (error) => {
     const body = error.response?.data;
-    const status = error.response?.status;
-    const code = body?.code || status;
-    if (code === 401 || status === 401) {
-      clearLocalAuth();
+    const status = Number(error.response?.status || body?.code);
+    const code = body?.code || error.response?.status;
+    const requestUrl = String(error.config?.url || "");
+    const isAuthEntry = requestUrl.includes("/auth/login") || requestUrl.includes("/auth/register");
+    if (!isAuthEntry && window.localStorage.getItem(TOKEN_KEY)) {
+      if (status === 401) {
+        clearLocalAuth();
+        window.dispatchEvent(new Event("lightflow:auth-invalid"));
+      }
+      if (status === 403) window.dispatchEvent(new Event("lightflow:auth-refresh"));
     }
     const timedOut = error.code === "ECONNABORTED" || /timeout/i.test(error.message || "");
     throw makeApiError(
