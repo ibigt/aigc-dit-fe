@@ -1573,6 +1573,7 @@
 }
 .console-shell[data-theme="dark"] .youxi-film-banner { color: #c5ced8; border-color: #3a4554; background: #1b222c; }
 .console-shell[data-theme="dark"] .youxi-film-banner--warn { color: #f0d19a; border-color: #6b5428; background: #2a2214; }
+.console-shell[data-theme="dark"] .youxi-final-player { background: #0f141b; }
 .youxi-film-layout .youxi-final-player { width: 100%; min-height: 0; }
 .youxi-final-player .youxi-story-empty-preview {
   width: min(100%, 480px);
@@ -2495,10 +2496,10 @@
 .drama-workspace .youxi-storyboard-layout--board,
 .drama-workspace .youxi-film-layout { border-top: 0; }
 
-.drama-workspace .drama-script-layout > *:not(.drama-dialog-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox),
-.drama-workspace .youxi-subject-layout > *:not(.drama-dialog-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox),
-.drama-workspace .youxi-storyboard-layout--board > *:not(.drama-dialog-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox),
-.drama-workspace .youxi-film-layout > *:not(.drama-dialog-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox) {
+.drama-workspace .drama-script-layout > *:not(.drama-dialog-backdrop, .creation-asset-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox),
+.drama-workspace .youxi-subject-layout > *:not(.drama-dialog-backdrop, .creation-asset-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox),
+.drama-workspace .youxi-storyboard-layout--board > *:not(.drama-dialog-backdrop, .creation-asset-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox),
+.drama-workspace .youxi-film-layout > *:not(.drama-dialog-backdrop, .creation-asset-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox) {
   min-width: 0;
   min-height: 0;
   border: var(--drama-panel-border);
@@ -2507,10 +2508,10 @@
   background: var(--drama-panel-bg);
 }
 
-.console-shell[data-theme="dark"] .drama-workspace .drama-script-layout > *:not(.drama-dialog-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox),
-.console-shell[data-theme="dark"] .drama-workspace .youxi-subject-layout > *:not(.drama-dialog-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox),
-.console-shell[data-theme="dark"] .drama-workspace .youxi-storyboard-layout--board > *:not(.drama-dialog-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox),
-.console-shell[data-theme="dark"] .drama-workspace .youxi-film-layout > *:not(.drama-dialog-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox) {
+.console-shell[data-theme="dark"] .drama-workspace .drama-script-layout > *:not(.drama-dialog-backdrop, .creation-asset-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox),
+.console-shell[data-theme="dark"] .drama-workspace .youxi-subject-layout > *:not(.drama-dialog-backdrop, .creation-asset-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox),
+.console-shell[data-theme="dark"] .drama-workspace .youxi-storyboard-layout--board > *:not(.drama-dialog-backdrop, .creation-asset-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox),
+.console-shell[data-theme="dark"] .drama-workspace .youxi-film-layout > *:not(.drama-dialog-backdrop, .creation-asset-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox) {
   background: #171d26;
   border-color: #303a47;
   box-shadow: none;
@@ -2535,10 +2536,10 @@
   .drama-workspace .drama-script__body { overflow: visible; }
   .drama-workspace .drama-chapters { position: static; max-height: none; margin-bottom: var(--drama-grid-gap); }
   .drama-workspace .drama-script-settings { position: static; margin-top: var(--drama-grid-gap); }
-  .drama-workspace .drama-script-layout > * + *:not(.drama-dialog-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox),
-  .drama-workspace .youxi-subject-layout > * + *:not(.drama-dialog-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox),
-  .drama-workspace .youxi-storyboard-layout--board > * + *:not(.drama-dialog-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox),
-  .drama-workspace .youxi-film-layout > * + *:not(.drama-dialog-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox) { margin-top: var(--drama-grid-gap); }
+  .drama-workspace .drama-script-layout > * + *:not(.drama-dialog-backdrop, .creation-asset-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox),
+  .drama-workspace .youxi-subject-layout > * + *:not(.drama-dialog-backdrop, .creation-asset-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox),
+  .drama-workspace .youxi-storyboard-layout--board > * + *:not(.drama-dialog-backdrop, .creation-asset-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox),
+  .drama-workspace .youxi-film-layout > * + *:not(.drama-dialog-backdrop, .creation-asset-backdrop, .drama-overview-backdrop, .drama-toast, .drama-lightbox) { margin-top: var(--drama-grid-gap); }
 }
 .drama-native-voice {
   display: grid;
