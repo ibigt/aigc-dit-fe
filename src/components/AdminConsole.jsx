@@ -18,6 +18,7 @@ import {
   LayoutDashboard,
   List,
   MoreHorizontal,
+  Coins,
   Pencil,
   Play,
   Plus,
@@ -43,6 +44,11 @@ import {
   fetchAdminModels,
   fetchAdminQueue,
   fetchAdminQueueSummary,
+  fetchAdminRecharges,
+  fetchAdminRechargeSummary,
+  fetchAdminTextUsage,
+  fetchAdminTextUsageSummary,
+  fetchModelObservability,
   fetchAdminRequests,
   fetchAdminUsers,
   fetchDashboard,
@@ -52,12 +58,18 @@ import {
   updateAdminModel,
   updateAdminUser,
 } from "../api/admin.js";
-import { textReasoningEnabled, withTextReasoning } from "./adminModelConfig.js";
+import { adapterSpecificFields, adaptersMatchingProvider, audioFormatsForAdapter, providerChoicesForAdapters, sanitizeAdapterSpecificConfig, textReasoningEnabled, withTextReasoning } from "./adminModelConfig.js";
+import { defaultPricing, normalizePricing, normalizePricingUnit, pricingUnits, pricingValidationError } from "../lib/pricing.js";
+import { textUsageOperationLabel, textUsageOperations, textUsageReconciliationLabel } from "../lib/textUsage.js";
+import { healthLevel, observabilityCategoryLabel } from "../lib/modelObservability.js";
 
 const adminMenus = [
   { id: "dashboard", label: "仪表盘", icon: LayoutDashboard },
   { id: "users", label: "用户管理", icon: Users },
+  { id: "recharges", label: "充值对账", icon: CircleDollarSign },
+  { id: "textUsage", label: "文本用量", icon: Cpu },
   { id: "models", label: "模型管理", icon: Bot },
+  { id: "observability", label: "模型监控", icon: Activity },
   { id: "requests", label: "请求日志", icon: FileClock },
   { id: "queue", label: "任务队列", icon: Clock3 },
 ];
@@ -112,6 +124,13 @@ function isOfficialSource(provider) {
 
 function adaptersForCategory(category) {
   return ADAPTER_OPTIONS.filter((item) => item.category === category);
+}
+function providerChoicesForCategory(category) {
+  return providerChoicesForAdapters(adaptersForCategory(category));
+}
+
+function adaptersForProvider(category, provider) {
+  return adaptersMatchingProvider(adaptersForCategory(category), provider);
 }
 
 function adapterOf(key) {
@@ -702,14 +721,159 @@ function UsersPage() {
   </div>;
 }
 
-function PriceEditor({ title, values, onChange }) {
-  return <fieldset className="price-editor"><legend>{title}</legend>{["input", "output", "cache"].map((key) => <label key={key}>{key === "input" ? "输入" : key === "output" ? "输出" : "缓存命中"}<input value={values?.[key] || "0"} onChange={(event) => onChange(key, event.target.value)} /></label>)}</fieldset>;
+function PriceEditor({ title, values, onChange, category }) {
+  const dimensions = category === "text" ? ["input", "output", "cache"] : ["output"];
+  return <fieldset className="price-editor"><legend>{title}</legend>{dimensions.map((key) => <label key={key}>{key === "input" ? "输入" : key === "output" ? (category === "text" ? "输出" : "单价") : "缓存命中"}<input inputMode="decimal" value={values?.[key] ?? "0"} onChange={(event) => onChange(key, event.target.value)} /></label>)}</fieldset>;
+}
+
+function RechargesPage() {
+  const [status, setStatus] = useState("");
+  const [payment, setPayment] = useState("");
+  const ordersQuery = useQuery({
+    queryKey: ["admin-recharges", status, payment],
+    queryFn: () => fetchAdminRecharges({ status: status || undefined, payment: payment || undefined }),
+  });
+  const summaryQuery = useQuery({ queryKey: ["admin-recharges-summary"], queryFn: fetchAdminRechargeSummary });
+  const summary = summaryQuery.data || {};
+  const orders = ordersQuery.data?.result || [];
+  return <div className="admin-page">
+    <SectionHeading title="充值对账" description="核对支付订单与积分入账流水，快速定位漏记或金额不一致。" />
+    <div className="metric-grid">
+      <MetricCard icon={CircleDollarSign} label="充值订单" value={formatInt(summary.orderCount)} change="全部支付订单" />
+      <MetricCard icon={Check} label="实收金额" value={`¥${formatInt(summary.paidAmountYuan)}`} change="已支付订单汇总" tone="green" />
+      <MetricCard icon={Gauge} label="已入账积分" value={formatInt(summary.creditedAmount)} change="充值流水汇总" tone="purple" />
+      <MetricCard icon={Activity} label="对账异常" value={formatInt(summary.exceptionCount)} change="缺流水或金额不一致" tone={summary.exceptionCount ? "amber" : "green"} />
+    </div>
+    <div className="model-toolbar">
+      <div />
+      <select aria-label="筛选支付状态" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">全部状态</option><option value="PAID">已支付</option></select>
+      <select aria-label="筛选支付方式" value={payment} onChange={(event) => setPayment(event.target.value)}><option value="">全部方式</option><option value="wechat">微信支付</option><option value="alipay">支付宝</option></select>
+    </div>
+    {ordersQuery.error && <div className="admin-notice admin-notice--error">{errorMessage(ordersQuery.error, "充值订单加载失败")}</div>}
+    <div className="admin-table-card"><div className="admin-table-scroll"><table><thead><tr><th>订单号</th><th>用户</th><th>支付方式</th><th>金额</th><th>应入积分</th><th>流水积分</th><th>支付状态</th><th>对账状态</th><th>支付时间</th></tr></thead><tbody>{orders.map((order) => <tr key={order.id}><td><strong>{order.orderNo}</strong><small>{order.providerTradeNo}</small></td><td><strong>{order.username || `用户 ${order.userId}`}</strong><small>{order.email}</small></td><td>{order.paymentChannel === "alipay" ? "支付宝" : "微信支付"}</td><td>¥{formatInt(order.amountYuan)}</td><td>{formatInt(order.creditAmount)}</td><td>{formatInt(order.ledgerAmount)}</td><td><span className="request-status success">已支付</span></td><td><span className={`request-status ${order.reconciliationStatus === "MATCHED" ? "success" : "pending"}`}>{order.reconciliationStatus === "MATCHED" ? "已匹配" : order.reconciliationStatus === "MISSING_LEDGER" ? "缺少流水" : "金额不符"}</span></td><td>{formatClock(order.paidAt || order.createdAt)}</td></tr>)}</tbody></table></div></div>
+    {!ordersQuery.isLoading && !orders.length && <div className="admin-empty"><CircleDollarSign size={22} /><strong>暂无充值订单</strong><span>用户完成充值后，订单和对账结果会显示在这里。</span></div>}
+  </div>;
+}
+
+function TextUsagePage() {
+  const [pageNum, setPageNum] = useState(1);
+  const [days, setDays] = useState("30");
+  const [operation, setOperation] = useState("");
+  const [modelId, setModelId] = useState("");
+  const [keyword, setKeyword] = useState("");
+  const debouncedKeyword = useDebouncedValue(keyword);
+  const filters = {
+    days: Number(days),
+    operation: operation || undefined,
+    modelId: modelId || undefined,
+    keyword: debouncedKeyword || undefined,
+  };
+  const usageQuery = useQuery({
+    queryKey: ["admin-text-usage", pageNum, days, operation, modelId, debouncedKeyword],
+    queryFn: () => fetchAdminTextUsage({ ...filters, pageNum }),
+  });
+  const summaryQuery = useQuery({
+    queryKey: ["admin-text-usage-summary", days, operation, modelId, debouncedKeyword],
+    queryFn: () => fetchAdminTextUsageSummary(filters),
+  });
+  const modelsQuery = useQuery({
+    queryKey: ["admin-models", "text-usage-filter"],
+    queryFn: () => fetchAdminModels({ category: "text" }),
+  });
+  const rows = usageQuery.data?.result || [];
+  const pages = usageQuery.data?.pages || 1;
+  const total = usageQuery.data?.totalNum || 0;
+  const summary = summaryQuery.data || {};
+  const textModels = (modelsQuery.data || []).filter((model) => model.category === "text");
+  const changeFilter = (setter) => (event) => {
+    setter(event.target.value);
+    setPageNum(1);
+  };
+  return <div className="admin-page">
+    <SectionHeading title="文本用量" description="按业务任务核对 Token 用量、模型定价与积分流水。" action={<button className="admin-date" type="button" onClick={() => { usageQuery.refetch(); summaryQuery.refetch(); }}><RefreshCw size={15} /> 刷新数据</button>} />
+    <div className="admin-metrics">
+      <MetricCard icon={Activity} label="业务任务" value={formatInt(summary.taskCount)} change={`最近 ${days} 天`} tone="violet" />
+      <MetricCard icon={Cpu} label="输入 Token" value={formatInt(summary.promptTokens)} change={`缓存命中 ${formatInt(summary.cachedPromptTokens)}`} tone="blue" />
+      <MetricCard icon={FileClock} label="输出 Token" value={formatInt(summary.completionTokens)} change="仅统计业务接受的响应" tone="green" />
+      <MetricCard icon={Coins} label="应扣 / 实扣" value={`${formatInt(summary.creditCost)} / ${formatInt(summary.ledgerCost)}`} change="积分流水核对" tone="amber" />
+      <MetricCard icon={Gauge} label="对账异常" value={formatInt(summary.exceptionCount)} change="缺流水或积分不符" tone={summary.exceptionCount ? "rose" : "green"} />
+    </div>
+    <div className="model-toolbar">
+      <label><Search size={15} /><input value={keyword} onChange={changeFilter(setKeyword)} placeholder="搜索用户名或邮箱" /></label>
+      <select aria-label="统计时间范围" value={days} onChange={changeFilter(setDays)}><option value="7">最近 7 天</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option><option value="365">最近 1 年</option></select>
+      <select aria-label="筛选业务类型" value={operation} onChange={changeFilter(setOperation)}><option value="">全部业务</option>{textUsageOperations.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
+      <select aria-label="筛选文本模型" value={modelId} onChange={changeFilter(setModelId)}><option value="">全部文本模型</option>{textModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}</select>
+    </div>
+    {(usageQuery.error || summaryQuery.error) && <div className="admin-notice admin-notice--error">{errorMessage(usageQuery.error || summaryQuery.error, "文本用量加载失败")}</div>}
+    <div className="admin-table-card">
+      <div className="admin-table-toolbar"><span /><div><span>共 {formatInt(total)} 条结算记录</span></div></div>
+      <div className="admin-table-scroll"><table><thead><tr><th>结算任务</th><th>用户</th><th>模型</th><th>业务类型</th><th>输入 Token</th><th>输出 Token</th><th>缓存 Token</th><th>应扣积分</th><th>实扣积分</th><th>对账状态</th><th>结算时间</th></tr></thead><tbody>{rows.map((item) => <tr key={item.id}>
+        <td><span><strong>{item.billingRef}</strong><small>项目 {item.seriesId}</small></span></td>
+        <td><span><strong>{item.username || `用户 ${item.userId}`}</strong><small>{item.email}</small></span></td>
+        <td>{item.modelName || `模型 ${item.modelId}`}</td>
+        <td><span className="category-chip">{textUsageOperationLabel(item.operation)}</span></td>
+        <td>{formatInt(item.promptTokens)}</td><td>{formatInt(item.completionTokens)}</td><td>{formatInt(item.cachedPromptTokens)}</td>
+        <td>{formatInt(item.creditCost)}</td><td>{formatInt(item.ledgerCost)}</td>
+        <td><span className={`request-status ${item.reconciliationStatus === "MATCHED" ? "success" : "pending"}`}>{textUsageReconciliationLabel(item.reconciliationStatus)}</span></td>
+        <td>{formatClock(item.createdAt)}</td>
+      </tr>)}</tbody></table></div>
+      {!rows.length && !usageQuery.isLoading && <div className="admin-empty"><Cpu size={22} /><strong>暂无文本用量</strong><span>完成剧本分场、素材增强或分镜草稿后，任务级用量会显示在这里。</span></div>}
+      {total > 0 && <AdminPager pageNum={pageNum} pages={pages} onPage={setPageNum} />}
+    </div>
+  </div>;
+}
+
+function ModelObservabilityPage() {
+  const [days, setDays] = useState("7");
+  const [category, setCategory] = useState("");
+  const [modelId, setModelId] = useState("");
+  const modelsQuery = useQuery({ queryKey: ["admin-models", "observability-filter"], queryFn: fetchAdminModels });
+  const metricsQuery = useQuery({
+    queryKey: ["admin-model-observability", days, category, modelId],
+    queryFn: () => fetchModelObservability({ days: Number(days), category: category || undefined, modelId: modelId || undefined }),
+    refetchInterval: 30_000,
+  });
+  const data = metricsQuery.data || {};
+  const rows = data.models || [];
+  const availableModels = (modelsQuery.data || []).filter((model) => !category || model.category === category);
+  const changeCategory = (event) => {
+    setCategory(event.target.value);
+    setModelId("");
+  };
+  return <div className="admin-page">
+    <SectionHeading title="模型监控" description="按模型查看调用量、成功率、排队等待与生成耗时。" action={<button className="admin-date" type="button" onClick={() => metricsQuery.refetch()}><RefreshCw size={15} /> 刷新数据</button>} />
+    <div className="admin-metrics">
+      <MetricCard icon={Activity} label="调用总量" value={formatInt(data.total)} change={`最近 ${days} 天`} tone="violet" />
+      <MetricCard icon={Check} label="成功任务" value={formatInt(data.succeeded)} change={`失败 ${formatInt(data.failed)}`} tone="green" />
+      <MetricCard icon={Gauge} label="整体成功率" value={`${Number(data.successRate || 0).toFixed(1)}%`} change={`平均耗时 ${formatDuration(data.avgDurationSeconds || 0)}`} tone={Number(data.successRate || 0) >= 95 ? "green" : "rose"} />
+      <MetricCard icon={Clock3} label="执行中 / 等待中" value={`${formatInt(data.running)} / ${formatInt(data.pending)}`} change="实时任务状态" tone="blue" />
+      <MetricCard icon={Coins} label="积分消耗" value={formatInt(data.creditCost)} change="按任务汇总" tone="amber" />
+    </div>
+    <div className="model-toolbar">
+      <div />
+      <select aria-label="模型监控时间范围" value={days} onChange={(event) => setDays(event.target.value)}><option value="1">最近 24 小时</option><option value="7">最近 7 天</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option></select>
+      <select aria-label="模型监控类型" value={category} onChange={changeCategory}><option value="">全部类型</option>{categoryTabs.filter((item) => item.id !== "all").map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
+      <select aria-label="模型监控模型" value={modelId} onChange={(event) => setModelId(event.target.value)}><option value="">全部模型</option>{availableModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}</select>
+    </div>
+    {metricsQuery.error && <div className="admin-notice admin-notice--error">{errorMessage(metricsQuery.error, "模型监控数据加载失败")}</div>}
+    <div className="admin-table-card"><div className="admin-table-scroll"><table><thead><tr><th>模型</th><th>类型</th><th>调用量</th><th>成功 / 失败</th><th>成功率</th><th>平均耗时</th><th>P95 耗时</th><th>平均等待</th><th>积分</th><th>最后调用</th></tr></thead><tbody>{rows.map((item) => <tr key={`${item.modelId || "unknown"}-${item.category}`}>
+      <td><span><strong>{item.modelName}</strong><small>{item.provider}</small></span></td>
+      <td><span className="category-chip">{item.categoryLabel || observabilityCategoryLabel(item.category)}</span></td>
+      <td>{formatInt(item.total)}<small>运行 {formatInt(item.running)} · 等待 {formatInt(item.pending)}</small></td>
+      <td>{formatInt(item.succeeded)} / {formatInt(item.failed)}</td>
+      <td><span className={`request-status ${healthLevel(item.successRate, item.failed)}`}>{Number(item.successRate || 0).toFixed(1)}%</span></td>
+      <td>{formatDuration(item.avgDurationSeconds)}</td><td>{formatDuration(item.p95DurationSeconds)}</td><td>{formatDuration(item.avgWaitSeconds)}</td>
+      <td>{formatInt(item.creditCost)}</td><td>{formatClock(item.lastCalledAt)}</td>
+    </tr>)}</tbody></table></div></div>
+    {!rows.length && !metricsQuery.isLoading && <div className="admin-empty"><Activity size={22} /><strong>暂无模型调用</strong><span>所选时间范围内还没有符合条件的生成任务。</span></div>}
+  </div>;
 }
 
 function ModelDialog({ model, onClose, onSave, saving }) {
-  const emptyPricing = { unit: "张", sale: { input: "0", output: "3 积分", cache: "0" }, cost: { input: "0", output: "¥0.20", cache: "0" } };
+  const emptyPricing = defaultPricing(model?.category || "image");
   const [testHint, setTestHint] = useState({ ok: false, text: "" });
   const [testing, setTesting] = useState(false);
+  const [pricingError, setPricingError] = useState("");
   const [draft, setDraft] = useState(() => {
     if (!model) {
       const category = "image";
@@ -818,25 +982,34 @@ function ModelDialog({ model, onClose, onSave, saving }) {
     if (!current.logo || current.logo === prevAuto || current.logo === FALLBACK_LOGO) next.logo = auto;
     return next;
   };
-  const changeAdapter = (adapterKey) => setDraft((current) => applyAdapter(current, adapterKey, current.category, current.provider));
-  const changeProvider = (provider) => setDraft((current) => {
-    const adapters = adaptersForCategoryAndProvider(current.category, provider);
-    const adapterKey = adapters.some((item) => item.key === current.adapterKey)
+  const changeAdapter = (adapterKey) => setDraft((current) => applyAdapter(current, adapterKey));
+  const changeCategory = (category) => {
+    setPricingError("");
+    setDraft((current) => {
+      const next = applyAdapter(current, defaultAdapterKey(category), category);
+      return { ...next, pricing: normalizePricing(category, current.pricing) };
+    });
+  };
+  const changeProviderSource = (provider) => setDraft((current) => {
+    const available = adaptersForProvider(current.category, provider);
+    const adapterKey = available.some((item) => item.key === current.adapterKey)
       ? current.adapterKey
-      : (adapters[0]?.key || "");
-    if (!adapterKey) return { ...current, provider };
-    return applyAdapter({ ...current, provider }, adapterKey, current.category, provider);
-  });
-  const changeCategory = (category) => setDraft((current) => {
-    const providers = providersForCategory(category);
-    const provider = providers.includes(normalizeProviderSource(current.provider))
-      ? normalizeProviderSource(current.provider)
-      : (providers[0] || defaultProviderForCategory(category));
-    const adapters = adaptersForCategoryAndProvider(category, provider);
-    const adapterKey = adapters.some((item) => item.key === current.adapterKey)
-      ? current.adapterKey
-      : (adapters[0]?.key || defaultAdapterKey(category, provider));
-    return applyAdapter({ ...current, provider }, adapterKey, category, provider);
+      : available[0]?.key;
+    if (!adapterKey) return current;
+    let next = applyAdapter(current, adapterKey);
+    if (isSeedanceOfficial(adapterKey)) {
+      next = { ...next, provider, endpoint: isOfficialTokenPlan(provider) ? ARK_PLAN_ENDPOINT : ARK_PAYG_ENDPOINT };
+      const paygDefault = adapterOf(adapterKey)?.defaultModelKey || "";
+      const planDefault = arkPlanModelKey(adapterKey);
+      if (isOfficialTokenPlan(provider) && planDefault && (!current.modelKey || current.modelKey === paygDefault)) next.modelKey = planDefault;
+      if (!isOfficialTokenPlan(provider) && paygDefault && (!current.modelKey || current.modelKey === planDefault)) next.modelKey = paygDefault;
+    } else if (isMiniMaxH3(adapterKey)) {
+      next = { ...next, provider, endpoint: provider === "ComfyUI" ? MINIMAX_COMFY_ENDPOINT : MINIMAX_OFFICIAL_ENDPOINT };
+      next.modelKey = provider === "ComfyUI" ? MINIMAX_COMFY_MODEL_KEY : MINIMAX_OFFICIAL_MODEL_KEY;
+    } else {
+      next = { ...next, provider };
+    }
+    return next;
   });
   const toggleCap = (cap) => setDraft((current) => {
     const allowed = capsForAdapter(current.category, current.adapterKey).some((item) => item.id === cap);
@@ -855,16 +1028,21 @@ function ModelDialog({ model, onClose, onSave, saving }) {
   });
   const visibleCapOptions = capsForAdapter(draft.category, draft.adapterKey);
   const caps = filterCapsForAdapter(draft.capabilities, draft.category, draft.adapterKey);
-  const updatePrice = (side, key, value) => setDraft((current) => ({ ...current, pricing: { ...(current.pricing || emptyPricing), [side]: { ...(current.pricing?.[side] || emptyPricing[side]), [key]: value } } }));
+  const updatePrice = (side, key, value) => {
+    setPricingError("");
+    setDraft((current) => ({ ...current, pricing: { ...(current.pricing || emptyPricing), [side]: { ...(current.pricing?.[side] || emptyPricing[side]), [key]: value } } }));
+  };
   const adapter = adapterOf(draft.adapterKey);
   const sourceProviders = providersForCategory(draft.category);
   const sourceAdapters = adaptersForCategoryAndProvider(draft.category, draft.provider);
   const isText = draft.category === "text";
   const isAudio = draft.category === "audio";
   const isMiniMaxAudio = isMiniMaxSpeech(draft.adapterKey);
-  const providerCopy = draft.provider === "ComfyUI"
-    ? "先选接入来源 ComfyUI，再选该来源下的适配协议；默认带出本地服务地址。"
-    : draft.provider === "自定义配置"
+  const audioFormats = audioFormatsForAdapter(draft.adapterKey);
+  const specificFields = new Set(adapterSpecificFields(draft.adapterKey, draft.provider));
+  const providerCopy = adapter?.provider === "ComfyUI"
+    ? "适配协议决定字段翻译；来源 ComfyUI 与默认服务地址已自动带出。"
+    : adapter?.provider === "自定义配置"
       ? (isAudio
         ? "先选接入来源「自定义配置」，再选 OpenAI 兼容语音协议。请填写 Base URL、模型标识、音色与输出格式。"
         : "先选接入来源「自定义配置」，再选 OpenAI 兼容文本协议。请填写 Base URL 与模型标识；本地网关无鉴权时可留空 API Key。")
@@ -893,6 +1071,8 @@ function ModelDialog({ model, onClose, onSave, saving }) {
     try {
       const resp = await testAdminModelConnection({
         id: model?.id,
+        category: draft.category,
+        provider: draft.provider,
         endpoint: draft.endpoint,
         apiKey: draft.apiKey,
         modelKey: draft.modelKey,
@@ -910,6 +1090,11 @@ function ModelDialog({ model, onClose, onSave, saving }) {
       <header><div><span>模型接入</span><h2 id="model-dialog-title">{model ? "编辑模型" : "接入第三方模型"}</h2><p>{providerCopy}</p></div><button className="modal-close" aria-label="关闭配置" onClick={onClose}><X size={18} /></button></header>
       <form onSubmit={(event) => {
         event.preventDefault();
+        const error = pricingValidationError(draft.pricing || emptyPricing, draft.category);
+        if (error) {
+          setPricingError(error);
+          return;
+        }
         onSave({
           ...draft,
           capabilities: isText ? ["text"] : filterCapsForAdapter(draft.capabilities, draft.category, draft.adapterKey),
@@ -922,7 +1107,7 @@ function ModelDialog({ model, onClose, onSave, saving }) {
         <div className="model-form-grid">
           <label>名称<input required value={draft.name} onChange={(event) => updateIdentity({ name: event.target.value })} placeholder={isText ? "例如：Agnes 对话" : isAudio ? "例如：品牌旁白语音" : "例如：自有视频模型"} /></label>
           <label>模型类型<select value={draft.category} onChange={(event) => changeCategory(event.target.value)}><option value="image">图像模型</option><option value="video">视频模型</option><option value="audio">语音模型</option><option value="text">文本模型</option></select></label>
-          <label>接入来源<select required value={normalizeProviderSource(draft.provider) || sourceProviders[0] || ""} onChange={(event) => changeProvider(event.target.value)}>{sourceProviders.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          <label>接入来源<select required value={draft.provider || ""} onChange={(event) => changeProviderSource(event.target.value)}>{providerChoicesForCategory(draft.category).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
           <label>适配协议<select required value={draft.adapterKey} onChange={(event) => changeAdapter(event.target.value)}>{sourceAdapters.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
           <label>模型标识<input required value={draft.modelKey} onChange={(event) => updateIdentity({ modelKey: event.target.value })} placeholder={adapter?.key === "openai-compat" ? "如 deepseek-v3-flash" : (adapter?.defaultModelKey || (isText ? "对话模型名，如 gpt-4o-mini" : "商品标识，如 seedance-2.0"))} /></label>
           <label className="model-form-wide">{endpointLabel(draft.provider)}<input required value={draft.endpoint || ""} onChange={(event) => update("endpoint", event.target.value)} placeholder={draft.provider === "自定义配置" ? "https://api.openai.com/v1 或兼容网关" : ""} />{(isOfficialSource(draft.provider) || (isMiniMaxH3(adapter?.key) && isComfyUiSource(draft.provider))) && <small className="model-logo-hint">{officialHint(adapter?.key, isText, draft.provider)}</small>}</label>
@@ -931,27 +1116,28 @@ function ModelDialog({ model, onClose, onSave, saving }) {
           {isText && <div className="model-form-wide model-cap-field"><label className="model-cap-chip"><input type="checkbox" checked={draft.enableThinking === true} onChange={(event) => setDraft((current) => ({ ...current, enableThinking: event.target.checked }))} />启用思考</label><small className="model-logo-hint">结构化剧本分析建议关闭，避免思考内容占满输出额度。</small></div>}
           {!isText && <div className="model-form-wide model-cap-field"><span>能力勾选</span><div className="model-cap-row">{visibleCapOptions.map((cap) => <label key={cap.id} className="model-cap-chip"><input type="checkbox" checked={caps.includes(cap.id)} onChange={() => toggleCap(cap.id)} />{cap.label}</label>)}</div></div>}
           {draft.category === "video" && <div className="model-form-wide model-cap-field"><span>参考音频能力</span><div className="model-cap-row"><span className="model-cap-chip">{audioCapabilityLabel(draft)}</span></div><small className="model-logo-hint">由适配协议和模型标识自动判定，无需手动配置。</small></div>}
-          {isAudio && <><label>默认音色<input value={draft.defaultVoice || ""} onChange={(event) => update("defaultVoice", event.target.value)} placeholder="alloy" /></label><label>默认格式<select value={draft.adapterConfig?.defaultFormat || "mp3"} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), defaultFormat: event.target.value } }))}><option value="mp3">MP3</option><option value="wav">WAV</option><option value="aac">AAC</option><option value="flac">FLAC</option><option value="opus">OPUS</option></select></label><label className="model-form-wide">可选音色（逗号分隔）<input value={draft.voicesText || ""} onChange={(event) => update("voicesText", event.target.value)} placeholder="alloy, nova, shimmer" /></label><label className="model-form-wide">支持格式（逗号分隔）<input value={draft.formatsText || ""} onChange={(event) => update("formatsText", event.target.value)} placeholder="mp3, wav, aac" /></label><label>最低语速<input type="number" step="0.05" min="0.25" max="4" value={draft.minSpeed ?? 0.25} onChange={(event) => update("minSpeed", Number(event.target.value))} /></label><label>最高语速<input type="number" step="0.05" min="0.25" max="4" value={draft.maxSpeed ?? 4} onChange={(event) => update("maxSpeed", Number(event.target.value))} /></label></>}
+          {isAudio && <><label>默认音色<input value={draft.defaultVoice || ""} onChange={(event) => update("defaultVoice", event.target.value)} placeholder="alloy" /></label><label>默认格式<select value={audioFormats.includes(draft.adapterConfig?.defaultFormat) ? draft.adapterConfig.defaultFormat : "mp3"} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), defaultFormat: event.target.value } }))}>{audioFormats.map((format) => <option key={format} value={format}>{format.toUpperCase()}</option>)}</select></label><label className="model-form-wide">可选音色（逗号分隔）<input value={draft.voicesText || ""} onChange={(event) => update("voicesText", event.target.value)} placeholder="alloy, nova, shimmer" /></label><label className="model-form-wide">支持格式（逗号分隔）<input value={draft.formatsText || ""} onChange={(event) => update("formatsText", event.target.value)} placeholder={audioFormats.join(", ")} /></label><label>最低语速<input type="number" step="0.05" min="0.25" max="4" value={draft.minSpeed ?? 0.25} onChange={(event) => update("minSpeed", Number(event.target.value))} /></label><label>最高语速<input type="number" step="0.05" min="0.25" max="4" value={draft.maxSpeed ?? 4} onChange={(event) => update("maxSpeed", Number(event.target.value))} /></label></>}
           {isMiniMaxAudio && <><label>默认音量<input type="number" step="0.1" min="0.1" max="10" value={draft.adapterConfig?.volume ?? 1} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), volume: Number(event.target.value) } }))} /></label><label>默认音调<input type="number" min="-12" max="12" value={draft.adapterConfig?.pitch ?? 0} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), pitch: Number(event.target.value) } }))} /></label><label>采样率<input type="number" min="8000" value={draft.adapterConfig?.sampleRate ?? 32000} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), sampleRate: Number(event.target.value) } }))} /></label><label>比特率<input type="number" min="32000" value={draft.adapterConfig?.bitrate ?? 128000} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), bitrate: Number(event.target.value) } }))} /></label><label>声道数<select value={draft.adapterConfig?.channel ?? 1} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), channel: Number(event.target.value) } }))}><option value={1}>单声道</option><option value={2}>双声道</option></select></label><label>语言增强<input value={draft.adapterConfig?.languageBoost || "auto"} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), languageBoost: event.target.value } }))} placeholder="auto / Chinese / English" /></label></>}
+          {specificFields.has("instructions") && <label className="model-form-wide">语音风格指令<input value={draft.adapterConfig?.instructions || ""} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), instructions: event.target.value } }))} placeholder="例如：语气温暖、节奏自然" /></label>}
+          {specificFields.has("generateAudio") && <div className="model-form-wide model-cap-field"><label className="model-cap-chip"><input type="checkbox" checked={draft.adapterConfig?.generateAudio !== false} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), generateAudio: event.target.checked } }))} />生成视频原声</label><small className="model-logo-hint">关闭后向 Seedance 官方接口明确传递 generate_audio=false。</small></div>}
+          {specificFields.has("steps") && <><label>采样步数<input type="number" min="1" max="100" value={draft.adapterConfig?.steps || 20} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), steps: Number(event.target.value) } }))} /></label><div /><label className="model-form-wide">UNet 文件名<input value={draft.adapterConfig?.unetName || ""} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), unetName: event.target.value } }))} placeholder="留空使用内置 MiniMax-H3 工作流默认值" /></label><label className="model-form-wide">LoRA 文件名<input value={draft.adapterConfig?.loraName || ""} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), loraName: event.target.value } }))} placeholder="留空使用内置 MiniMax-H3 工作流默认值" /></label></>}
           {!isText && !isAudio && !isOfficialSource(draft.provider) && visibleCapOptions.filter((cap) => caps.includes(cap.id)).map((cap) => (
             <label key={cap.pathKey} className="model-form-wide">{cap.pathLabel}<input value={pathValue(draft, cap.pathKey)} onChange={(event) => update(cap.pathKey, event.target.value)} placeholder={pathPlaceholder(cap, draft.adapterKey)} /></label>
           ))}
           {!isText && draft.provider === "RunningHub" && <><label>实例类型<input value={draft.instanceType || ""} onChange={(event) => update("instanceType", event.target.value)} placeholder="可选，如 48G" /></label><label>并发限制<input type="number" min="1" max="10" value={draft.concurrentLimit || 1} onChange={(event) => update("concurrentLimit", Number(event.target.value))} /></label></>}
           <label className="model-form-wide">能力说明<input value={draft.description || ""} onChange={(event) => update("description", event.target.value)} placeholder="简要说明适用场景" /></label>
-          <label>计费单位<select value={draft.pricing?.unit || "次"} onChange={(event) => setDraft((current) => ({ ...current, pricing: { ...(current.pricing || emptyPricing), unit: event.target.value } }))}><option>次</option><option>张</option><option>秒</option><option>千字符</option><option>万字符</option></select></label>
+          <label>计费单位<select value={normalizePricingUnit(draft.category, draft.pricing?.unit)} onChange={(event) => { setPricingError(""); setDraft((current) => ({ ...current, pricing: { ...(current.pricing || emptyPricing), unit: event.target.value } })); }}>{pricingUnits(draft.category).map((unit) => <option key={unit}>{unit}</option>)}</select></label>
           <div />
-          <PriceEditor title="售价" values={draft.pricing?.sale || emptyPricing.sale} onChange={(key, value) => updatePrice("sale", key, value)} />
-          <PriceEditor title="成本" values={draft.pricing?.cost || emptyPricing.cost} onChange={(key, value) => updatePrice("cost", key, value)} />
+          <PriceEditor title="售价" category={draft.category} values={draft.pricing?.sale || emptyPricing.sale} onChange={(key, value) => updatePrice("sale", key, value)} />
+          <PriceEditor title="成本" category={draft.category} values={draft.pricing?.cost || emptyPricing.cost} onChange={(key, value) => updatePrice("cost", key, value)} />
+          {pricingError && <div className="admin-notice admin-notice--error model-form-wide" role="alert">{pricingError}</div>}
         </div>
         <footer>
-          {isText ? (
-            <div className="model-dialog-test">
-              <button type="button" disabled={testing} onClick={onTestConnection}>{testing ? "测试中…" : "测试连接"}</button>
-              {testHint.text && <small className={testHint.ok ? "model-dialog-test__ok" : "model-dialog-test__err"}>{testHint.text}</small>}
-            </div>
-          ) : (
-            <span><ShieldCheck size={14} /> 密钥加密落库，不会回传到列表</span>
-          )}
+          <div className="model-dialog-test">
+            <button type="button" disabled={testing} onClick={onTestConnection}>{testing ? "测试中…" : "测试连接"}</button>
+            {testHint.text && <small className={testHint.ok ? "model-dialog-test__ok" : "model-dialog-test__err"}>{testHint.text}</small>}
+            <small className="model-logo-hint"><ShieldCheck size={12} /> 密钥加密落库，不会回传到列表</small>
+          </div>
           <div>
             <button type="button" onClick={onClose}>取消</button>
             <button className="button button--primary" type="submit" disabled={saving}><Check size={15} /> {saving ? "保存中…" : "保存配置"}</button>
@@ -976,7 +1162,7 @@ function toModelPayload(draft) {
   const adapterKey = draft.adapterKey;
   const caps = filterCapsForAdapter(draft.capabilities, category, adapterKey);
   const adapter = adapterOf(adapterKey);
-  const adapterConfig = MODE_CAP_OPTIONS.reduce((config, field) => {
+  let adapterConfig = MODE_CAP_OPTIONS.reduce((config, field) => {
     if (!caps.includes(field.id)) return config;
     const fallback = adapter?.provider === "RunningHub" ? (adapter.defaultPaths?.[field.pathKey] || field.defaultPath || "") : "";
     const value = (draft[field.pathKey] || config[field.pathKey] || fallback).trim();
@@ -985,13 +1171,16 @@ function toModelPayload(draft) {
   }, { ...(draft.adapterConfig || {}) });
   if (adapterConfig.v2vPath && !adapterConfig.i2vPath) adapterConfig.i2vPath = adapterConfig.v2vPath;
   delete adapterConfig.v2vPath;
+  adapterConfig = sanitizeAdapterSpecificConfig(adapterKey, draft.provider, adapterConfig);
   if (category === "text" && draft.modelKey) adapterConfig.chatModel = draft.modelKey;
   if (category === "text") Object.assign(adapterConfig, withTextReasoning(adapterConfig, draft.enableThinking));
   if (category === "audio") {
+    const allowedFormats = audioFormatsForAdapter(adapterKey);
     adapterConfig.defaultVoice = (draft.defaultVoice || "alloy").trim();
-    adapterConfig.defaultFormat = adapterConfig.defaultFormat || "mp3";
+    adapterConfig.defaultFormat = allowedFormats.includes(adapterConfig.defaultFormat) ? adapterConfig.defaultFormat : "mp3";
     adapterConfig.voices = String(draft.voicesText || "").split(/[,，]/).map((item) => item.trim()).filter(Boolean);
-    adapterConfig.formats = String(draft.formatsText || "").split(/[,，]/).map((item) => item.trim().toLowerCase()).filter(Boolean);
+    adapterConfig.formats = String(draft.formatsText || "").split(/[,，]/).map((item) => item.trim().toLowerCase()).filter((item) => allowedFormats.includes(item));
+    if (!adapterConfig.formats.length) adapterConfig.formats = allowedFormats;
     adapterConfig.minSpeed = Number(draft.minSpeed || 0.25);
     adapterConfig.maxSpeed = Number(draft.maxSpeed || 4);
   }
@@ -1321,5 +1510,5 @@ function QueuePage() {
 export function AdminConsole() {
   const [active, setActive] = useState("dashboard");
   const current = useMemo(() => adminMenus.find((item) => item.id === active), [active]);
-  return <div className="admin-shell"><aside className="admin-sidebar"><header><span><ShieldCheck size={17} /></span><div><strong>管理后台</strong><small>平台运营控制台</small></div></header><nav>{adminMenus.map((item) => { const Icon = item.icon; return <button key={item.id} className={active === item.id ? "active" : ""} onClick={() => setActive(item.id)}><Icon size={17} /><span>{item.label}</span><ChevronRight size={14} /></button>; })}</nav><footer><span><span className="status-dot" /> 服务运行正常</span><small>仪表盘 / 用户 / 模型 / 请求日志 / 任务队列</small></footer></aside><section className="admin-main" aria-label={current?.label}>{active === "dashboard" && <Dashboard />}{active === "users" && <UsersPage />}{active === "models" && <ModelsPage />}{active === "requests" && <RequestsPage />}{active === "queue" && <QueuePage />}</section></div>;
+  return <div className="admin-shell"><aside className="admin-sidebar"><header><span><ShieldCheck size={17} /></span><div><strong>管理后台</strong><small>平台运营控制台</small></div></header><nav>{adminMenus.map((item) => { const Icon = item.icon; return <button key={item.id} className={active === item.id ? "active" : ""} onClick={() => setActive(item.id)}><Icon size={17} /><span>{item.label}</span><ChevronRight size={14} /></button>; })}</nav><footer><span><span className="status-dot" /> 服务运行正常</span><small>用户 / 计费 / 模型 / 监控 / 请求 / 队列</small></footer></aside><section className="admin-main" aria-label={current?.label}>{active === "dashboard" && <Dashboard />}{active === "users" && <UsersPage />}{active === "recharges" && <RechargesPage />}{active === "textUsage" && <TextUsagePage />}{active === "models" && <ModelsPage />}{active === "observability" && <ModelObservabilityPage />}{active === "requests" && <RequestsPage />}{active === "queue" && <QueuePage />}</section></div>;
 }
