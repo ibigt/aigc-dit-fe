@@ -2,6 +2,7 @@ import {
   CircleAlert,
   Clapperboard,
   AudioLines,
+  Check,
   Image as ImageIcon,
   Lock,
   Plus,
@@ -11,11 +12,14 @@ import {
   Trash2,
   Upload,
   UsersRound,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchAssets } from "../../api/assets.js";
 import {
+  bindDramaAssetImageFromLibrary,
   bindDramaAssetVoiceReference,
   bindDramaImageModel,
   createDramaAsset,
@@ -49,6 +53,92 @@ const RESOLUTIONS = ["1K", "2K"];
 const PROMPT_MAX = 4000;
 const BATCH_LIMIT = 4;
 const emptyCreate = { name: "", meta: "", prompt: "" };
+
+function sameAssetId(a, b) {
+  if (a == null || b == null) return false;
+  return String(a) === String(b);
+}
+
+function ImageLibraryDialog({ assets, loading, busy, error, onClose, onConfirm }) {
+  const [selectedId, setSelectedId] = useState(null);
+  const selected = assets.find((item) => sameAssetId(item.id, selectedId)) || null;
+
+  const body = (
+    <div
+      className="drama-dialog-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onClose();
+      }}
+    >
+      <section
+        className="creation-asset-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="image-library-title"
+      >
+        <header>
+          <div>
+            <small>素材库</small>
+            <h2 id="image-library-title">引用素材</h2>
+          </div>
+          <button type="button" aria-label="关闭素材选择" disabled={busy} onClick={onClose}>
+            <X size={17} />
+          </button>
+        </header>
+        <div className="creation-asset-grid">
+          {loading && <p className="creation-asset-empty">正在加载图片素材…</p>}
+          {!loading && !assets.length && <p className="creation-asset-empty">暂无可用图片素材</p>}
+          {!loading && assets.map((asset) => {
+            const label = asset.title || asset.name;
+            const preview = mediaUrl(asset.poster || asset.src || asset.url || asset.storageKey);
+            const isSelected = sameAssetId(asset.id, selectedId);
+            return (
+              <button
+                type="button"
+                className={isSelected ? "selected" : ""}
+                key={asset.id || asset.storageKey || preview}
+                aria-pressed={isSelected}
+                disabled={busy}
+                onClick={() => setSelectedId(asset.id)}
+              >
+                <img src={preview} alt={label} />
+                <span>
+                  <strong>{label}</strong>
+                  <small>图片素材</small>
+                </span>
+                {isSelected && (
+                  <span className="creation-asset-check" aria-hidden="true">
+                    <Check size={13} strokeWidth={3} />
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <footer>
+          <span>{error ? <em className="drama-form-error" style={{ fontStyle: "normal" }}>{error}</em> : (selected ? "已选择 1 项" : "请选择一张图片")}</span>
+          <div>
+            <button type="button" disabled={busy} onClick={onClose}>取消</button>
+            <button
+              type="button"
+              className="primary"
+              disabled={busy || !selected}
+              onClick={() => {
+                if (!selected) return;
+                onConfirm(selected);
+              }}
+            >
+              {busy ? "引用中…" : "引用素材"}
+            </button>
+          </div>
+        </footer>
+      </section>
+    </div>
+  );
+
+  return createPortal(body, document.body);
+}
 
 function VoiceLibraryDialog({ targetName, assets, loading, busy, onClose, onSelect, onUpload }) {
   return (
@@ -216,6 +306,7 @@ function SubjectInspector({
   promptChanged,
   promptSaving,
   onResolution,
+  onCiteClick,
   onUploadClick,
   voiceLock,
   voiceBusy,
@@ -366,6 +457,7 @@ function SubjectInspector({
                 onPreview={onPreviewGeneration}
                 onDelete={onDeleteGeneration}
                 onImport={onImportGeneration}
+                onCiteClick={onCiteClick}
                 onUploadClick={onUploadClick}
                 uploadLabel="上传"
               />
@@ -397,6 +489,8 @@ export function DramaAssetBoard({ series, episode }) {
   const [promptDraft, setPromptDraft] = useState("");
   const [voiceLockDraft, setVoiceLockDraft] = useState("");
   const [voiceLibraryOpen, setVoiceLibraryOpen] = useState(false);
+  const [imageLibraryOpen, setImageLibraryOpen] = useState(false);
+  const [imageLibraryError, setImageLibraryError] = useState("");
   const [voiceTarget, setVoiceTarget] = useState(null);
   const [promptDirty, setPromptDirty] = useState(false);
   const [summaryDirty, setSummaryDirty] = useState(false);
@@ -429,6 +523,11 @@ export function DramaAssetBoard({ series, episode }) {
     queryKey: ["assets", "audio", ""],
     queryFn: () => fetchAssets({ kind: "audio" }),
     enabled: voiceLibraryOpen,
+  });
+  const imageLibraryQuery = useQuery({
+    queryKey: ["assets", "image", ""],
+    queryFn: () => fetchAssets({ kind: "image" }),
+    enabled: imageLibraryOpen,
   });
 
   const imageModels = imageModelsQuery.data || [];
@@ -620,6 +719,32 @@ export function DramaAssetBoard({ series, episode }) {
       invalidate();
     } finally {
       markBusy(selected.id, "upload", false);
+    }
+  }
+
+  async function onCiteFromLibrary(libraryAsset) {
+    const targetId = selected?.id;
+    const libraryId = libraryAsset?.id;
+    if (!targetId || libraryId == null) return;
+    setImageLibraryError("");
+    markBusy(targetId, "upload", true);
+    try {
+      const updated = await bindDramaAssetImageFromLibrary(targetId, libraryId);
+      queryClient.setQueryData(["drama-assets", episodeId], (current) => {
+        if (!Array.isArray(current)) return current;
+        return current.map((entry) => (entry.id === updated.id ? { ...entry, ...updated } : entry));
+      });
+      setImageLibraryOpen(false);
+      setImageLibraryError("");
+      await invalidateAssetHistory(targetId);
+      invalidate();
+      showToast("已引用素材");
+    } catch (err) {
+      const message = err?.message || "引用失败";
+      setImageLibraryError(message);
+      showToast(message);
+    } finally {
+      markBusy(targetId, "upload", false);
     }
   }
 
@@ -980,6 +1105,10 @@ export function DramaAssetBoard({ series, episode }) {
         }}
         onPromptSave={() => savePrompt().catch((err) => showToast(err.message))}
         onResolution={setResolution}
+        onCiteClick={() => {
+          setImageLibraryError("");
+          setImageLibraryOpen(true);
+        }}
         onUploadClick={() => fileRef.current?.click()}
         voiceLock={voiceLockDraft}
         voiceBusy={isBusy(selected?.id, "voice")}
@@ -1055,6 +1184,22 @@ export function DramaAssetBoard({ series, episode }) {
           }}
           onSelect={(item) => onVoiceLibrarySelect(item).catch((err) => showToast(err.message))}
           onUpload={() => voiceFileRef.current?.click()}
+        />
+      )}
+
+      {imageLibraryOpen && (
+        <ImageLibraryDialog
+          assets={Array.isArray(imageLibraryQuery.data) ? imageLibraryQuery.data : []}
+          loading={imageLibraryQuery.isLoading}
+          busy={isBusy(selected?.id, "upload")}
+          error={imageLibraryError}
+          onClose={() => {
+            if (!isBusy(selected?.id, "upload")) {
+              setImageLibraryOpen(false);
+              setImageLibraryError("");
+            }
+          }}
+          onConfirm={(item) => onCiteFromLibrary(item)}
         />
       )}
 

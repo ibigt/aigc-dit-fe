@@ -952,9 +952,12 @@ export function DramaStoryboard({ series, episode }) {
     },
     onSuccess: (data) => {
       queryClient.setQueryData(["drama-storyboard", activeEpisodeId], data);
-      queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
-      queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
-      setShotId(data?.chapters?.[0]?.shots?.[0]?.id || null);
+      queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
+      if (!data?.drafting) {
+        queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+        queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
+        setShotId(data?.chapters?.[0]?.shots?.[0]?.id || null);
+      }
       setActionError("");
     },
     onError: (error) => {
@@ -1033,6 +1036,23 @@ export function DramaStoryboard({ series, episode }) {
   function confirmRemoveShot() {
     if (!deleteTarget?.id) return;
     deleteShotMutation.mutate({ id: deleteTarget.id, chapterId: deleteTarget.chapterId });
+  }
+
+  function draftBlockedReason() {
+    if (autoDrafting || draftMutation.isPending) return "正在拆镜，请稍候";
+    if (recompiling) return "正在重新编译提示词，请稍候";
+    if (!scriptLocked) return "请先锁定分场剧本再拆镜";
+    if (!canUseTextModel) return "请先在剧本页绑定可用文本模型";
+    return shots.length ? "重新拆镜" : "智能分镜";
+  }
+
+  function requestDraft() {
+    if (autoDrafting || draftMutation.isPending || recompiling || !scriptLocked || !canUseTextModel) return;
+    if (shots.length) {
+      setDraftConfirmOpen(true);
+      return;
+    }
+    draftMutation.mutate();
   }
 
   function deleteBlockedReason(shot) {
@@ -1442,14 +1462,8 @@ export function DramaStoryboard({ series, episode }) {
             <button
               type="button"
               disabled={drafting || frozenByRecompile || !scriptLocked || !canUseTextModel}
-              title={!canUseTextModel ? "请先在剧本页绑定可用文本模型" : undefined}
-              onClick={() => {
-                if (shots.length) {
-                  setDraftConfirmOpen(true);
-                  return;
-                }
-                draftMutation.mutate();
-              }}
+              title={draftBlockedReason()}
+              onClick={() => requestDraft()}
             >
               <Wand2 size={14} /> {drafting ? "拆镜中…" : shots.length ? "重新拆镜" : "智能分镜"}
             </button>
@@ -1555,8 +1569,8 @@ export function DramaStoryboard({ series, episode }) {
                   <button
                     type="button"
                     disabled={drafting || !scriptLocked || !canUseTextModel}
-                    title={!canUseTextModel ? "请先在剧本页绑定可用文本模型" : undefined}
-                    onClick={() => draftMutation.mutate()}
+                    title={draftBlockedReason()}
+                    onClick={() => requestDraft()}
                   >
                     <Wand2 size={14} /> {drafting ? "拆镜中…" : "智能分镜"}
                   </button>
