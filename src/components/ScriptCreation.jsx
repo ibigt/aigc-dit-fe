@@ -39,6 +39,18 @@ function modeOf(id) {
   return modes.find((item) => item.id === id) || modes[0];
 }
 
+function compactSubmission(mode, text, novelSource, attachments) {
+  const names = [novelSource?.name, ...attachments.map((item) => item.name)].filter(Boolean);
+  const files = names.length ? `\n已挂载素材：${names.join("、")}` : "";
+  if (mode === "adapt" && novelSource) {
+    return `已提交小说改编任务：${novelSource.name}（原文已作为任务素材保存）${text ? `\n改编要求：${text}` : ""}${files}`;
+  }
+  if (mode === "review") {
+    return `已提交剧本评估任务${text ? `：${text.slice(0, 240)}${text.length > 240 ? "…" : ""}` : ""}${files}`;
+  }
+  return `${text.slice(0, 240)}${text.length > 240 ? "…" : ""}${files}`;
+}
+
 function messageText(task, message) {
   if (message.content) return message.content;
   if (task?.document) return task.document;
@@ -216,6 +228,7 @@ export function ScriptCreation() {
   const [episodes, setEpisodes] = useState(6);
   const [modelId, setModelId] = useState("");
   const [attachments, setAttachments] = useState([]);
+  const [novelSource, setNovelSource] = useState(null);
   const [activeTaskId, setActiveTaskId] = useState(null);
   const [query, setQuery] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -277,35 +290,46 @@ export function ScriptCreation() {
   const modelMutation = useMutation({ mutationFn: ({ id, model }) => updateScriptModel(id, model) });
   const titleMutation = useMutation({ mutationFn: ({ id, title }) => updateScriptTitle(id, title) });
   const dramaMutation = useMutation({ mutationFn: createDramaFromScript });
+  const generationPending = createMutation.isPending || generateMutation.isPending;
+  const generationStatus = mode === "adapt"
+    ? "光驭精灵正在整理小说、拆解章节冲突…"
+    : mode === "review"
+      ? "光驭精灵正在分析人物弧光、黄金三秒钩子与商业价值…"
+      : "光驭精灵正在梳理创意、人物关系与剧情结构…";
 
   function reset() {
     streamRequestRef.current += 1;
     activeTaskRef.current = null;
-    setPage("create"); setMode("idea"); setPrompt(""); setGenre(""); setEpisodes(6); setModelId(""); setAttachments([]); setActiveTaskId(null); setStreaming(false); setStreamMessages([]); setStreamText(""); setStreamThinking(""); setDocumentTab("script"); setCopiedKey(""); setEditingTitle(false); setTitleDraft(""); setError("");
+    setPage("create"); setMode("idea"); setPrompt(""); setGenre(""); setEpisodes(6); setModelId(""); setAttachments([]); setNovelSource(null); setActiveTaskId(null); setStreaming(false); setStreamMessages([]); setStreamText(""); setStreamThinking(""); setDocumentTab("script"); setCopiedKey(""); setEditingTitle(false); setTitleDraft(""); setError("");
   }
 
   async function generate() {
     const text = prompt.trim();
-    if (!text || generateMutation.isPending || streaming) return;
-    setError("");
+    const sourceFile = mode === "adapt" ? novelSource : null;
+    if ((!text && !sourceFile?.content?.trim()) || generateMutation.isPending || createMutation.isPending || streaming) return;
+    setError(""); setPrompt("");
     try {
       let id = activeTaskId;
-      setStreamMessages([{ role: "user", content: text }]);
+      const displayRequest = compactSubmission(mode, text, sourceFile, attachments);
+      setStreamMessages([{ role: "user", content: displayRequest }]);
       if (!id) {
         const references = attachments.map((item) => `\n\n【参考附件：${item.name}】\n${item.content}`).join("");
-        const inputText = `${text}${references}`.slice(0, 200000);
-        const created = await createMutation.mutateAsync({ mode, genre, targetEpisodes: Number(episodes), modelId: modelId ? Number(modelId) : undefined, inputText, attachments: attachments.map((item) => item.name) });
+        const inputText = (sourceFile
+          ? `改编要求：${text || "请将上传小说改编为竖屏短剧"}\n\n【小说原文：${sourceFile.name}】\n${sourceFile.content}${references}`
+          : `${text}${references}`).slice(0, 200000);
+        const attachmentNames = [...(sourceFile ? [sourceFile.name] : []), ...attachments.map((item) => item.name)];
+        const created = await createMutation.mutateAsync({ mode, genre, targetEpisodes: Number(episodes), modelId: modelId ? Number(modelId) : undefined, inputText, attachments: [...new Set(attachmentNames)] });
         id = created.id;
         setActiveTaskId(id);
       }
       const result = await generateMutation.mutateAsync(id);
       const serverMessages = Array.isArray(result.messages) ? result.messages : [];
-      const hasSubmittedMessage = serverMessages.some((message) => message.role === "user" && message.content === text);
-      const visibleResult = hasSubmittedMessage ? result : { ...result, messages: [{ role: "user", content: text }, ...serverMessages] };
+      const hasSubmittedMessage = serverMessages.some((message) => message.role === "user");
+      const visibleResult = hasSubmittedMessage ? result : { ...result, messages: [{ role: "user", content: displayRequest }, ...serverMessages] };
       queryClient.setQueryData(["script-task", id], visibleResult);
-      setStreamMessages(hasSubmittedMessage ? [] : [{ role: "user", content: text }]);
+      setStreamMessages(hasSubmittedMessage ? [] : [{ role: "user", content: displayRequest }]);
       queryClient.invalidateQueries({ queryKey: ["script-tasks"] });
-      setPrompt("");
+      setNovelSource(null); setAttachments([]);
     } catch (requestError) {
       setError(requestError.message || "生成失败，请检查文本模型配置");
     }
@@ -482,7 +506,7 @@ export function ScriptCreation() {
     if (!file) return;
     try {
       const text = await file.text();
-      setMode("adapt"); setPrompt(text); setGenre(genre || "小说改编");
+      setMode("adapt"); setNovelSource({ name: file.name, content: text, chars: text.length }); setGenre(genre || "小说改编");
     } catch { setError("无法读取附件，请改用 TXT 或直接粘贴文本"); }
     event.target.value = "";
   }
@@ -511,13 +535,13 @@ export function ScriptCreation() {
     });
   }
 
-  const welcome = !activeTaskId && !messages.length;
+  const welcome = !activeTaskId && !messages.length && !generationPending;
   return <section className={`script-creation ${welcome ? "is-welcome" : "has-session"}`}>
     <ScriptSidebar page={page} onPage={setPage} onNew={reset} tasks={tasks} activeTaskId={activeTaskId} onOpen={openTask} query={query} setQuery={setQuery} />
     {page === "scripts" ? <ScriptLibrary tasks={tasks} onNew={reset} onOpen={openTask} onPreview={openPreview} onConvert={convertToDrama} onDelete={removeTask} /> : page === "preview" ? <ScriptPreview task={task} onBack={() => { setPage("scripts"); setActiveTaskId(null); }} onOpen={openTask} onConvert={convertToDrama} /> : <>
       <section className="script-chat">
         <header><div><AssistantMark /><span><strong>光驭精灵</strong><small>剧本创作助手 · 多轮上下文已开启</small></span></div><em><i /> {textModels.length ? "模型已就绪" : "等待文本模型配置"}</em></header>
-        <div className={`script-chat__body ${messages.length || streaming ? "has-messages" : ""}`} ref={bodyRef}>
+        <div className={`script-chat__body ${messages.length || streaming || generationPending ? "has-messages" : ""}`} ref={bodyRef}>
           {welcome ? <div className="script-welcome">
             <AssistantMark />
             <h1>让光驭精灵陪你孵化下一部剧本</h1>
@@ -525,13 +549,14 @@ export function ScriptCreation() {
             <div className="script-mode-cards">{modes.map((item) => { const Icon = item.icon; return <button type="button" className={mode === item.id ? "active" : ""} key={item.id} onClick={() => setMode(item.id)}><span><Icon size={17} /></span><strong>{item.title}</strong><p>{item.description}</p><em>开始{item.title} <ChevronRight size={12} /></em></button>; })}</div>
             <div className="script-launch-composer">
               <div className="script-launch-tabs">{modes.map((item) => <button type="button" className={mode === item.id ? "active" : ""} onClick={() => setMode(item.id)} key={item.id}>{item.title}</button>)}</div>
-              <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={handleEnter(generate)} placeholder={activeMode.placeholder} />
+              <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={handleEnter(generate)} placeholder={mode === "adapt" && novelSource ? "补充改编要求，例如：压缩成 6 集、强化前三秒钩子…" : activeMode.placeholder} />
               <div className="script-launch-options"><label>题材 <select value={genre} onChange={(event) => setGenre(event.target.value)}><option value="">自动判断</option>{genres.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label>目标集数 <input type="number" min="1" max="99" value={episodes} onChange={(event) => setEpisodes(event.target.value)} /></label><label>模型 <select value={modelId} onChange={(event) => setModelId(event.target.value)} disabled={!textModels.length}><option value="">请选择模型</option>{textModels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
-              <div className="script-launch-actions"><button type="button" onClick={() => uploadRef.current?.click()}><Paperclip size={15} /> 上传 TXT 小说</button><button type="button" onClick={() => attachmentRef.current?.click()}><Paperclip size={15} /> 挂载参考附件</button><input ref={attachmentRef} hidden multiple type="file" accept=".txt,.md,text/plain,text/markdown" onChange={onAttachment} /><span>{attachments.length ? `已挂载 ${attachments.length} 个参考附件` : (textModels.length ? "结构化输出 · 自动保存版本" : "请先在管理后台配置文本模型")}</span><button className="script-send" disabled={!prompt.trim() || generateMutation.isPending} onClick={generate}><Send size={15} /> {generateMutation.isPending ? "生成中" : "开始生成"}</button></div>
+              <div className="script-launch-actions"><button type="button" onClick={() => uploadRef.current?.click()}><Paperclip size={15} /> 上传 TXT 小说</button><button type="button" onClick={() => attachmentRef.current?.click()}><Paperclip size={15} /> 挂载参考附件</button><input ref={attachmentRef} hidden multiple type="file" accept=".txt,.md,text/plain,text/markdown" onChange={onAttachment} /><span>{novelSource ? `已上传小说：${novelSource.name}` : attachments.length ? `已挂载 ${attachments.length} 个参考附件` : (textModels.length ? "结构化输出 · 自动保存版本" : "请先在管理后台配置文本模型")}</span><button className="script-send" disabled={(!prompt.trim() && !novelSource?.content?.trim()) || generationPending} onClick={generate}><Send size={15} /> {generationPending ? "生成中" : "开始生成"}</button></div>
+              {novelSource && <div className="script-source-file"><FileText size={15} /><span><strong>{novelSource.name}</strong><small>{novelSource.chars} 字 · 主改编素材，提交后不会复制到聊天框</small></span><button type="button" onClick={() => setNovelSource(null)} aria-label="移除小说素材">×</button></div>}
               {attachments.length > 0 && <div className="script-attachment-list">{attachments.map((item) => <button type="button" key={item.name} onClick={() => setAttachments((current) => current.filter((entry) => entry.name !== item.name))}>{item.name} ×</button>)}</div>}
             </div>
             <div className="script-genres"><span><Sparkles size={14} /> 热门题材：</span>{genres.map((item) => <button type="button" key={item} onClick={() => { setGenre(item); setPrompt(`请以“${item}”为核心题材，设计一部节奏紧凑、每集结尾有钩子的竖屏短剧。`); }}>{item}</button>)}</div>
-          </div> : <div className="script-messages">{messages.map((message, index) => <Message key={`${message.id || "local"}-${index}`} task={task} message={message} onInsert={insertIntoDocument} onCopy={(content) => handleCopy(`message-${message.id || index}`, content)} copied={copiedKey === `message-${message.id || index}`} />)}{streaming && <article className="script-message script-message--assistant"><AssistantMark /><div><strong>光驭精灵</strong>{streamThinking && <div className="script-thinking-panel is-streaming"><Brain size={14} /> {streamThinking}</div>}<MarkdownText>{streamText || "正在组织答案…"}</MarkdownText></div></article>}</div>}
+          </div> : <div className="script-messages">{messages.map((message, index) => <Message key={`${message.id || "local"}-${index}`} task={task} message={message} onInsert={insertIntoDocument} onCopy={(content) => handleCopy(`message-${message.id || index}`, content)} copied={copiedKey === `message-${message.id || index}`} />)}{generationPending && <article className="script-message script-message--assistant"><AssistantMark /><div><strong>光驭精灵</strong><div className="script-thinking-panel is-streaming"><Brain size={14} /> {generationStatus}</div></div></article>}{streaming && <article className="script-message script-message--assistant"><AssistantMark /><div><strong>光驭精灵</strong><div className="script-thinking-panel is-streaming"><Brain size={14} /> {streamThinking || "光驭精灵正在整理中…"}</div><MarkdownText>{streamText || "正在组织答案…"}</MarkdownText></div></article>}</div>}
         </div>
         {!welcome && <footer className="script-composer"><div className="script-mode-chip"><ActiveModeIcon size={14} />{activeMode.title}</div><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={handleEnter(sendChat)} placeholder="描述你的创意、改编要求或希望修改的内容…" /><div><button type="button" onClick={() => uploadRef.current?.click()}><Paperclip size={15} /> 上传小说或剧本</button><label className="script-model-select"><span>模型</span><select value={modelId} onChange={(event) => changeModel(event.target.value)} disabled={!textModels.length || modelMutation.isPending}><option value="">请选择模型</option>{textModels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label className="script-thinking-toggle"><input type="checkbox" checked={thinking} onChange={(event) => setThinking(event.target.checked)} /> 深度思考</label><span>Enter 发送 · Shift + Enter 换行</span><button className="script-send" disabled={!prompt.trim() || streaming} onClick={sendChat} aria-label="发送给光驭精灵"><Send size={16} /></button></div></footer>}
       </section>
