@@ -36,6 +36,25 @@ import { VideoLightbox } from "./VideoLightbox.jsx";
 
 const DURATIONS = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
+const DIALOGUE_EMOTIONS = new Set(["高兴", "愤怒", "悲伤", "恐惧", "惊讶", "厌恶", "紧张"]);
+
+/** 只读解析「角色（情绪）：台词」行，供 badge 展示；非法情绪忽略。 */
+function parseDialogueEmotionBadges(dialogue) {
+  if (!dialogue || !String(dialogue).trim()) return [];
+  const badges = [];
+  for (const raw of String(dialogue).split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const match = line.match(/^(.{1,32}?)(?:[（(]([^）)]+)[）)])?\s*[：:]\s*(.+)$/);
+    if (!match) continue;
+    const speaker = match[1].trim();
+    const emotion = (match[2] || "").trim();
+    if (!DIALOGUE_EMOTIONS.has(emotion) || speaker === "旁白") continue;
+    badges.push({ speaker, emotion });
+  }
+  return badges;
+}
+
 const CAST_TYPES = [
   { type: "角色", key: "characterNames" },
   { type: "场景", key: "locationName" },
@@ -586,6 +605,9 @@ function ShotInspector({
         <label className="youxi-field">
           <span>台词</span>
           <small>镜 {selected.shotIndex}</small>
+          <p className="youxi-dialogue-hint">
+            格式：角色（情绪）：台词；旁白：台词。情绪词表：高兴/愤怒/悲伤/恐惧/惊讶/厌恶/紧张（不明显可省略）
+          </p>
           <textarea
             rows={5}
             disabled={frozen}
@@ -596,8 +618,21 @@ function ShotInspector({
               if (value === (selected.dialogue || "")) return;
               onSave(selected, { dialogue: value }).catch(() => {});
             }}
-            placeholder="当前镜头尚未填写台词"
+            placeholder={"局长（愤怒）：你给我站住！\n旁白：夜色渐深。"}
           />
+          {(() => {
+            const emotionBadges = parseDialogueEmotionBadges(selected.dialogue);
+            if (!emotionBadges.length) return null;
+            return (
+              <div className="youxi-dialogue-emotions" aria-label="台词情绪">
+                {emotionBadges.map((item, index) => (
+                  <span key={`${item.speaker}-${item.emotion}-${index}`} className="drama-tag drama-tag--emotion">
+                    {item.speaker} · {item.emotion}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
         </label>
         {selected.narrativeGoal && selected.narrativeGoal !== selected.dialogue && (
           <p className="youxi-story-goal">{selected.narrativeGoal}</p>

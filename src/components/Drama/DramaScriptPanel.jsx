@@ -396,7 +396,9 @@ export function DramaScriptPanel({
                     <ul className="drama-scene__dialogue">
                       {scene.dialogue.map((line, i) => (
                         <li key={`${id}-d-${i}`}>
-                          <b>{line.speaker}</b><span>{line.line}</span>
+                          <b>{line.speaker}</b>
+                          {line.emotion ? <span className="drama-tag drama-tag--emotion">{line.emotion}</span> : null}
+                          <span>{line.line}</span>
                         </li>
                       ))}
                     </ul>
