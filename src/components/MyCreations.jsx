@@ -1,7 +1,7 @@
 import { AudioLines, CalendarDays, Check, Copy, Download, Expand, FolderInput, Grid3X3, Image, List, Play, Search, SlidersHorizontal, Sparkles, Trash2, Video, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { deleteCreation, fetchCreationProjects, fetchCreations, saveCreationToAsset } from "../api/creations.js";
+import { deleteCreation, fetchCreations, saveCreationToAsset } from "../api/creations.js";
 import { creationTitleForDisplay, promptForDisplay } from "../lib/createFlow.js";
 import { MediaCover } from "../lib/MediaCover.jsx";
 import { formatDateTime, MEDIA_THUMB_WIDTH, mediaUrl } from "../lib/media.js";
@@ -13,6 +13,12 @@ const TIME_RANGES = [
   { id: "today", label: "今天" },
   { id: "7d", label: "近7天" },
   { id: "30d", label: "近30天" },
+];
+
+const PROJECT_FILTERS = [
+  { id: "all", label: "全部项目" },
+  { id: "quick", label: "快速创作" },
+  { id: "drama", label: "短剧创作" },
 ];
 
 const TYPE_LABELS = { video: "视频", image: "图片", audio: "语音" };
@@ -77,16 +83,10 @@ export function MyCreations({ onReuse }) {
     }),
     refetchInterval: 10000,
   });
-  const projectsQuery = useQuery({
-    queryKey: ["creation-projects"],
-    queryFn: fetchCreationProjects,
-    refetchInterval: 10000,
-  });
   const deleteMutation = useMutation({
     mutationFn: deleteCreation,
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: ["creations"] });
-      queryClient.invalidateQueries({ queryKey: ["creation-projects"] });
       setSelected((current) => (current?.id === id ? null : current));
       setPicked((ids) => ids.filter((item) => item !== id));
     },
@@ -112,7 +112,6 @@ export function MyCreations({ onReuse }) {
     elapsed: item.elapsed || "—",
     type: item.type || item.category,
   })), [creationsQuery.data]);
-  const projects = projectsQuery.data || [];
   const visible = creations;
   const visibleIds = visible.map((item) => item.id);
   const allVisiblePicked = visibleIds.length > 0 && visibleIds.every((id) => picked.includes(id));
@@ -211,8 +210,7 @@ export function MyCreations({ onReuse }) {
             {TIME_RANGES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
           </select>
           <select aria-label="所属项目" value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}>
-            <option value="all">全部项目</option>
-            {projects.map((item) => <option key={item.key} value={item.key}>{item.name}</option>)}
+            {PROJECT_FILTERS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
           </select>
           <label><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索提示词或作品" /></label>
           <button type="button" aria-label="网格视图" className={view === "grid" ? "active" : ""} onClick={() => setView("grid")}><Grid3X3 size={16} /></button>
