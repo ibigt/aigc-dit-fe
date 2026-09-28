@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteCreation, fetchCreationProjects, fetchCreations, saveCreationToAsset } from "../api/creations.js";
 import { creationTitleForDisplay, promptForDisplay } from "../lib/createFlow.js";
 import { MediaCover } from "../lib/MediaCover.jsx";
-import { formatDateTime, mediaUrl } from "../lib/media.js";
+import { formatDateTime, MEDIA_THUMB_WIDTH, mediaUrl } from "../lib/media.js";
 import { zipStore } from "../lib/zipStore.js";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
 
@@ -103,7 +103,8 @@ export function MyCreations({ onReuse }) {
   const creations = useMemo(() => (creationsQuery.data || []).map((item) => ({
     ...item,
     src: mediaUrl(item.src || item.storageKey),
-    poster: mediaUrl(item.poster || item.posterKey),
+    poster: mediaUrl(item.poster || item.posterKey, { w: MEDIA_THUMB_WIDTH }),
+    thumb: mediaUrl(item.poster || item.src || item.storageKey, { w: MEDIA_THUMB_WIDTH }),
     createdAtLabel: formatDateTime(item.createdAt),
     duration: item.duration || (item.durationSec ? `${item.durationSec} 秒` : "—"),
     cost: item.creditCost || 0,

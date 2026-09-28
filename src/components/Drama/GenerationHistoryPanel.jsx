@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import { Trash2, Upload, X } from "lucide-react";
-import { mediaUrl } from "../../lib/media.js";
+import { MEDIA_THUMB_WIDTH, mediaUrl } from "../../lib/media.js";
 
 function sourceMeta(source, record) {
   if (source === "library" || record?.libraryAssetId) return "引用";
@@ -84,8 +84,8 @@ export function GenerationHistoryPanel({
             const imported = Boolean(record.imported || record.libraryAssetId);
             const canDelete = !(locked && selected);
             const thumb = mediaKind === "video"
-              ? mediaUrl(record.videoPosterUrl || record.videoPosterKey || record.videoUrl || record.videoKey)
-              : mediaUrl(record.url || record.storageKey);
+              ? mediaUrl(record.videoPosterUrl || record.videoPosterKey || record.videoUrl || record.videoKey, { w: MEDIA_THUMB_WIDTH })
+              : mediaUrl(record.url || record.storageKey, { w: MEDIA_THUMB_WIDTH });
             const videoSrc = mediaKind === "video"
               ? mediaUrl(record.videoUrl || record.videoKey)
               : null;
@@ -190,8 +190,8 @@ export function SwitchFinalModal({
             {records.map((record) => {
               const selected = Boolean(record.selected);
               const thumb = mediaKind === "video"
-                ? mediaUrl(record.videoPosterUrl || record.videoPosterKey || record.videoUrl || record.videoKey)
-                : mediaUrl(record.url || record.storageKey);
+                ? mediaUrl(record.videoPosterUrl || record.videoPosterKey || record.videoUrl || record.videoKey, { w: MEDIA_THUMB_WIDTH })
+                : mediaUrl(record.url || record.storageKey, { w: MEDIA_THUMB_WIDTH });
               const videoSrc = mediaKind === "video"
                 ? mediaUrl(record.videoUrl || record.videoKey)
                 : null;

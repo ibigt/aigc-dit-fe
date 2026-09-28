@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteAsset, fetchAssets, uploadAsset } from "../api/assets.js";
 import { MediaCover } from "../lib/MediaCover.jsx";
-import { formatDateTime, mediaUrl } from "../lib/media.js";
+import { formatDateTime, MEDIA_THUMB_WIDTH, mediaUrl } from "../lib/media.js";
 import { validateAssetFile } from "../lib/assetUpload.js";
 import { formatMediaMeta, runBatchDelete } from "../lib/assetBatch.js";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
@@ -65,7 +65,8 @@ export function AssetLibrary() {
       title: item.title || item.name,
       type: item.type || item.kind,
       src: mediaUrl(item.src || item.storageKey),
-      poster: mediaUrl(item.poster || item.posterKey),
+      poster: mediaUrl(item.poster || item.posterKey, { w: MEDIA_THUMB_WIDTH }),
+      thumb: mediaUrl(item.poster || item.src || item.storageKey, { w: MEDIA_THUMB_WIDTH }),
       meta: formatMediaMeta(item),
       createdAt: formatDateTime(item.createdAt),
     })),

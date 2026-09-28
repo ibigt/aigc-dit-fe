@@ -1,5 +1,6 @@
 import { AudioLines, Check, X } from "lucide-react";
 import { assetSelectionAtLimit, sameAsset } from "../lib/assetPicker.js";
+import { MEDIA_THUMB_WIDTH, mediaUrl } from "../lib/media.js";
 
 export function AssetPickerDialog({ assets = [], selectedItems = [], onToggle, onClose, onConfirm, title = "选择引用素材", hint, emptyText = "暂无可用素材", loading = false, error = "", maxSelection }) {
   return (
@@ -15,7 +16,7 @@ export function AssetPickerDialog({ assets = [], selectedItems = [], onToggle, o
           {!loading && !error && !assets.length && <p className="creation-asset-empty">{emptyText}</p>}
           {!loading && !error && assets.map((asset) => {
             const label = asset.title || asset.name;
-            const preview = asset.poster || asset.posterUrl || asset.src || asset.url;
+            const preview = mediaUrl(asset.poster || asset.posterUrl || asset.src || asset.url || asset.storageKey, { w: MEDIA_THUMB_WIDTH });
             const type = asset.type || asset.kind;
             const selected = selectedItems.some((item) => sameAsset(item, asset));
             const atLimit = assetSelectionAtLimit(selectedItems, asset, maxSelection);

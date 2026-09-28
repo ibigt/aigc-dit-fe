@@ -39,7 +39,7 @@ import {
   uploadDramaAssetImage,
   uploadDramaAssetVoiceReference,
 } from "../../api/drama.js";
-import { mediaUrl } from "../../lib/media.js";
+import { MEDIA_THUMB_WIDTH, mediaUrl } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
 import { AssetPickerDialog } from "../AssetPickerDialog.jsx";
@@ -93,7 +93,7 @@ function ImageLibraryDialog({ assets, loading, busy, error, onClose, onConfirm }
           {!loading && !assets.length && <p className="creation-asset-empty">暂无可用图片素材</p>}
           {!loading && assets.map((asset) => {
             const label = asset.title || asset.name;
-            const preview = mediaUrl(asset.poster || asset.src || asset.url || asset.storageKey);
+            const preview = mediaUrl(asset.poster || asset.src || asset.url || asset.storageKey, { w: MEDIA_THUMB_WIDTH });
             const isSelected = sameAssetId(asset.id, selectedId);
             return (
               <button
@@ -982,7 +982,7 @@ export function DramaAssetBoard({ series, episode }) {
           ) : (
             <div className="youxi-subject-grid">
               {filtered.map((item) => {
-                const src = mediaUrl(item.imageStorageKey || item.imageUrl);
+                const src = mediaUrl(item.imageStorageKey || item.imageUrl, { w: MEDIA_THUMB_WIDTH });
                 const generating = Boolean(item.generating) || isBusy(item.id, "generate");
                 const cardPrompt = (item.id === selected?.id ? promptDraft : promptOf(item)).trim();
                 return (

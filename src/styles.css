@@ -927,7 +927,7 @@ html[data-theme="dark"] .drama-dialog.drama-dialog--switch-final .drama-dialog__
 .creation-asset-empty { grid-column: 1 / -1; margin: 24px 0; color: #89919b; font-size: 13px; text-align: center; }
 .creation-asset-grid > button { position: relative; min-width: 0; overflow: hidden; padding: 0; border: 1px solid #e1e4e8; border-radius: 12px; background: white; text-align: left; }
 .creation-asset-grid > button.selected { border-color: #22c55e; box-shadow: 0 0 0 2px rgba(34,197,94,.18); }
-.creation-asset-grid img { width: 100%; aspect-ratio: 1.55; display: block; object-fit: cover; background: #eef0f3; }
+.creation-asset-grid img { width: 100%; aspect-ratio: 4 / 3; display: block; object-fit: contain; background: #eef0f3; }
 .creation-asset-grid > button > span:not(.creation-asset-check) { padding: 9px 10px 10px; display: flex; flex-direction: column; gap: 3px; }
 .creation-asset-grid strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .creation-asset-grid small { color: #89919b; font-size: 11px; }

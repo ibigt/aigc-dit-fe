@@ -1,5 +1,8 @@
 import { TOKEN_KEY } from "../api/client.js";
 
+/** 素材列表/网格预览默认宽度（后端会规整到最近档位） */
+export const MEDIA_THUMB_WIDTH = 480;
+
 export function storageKeyOf(keyOrUrl) {
   if (!keyOrUrl) return "";
   if (keyOrUrl.startsWith("blob:") || keyOrUrl.startsWith("/media/")) return "";
@@ -14,14 +17,38 @@ export function storageKeyOf(keyOrUrl) {
   return keyOrUrl;
 }
 
-export function mediaUrl(keyOrUrl) {
+/**
+ * @param {string} keyOrUrl
+ * @param {{ w?: number }} [options] 传 w 时走后端缩略图（仅图片有效）
+ */
+export function mediaUrl(keyOrUrl, options = {}) {
   if (!keyOrUrl) return "";
-  if (keyOrUrl.startsWith("blob:") || keyOrUrl.startsWith("http://") || keyOrUrl.startsWith("https://") || keyOrUrl.startsWith("/media/")) {
+  if (keyOrUrl.startsWith("blob:") || keyOrUrl.startsWith("/media/")) {
     return keyOrUrl;
+  }
+  const width = Number(options?.w) > 0 ? Math.round(Number(options.w)) : 0;
+  if (keyOrUrl.startsWith("http://") || keyOrUrl.startsWith("https://")) {
+    return appendMediaWidth(keyOrUrl, width);
   }
   const token = window.localStorage.getItem(TOKEN_KEY) || "";
   const key = storageKeyOf(keyOrUrl) || keyOrUrl;
-  return `/api/media?key=${encodeURIComponent(key)}&token=${encodeURIComponent(token)}`;
+  let url = `/api/media?key=${encodeURIComponent(key)}&token=${encodeURIComponent(token)}`;
+  if (width > 0) url += `&w=${width}`;
+  return url;
+}
+
+function appendMediaWidth(url, width) {
+  if (!(width > 0)) return url;
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (!parsed.pathname.endsWith("/api/media") && !parsed.pathname.endsWith("/api/media/")) {
+      return url;
+    }
+    parsed.searchParams.set("w", String(width));
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return url;
+  }
 }
 
 export function authenticatedApiUrl(path) {
