@@ -1,5 +1,6 @@
 import { uploadAsset } from "../api/assets.js";
 import { storageKeyOf } from "./media.js";
+import { reusePayloadOf } from "./reuseParams.js";
 
 export const FRAMES_EMPTY_PROMPT_LABEL = "根据首帧自动生成";
 
@@ -60,6 +61,7 @@ export function taskToResultMessage(task) {
     ratio: task.category === "audio" ? "—" : first.ratio || task.params?.ratio || "—",
     resolution: task.category === "audio" ? (task.params?.audioFormat || "音频").toUpperCase() : first.resolution || task.params?.resolution || "—",
     duration: task.category === "video" ? `${task.params?.durationSec || first.durationSec || "—"} 秒` : "—",
+    reuse: reusePayloadOf(task),
   };
 }
 
@@ -108,6 +110,7 @@ export function tasksToMessages(tasks = []) {
         duration: "—",
         media: { type: task.category || "image", src: "", title: "失败" },
         creations: [],
+        reuse: reusePayloadOf(task),
       });
     }
   }

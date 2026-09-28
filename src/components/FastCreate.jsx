@@ -6,7 +6,11 @@ import { createSession, deleteSession, fetchSession, fetchSessions, saveCreation
 import { IMAGE_POLL_TIMEOUT_MS, pollGenerateTask, submitGenerate, VIDEO_POLL_TIMEOUT_MS } from "../api/generate.js";
 import { friendlyGenerateError, FRAMES_EMPTY_PROMPT_LABEL, materialToAsset, promptForResult, tasksToMessages, taskToResultMessage } from "../lib/createFlow.js";
 import { formatDateTime, mediaUrl, storageKeyOf } from "../lib/media.js";
+import { calculateCreditEstimate } from "../lib/pricing.js";
+import { modelCatalogMessage } from "../lib/modelCatalog.js";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
+import { AssetPickerDialog } from "./AssetPickerDialog.jsx";
+import { sameAsset } from "../lib/assetPicker.js";
 
 const videoRatios = ["自动", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
 const imageRatios = ["21:9", "16:9", "5:4", "4:3", "3:2", "1:1", "2:3", "3:4", "4:5", "9:16"];
@@ -16,7 +20,6 @@ const miniMaxMaxDurations = Array.from({ length: 11 }, (_, index) => index + 5);
 const miniMaxComfyDurations = Array.from({ length: 11 }, (_, index) => index + 5);
 const agnesDurations = Array.from({ length: 9 }, (_, index) => index + 4);
 const videoResolutions = ["480P", "720P", "1080P", "2K", "4K"];
-const videoResolutionMultipliers = { "480P": 0.5, "720P": 0.75, "768P": 0.8, "1080P": 1, "2K": 1.5, "4K": 2.5 };
 const qualityLevels = ["Low", "Medium", "High"];
 const DEFAULT_SESSION_ID = "new-creation-default";
 const MODE_CAPS = ["t2i", "i2i", "t2v", "r2v", "i2v", "t2a"];
@@ -165,17 +168,12 @@ function replacePendingMessage(items, pendingKey, next) {
   copy[fallback] = next;
   return copy;
 }
-function sameMaterial(a, b) {
-  if (!a || !b) return false;
-  if (a.storageKey && b.storageKey) return a.storageKey === b.storageKey;
-  if (a.id != null && b.id != null) return String(a.id) === String(b.id);
-  const left = a.url || a.src;
-  const right = b.url || b.src;
-  return Boolean(left && right && left === right);
-}
 function toReferenceMaterial(asset) {
   const url = mediaUrl(asset.src || asset.url || asset.storageKey);
   const poster = mediaUrl(asset.poster || asset.posterUrl || asset.posterKey) || url;
+  const width = Number.isFinite(asset.width) ? asset.width : null;
+  const height = Number.isFinite(asset.height) ? asset.height : null;
+  const durationMs = Number.isFinite(asset.durationMs) ? asset.durationMs : null;
   return {
     id: asset.id,
     name: asset.title || asset.name,
@@ -183,6 +181,9 @@ function toReferenceMaterial(asset) {
     poster,
     type: asset.type === "audio" || asset.kind === "audio" ? "audio" : asset.type === "video" || asset.kind === "video" ? "video" : "image",
     storageKey: asset.storageKey || storageKeyOf(asset.src || asset.url) || storageKeyOf(url),
+    width,
+    height,
+    durationMs,
   };
 }
 const creationPresets = {
@@ -339,7 +340,14 @@ function makeInitialSession() {
   };
 }
 
+function extensionOf(url) {
+  const match = String(url || "").split("?")[0].match(/\.(\w{2,5})$/);
+  return match ? match[1].toLowerCase() : "bin";
+}
+
 function ResultMessage({ message, onReuse, onSave, savedIds = [], savingId }) {
+  const [promptExpanded, setPromptExpanded] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const items = (message.creations || []).map((item) => ({
     id: item.id,
     type: item.type || item.category,
@@ -353,6 +361,35 @@ function ResultMessage({ message, onReuse, onSave, savedIds = [], savingId }) {
   const primaryId = items[0]?.id;
   const saved = Boolean(primaryId && savedIds.includes(primaryId));
   const saving = savingId === primaryId;
+  const downloadable = items.filter((item) => item.src);
+
+  async function downloadAll() {
+    if (!downloadable.length || downloading) return;
+    setDownloading(true);
+    try {
+      for (let index = 0; index < downloadable.length; index += 1) {
+        const file = downloadable[index];
+        try {
+          const response = await fetch(file.src);
+          if (!response.ok) throw new Error("下载失败");
+          const blob = await response.blob();
+          const href = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = href;
+          link.download = `${message.model || "作品"}${downloadable.length > 1 ? `-${index + 1}` : ""}.${extensionOf(file.src)}`;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(href);
+        } catch {
+          window.open(file.src, "_blank");
+        }
+      }
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   if (message.pending) {
     return (
       <div className="message message--result">
@@ -384,28 +421,53 @@ function ResultMessage({ message, onReuse, onSave, savedIds = [], savingId }) {
           <span><small>耗时</small><strong>{message.elapsed}</strong></span>
           <span><small>积分消耗</small><strong>{message.credits} 积分</strong></span>
         </div>
+        {message.prompt && (
+          <div
+            className={`result-prompt${promptExpanded ? " is-expanded" : ""}`}
+            role="button"
+            tabIndex={0}
+            aria-expanded={promptExpanded}
+            title={promptExpanded ? "收起完整 Prompt" : "展开完整 Prompt"}
+            onClick={() => setPromptExpanded((value) => !value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                setPromptExpanded((value) => !value);
+              }
+            }}
+          >
+            <small>生成 Prompt</small>
+            <p>{message.prompt}</p>
+          </div>
+        )}
         <div className="result-actions">
-          <button type="button" onClick={() => onReuse(message, "edit")}><Pencil size={13} /> 重新编辑</button>
+          <button type="button" onClick={() => onReuse(message, "edit")}><Pencil size={13} /> 复用参数</button>
           <button type="button" onClick={() => onReuse(message, "regenerate")}><RefreshCw size={13} /> 再次生成</button>
           {primaryId && (
             <button type="button" className={saved ? "is-saved" : ""} disabled={saved || saving} onClick={() => onSave(primaryId)}>
               <Save size={13} /> {saved ? "已保存" : saving ? "保存中…" : "保存到素材库"}
             </button>
           )}
-          {items[0]?.src && <a href={items[0].src} download><Download size={13} /> 下载</a>}
+          {downloadable.length > 0 && (
+            <button type="button" disabled={downloading} onClick={downloadAll}>
+              <Download size={13} /> {downloading ? "下载中…" : downloadable.length > 1 ? `高清下载 · ${downloadable.length} 个` : "高清下载"}
+            </button>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function UploadTile({ label, detail, material, onClick, onRemove }) {
+const MAX_REFERENCE_ASSETS = 15;
+
+function UploadTile({ label, detail, material, onClick, onRemove, disabled = false }) {
   const preview = material ? mediaUrl(material.poster || material.url) : "";
   const isVideo = material?.type === "video";
   const isAudio = material?.type === "audio";
   return (
     <div className={`creation-upload ${material ? "has-preview" : ""}`}>
-      <button type="button" onClick={onClick}>
+      <button type="button" onClick={onClick} disabled={disabled}>
         {material
           ? isAudio
             ? <span className="creation-upload__audio"><AudioLines size={22} /><small>{material.name || "参考音频"}</small></span>
@@ -415,7 +477,7 @@ function UploadTile({ label, detail, material, onClick, onRemove }) {
           : <><Plus size={24} /><span>{label}</span><small>{detail}</small></>}
       </button>
       {material && <span className="creation-upload__type">{isAudio ? <AudioLines size={10} /> : isVideo ? <Video size={10} /> : <Image size={10} />}</span>}
-      {material && <button className="creation-upload__remove" type="button" aria-label={`移除${label}`} onClick={onRemove}><X size={12} /></button>}
+      {material && <button className="creation-upload__remove" type="button" aria-label={`移除${label}`} onClick={onRemove} disabled={disabled}><X size={12} /></button>}
     </div>
   );
 }
@@ -475,41 +537,6 @@ function CreationPresetCards({ generationType, onSelect }) {
   ))}</div>;
 }
 
-function AssetPicker({ assets, selectedItems, onToggle, onClose, onConfirm, title = "选择引用素材", hint, emptyText = "暂无可用素材" }) {
-  return (
-    <div className="creation-asset-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="creation-asset-dialog" role="dialog" aria-modal="true" aria-labelledby="asset-picker-title">
-        <header>
-          <div><small>素材库</small><h2 id="asset-picker-title">{title}</h2></div>
-          <button type="button" aria-label="关闭素材选择" onClick={onClose}><X size={17} /></button>
-        </header>
-        <div className="creation-asset-grid">
-          {!assets.length && <p className="creation-asset-empty">{emptyText}</p>}
-          {assets.map((asset) => {
-            const label = asset.title || asset.name;
-            const preview = asset.poster || asset.src || asset.url;
-            const selected = selectedItems.some((item) => sameMaterial(item, asset));
-            return (
-              <button type="button" className={selected ? "selected" : ""} key={asset.id || asset.storageKey || preview} aria-pressed={selected} onClick={() => onToggle(asset)}>
-                {asset.type === "audio" ? <AudioLines size={28} /> : <img src={preview} alt={label} />}
-                <span><strong>{label}</strong><small>{asset.type === "audio" ? "音频素材" : asset.type === "video" ? "视频素材" : "图片素材"}</small></span>
-                {selected && <span className="creation-asset-check" aria-hidden="true"><Check size={13} strokeWidth={3} /></span>}
-              </button>
-            );
-          })}
-        </div>
-        <footer>
-          <span>{hint ? `${hint} · 已选择 ${selectedItems.length} 项` : `已选择 ${selectedItems.length} 项`}</span>
-          <div>
-            <button type="button" onClick={onClose}>取消</button>
-            <button type="button" className="primary" onClick={onConfirm}>引用素材</button>
-          </div>
-        </footer>
-      </section>
-    </div>
-  );
-}
-
 const SESSION_DRAFT_KEY = "fastcreate.composer.drafts";
 function readAllSessionDrafts() {
   try {
@@ -557,7 +584,7 @@ function usePerSessionDraft(activeSessionId, initial = "") {
   return [value, setValue];
 }
 
-export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light", onOpenAssets, reuse = null, onReuseApplied = () => {} }) {
+export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light", onOpenAssets, modelCatalogLoading = false, modelCatalogError = null, credits = null, onNeedRecharge = null, reuse = null, onReuseApplied = () => {} }) {
   const queryClient = useQueryClient();
   const [sessions, setSessions] = useState(() => [makeInitialSession()]);
   const [activeSessionId, setActiveSessionId] = useState(DEFAULT_SESSION_ID);
@@ -568,11 +595,15 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const [prompt, setPrompt] = usePerSessionDraft(activeSessionId, "");
   const [generatingSessionIds, setGeneratingSessionIds] = useState([]);
   const [submitError, setSubmitError] = useState("");
+  const [insufficientCredits, setInsufficientCredits] = useState(false);
+  const [regenerateTick, setRegenerateTick] = useState(0);
   const [deleteSessionTarget, setDeleteSessionTarget] = useState(null);
   const [savedCreationIds, setSavedCreationIds] = useState([]);
   const [savingId, setSavingId] = useState(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [libraryAssets, setLibraryAssets] = useState([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryError, setLibraryError] = useState("");
   const [videoMode, setVideoMode] = useState("reference");
   const [ratio, setRatio] = useState("16:9");
   const [resolution, setResolution] = useState("720P");
@@ -594,6 +625,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const firstFrameInputRef = useRef(null);
   const lastFrameInputRef = useRef(null);
   const generatingSessionRef = useRef(new Set());
+  const regenerateRef = useRef(false);
   const sessionMenuRef = useRef(null);
   const watchingTasksRef = useRef(new Set());
   const activeSessionIdRef = useRef(activeSessionId);
@@ -612,7 +644,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const supportsLibrary = supportsLibraryCite(selectedModel, generationType, videoMode);
   const framesReady = generationType === "video" && videoMode === "frames" && Boolean(firstFrame);
   const audioOnlyReady = Boolean(selectedModel?.supportsAudioOnlyReference && referenceImages.some((item) => item.type === "audio"));
-  const canSubmit = Boolean((videoMode === "frames" && generationType === "video" ? framesReady : (prompt.trim() || audioOnlyReady)) && !sessionGenerating);
+  const canSubmit = Boolean(selectedModel && (videoMode === "frames" && generationType === "video" ? framesReady : (prompt.trim() || audioOnlyReady)) && !sessionGenerating);
   const showVideoModes = generationType === "video" && (modelSupports(selectedModel, "r2v") || supportsFrames);
   const copiesLimited = generationType === "audio"
     || selectedModel?.adapterKey === "gpt-image-2"
@@ -623,13 +655,17 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     || isAgnes(selectedModel)
     || isMiniMaxH3(selectedModel)
     || isSeedanceOfficial(selectedModel);
-  const unitPrice = Number.parseFloat(selectedModel?.pricing?.sale?.output) || (generationType === "video" ? 12 : generationType === "audio" ? 3 : 2);
-  const parameterMultiplier = generationType === "audio" ? 1 : generationType === "video"
-    ? (videoResolutionMultipliers[resolution] || 1)
-    : ({ "1K": 1, "2K": 2, "4K": 4 }[resolution] || 1) * ({ Low: 1, Medium: 1.5, High: 2 }[quality] || 1);
-  const audioUnit = selectedModel?.pricing?.unit === "万字符" ? 10000 : selectedModel?.pricing?.unit === "千字符" ? 1000 : 0;
-  const quantityCost = generationType === "video" && selectedModel?.pricing?.unit === "秒" ? unitPrice * duration : generationType === "audio" && audioUnit ? unitPrice * Math.max(1, prompt.length) / audioUnit : unitPrice;
-  const creditCost = Math.ceil(quantityCost * parameterMultiplier * (copiesLimited ? 1 : copies));
+  const creditCost = selectedModel ? calculateCreditEstimate({
+    pricing: selectedModel?.pricing,
+    category: generationType,
+    resolution,
+    quality,
+    durationSec: duration,
+    characterCount: prompt.length,
+    copies: copiesLimited ? 1 : copies,
+  }) : 0;
+  const balanceCredits = Number(credits);
+  const creditShortage = Boolean(selectedModel) && Number.isFinite(balanceCredits) && creditCost > balanceCredits;
   useEffect(() => { activeSessionIdRef.current = activeSessionId; }, [activeSessionId]);
   useEffect(() => { if (availableModels.length && !availableModels.some((item) => String(item.id) === String(model))) setModel(String(availableModels[0].id)); }, [availableModels, model]);
   useEffect(() => {
@@ -669,7 +705,6 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     setQueuedPrompt(null);
     window.setTimeout(() => document.querySelector(".creation-composer textarea")?.focus(), 0);
   }, [queuedPrompt, activeSessionId, setPrompt]);
-
   useEffect(() => {
     let cancelled = false;
     const seed = reuse;
@@ -740,6 +775,13 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
       document.removeEventListener("keydown", onKey);
     };
   }, [openPanel]);
+
+  // 「再次生成」：复用参数回填完成后自动重新提交一次（回填状态在本轮 render 全部生效）。
+  useEffect(() => {
+    if (!regenerateTick || !regenerateRef.current) return;
+    regenerateRef.current = false;
+    sendPrompt();
+  }, [regenerateTick, sendPrompt]);
 
   function beginGenerating(sessionId) {
     if (sessionId == null) return;
@@ -920,6 +962,10 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   }
 
   function openAssetPicker() {
+    if (sessionGenerating) {
+      setSubmitError("生成中的任务已锁定引用素材，完成后才能调整");
+      return;
+    }
     if (!supportsLibrary) {
       setSubmitError(generationType === "image"
         ? "当前模型不支持参考图"
@@ -932,19 +978,32 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     const framesPending = [firstFrame, lastFrame].filter(Boolean);
     setPendingAssets(generationType === "video" && videoMode === "frames" ? framesPending : referenceImages);
     setAssetPickerOpen(true);
-    fetchAssets().then((items) => setLibraryAssets(items || [])).catch(() => setLibraryAssets([]));
+    setLibraryLoading(true);
+    setLibraryError("");
+    fetchAssets()
+      .then((items) => setLibraryAssets(items || []))
+      .catch((error) => {
+        setLibraryAssets([]);
+        setLibraryError(error.message || "素材加载失败，请关闭后重试");
+      })
+      .finally(() => setLibraryLoading(false));
   }
 
   function togglePendingAsset(asset) {
+    if (sessionGenerating) return;
     const next = toReferenceMaterial(asset);
     const framesPicker = generationType === "video" && videoMode === "frames";
     if (framesPicker && !isImageMaterial(next)) return;
     setPendingAssets((items) => {
-      if (items.some((item) => sameMaterial(item, next))) {
-        return items.filter((item) => !sameMaterial(item, next));
+      if (items.some((item) => sameAsset(item, next))) {
+        return items.filter((item) => !sameAsset(item, next));
       }
       if (framesPicker && items.length >= 2) {
         setSubmitError("首尾帧最多引用两张图片，第 1 张为首帧、第 2 张为尾帧");
+        return items;
+      }
+      if (!framesPicker && items.length >= MAX_REFERENCE_ASSETS) {
+        setSubmitError(`参考素材最多选择 ${MAX_REFERENCE_ASSETS} 个`);
         return items;
       }
       return [...items, next];
@@ -952,6 +1011,10 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   }
 
   function addReferenceImages(files) {
+    if (sessionGenerating) {
+      setSubmitError("生成中的任务已锁定引用素材，完成后才能调整");
+      return;
+    }
     if (!supportsLibrary) {
       setSubmitError(generationType === "image" ? "当前模型不支持参考图" : "当前模型不支持参考生视频");
       return;
@@ -967,11 +1030,19 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     let addedAudio = 0;
     const accepted = next.filter((item) => item.type !== "audio" || addedAudio++ < availableAudioSlots);
     if (accepted.length < next.length) setSubmitError(`当前模型最多支持 ${maxAudioReferences} 段参考音频`);
-    setReferenceImages((items) => [...items, ...accepted]);
+    setReferenceImages((items) => {
+      const slots = Math.max(0, MAX_REFERENCE_ASSETS - items.length);
+      if (accepted.length > slots) setSubmitError(`参考素材最多选择 ${MAX_REFERENCE_ASSETS} 个`);
+      return [...items, ...accepted.slice(0, slots)];
+    });
   }
 
   function setFrame(file, setter) {
     if (!file) return;
+    if (sessionGenerating) {
+      setSubmitError("生成中的任务已锁定引用素材，完成后才能调整");
+      return;
+    }
     if (!supportsFrames) {
       setSubmitError("当前模型不支持首尾帧");
       return;
@@ -1009,6 +1080,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     }
     const displayText = text || (framesReadyNow ? FRAMES_EMPTY_PROMPT_LABEL : "");
     setSubmitError("");
+    setInsufficientCredits(false);
     setPrompt("");
     const currentType = generationType;
     const currentModel = selectedModel;
@@ -1023,6 +1095,8 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     let sessionId = activeSessionId === DEFAULT_SESSION_ID ? null : activeSessionId;
     let keepBusy = false;
     let submittedId = null;
+    let uploadedReferences = null;
+    let uploadedFrames = null;
     const failResult = (message) => ({
       type: "result",
       prompt: displayText,
@@ -1038,6 +1112,22 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
       duration: currentType === "video" ? `${duration} 秒` : "—",
       media: { type: currentType, src: "" },
       creations: [],
+      reuse: {
+        category: currentType,
+        modelId: currentModel?.id != null && !Number.isNaN(Number(currentModel.id)) ? Number(currentModel.id) : null,
+        mode: currentType === "video" ? (videoMode === "frames" ? "i2v" : "r2v") : currentType === "image" ? (referenceImages.length ? "i2i" : "t2i") : "t2a",
+        framesMode: currentType === "video" && videoMode === "frames",
+        ratio,
+        resolution,
+        quality,
+        durationSec: currentType === "video" ? duration : null,
+        copies: copiesLimited ? 1 : copies,
+        voiceId: currentType === "audio" ? voiceId : "",
+        speed: currentType === "audio" ? speed : null,
+        audioFormat: currentType === "audio" ? audioFormat : "",
+        references: uploadedReferences ?? referenceImages,
+        frames: uploadedFrames ?? { firstFrame, lastFrame },
+      },
     });
     try {
       if (!currentModel?.id || Number.isNaN(Number(currentModel.id))) {
@@ -1073,6 +1163,8 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         firstFrameKey: firstFrame ? (await materialToAsset(firstFrame)).storageKey : undefined,
         lastFrameKey: lastFrame ? (await materialToAsset(lastFrame)).storageKey : undefined,
       } : undefined;
+      uploadedReferences = references;
+      uploadedFrames = useFrames ? { firstFrame, lastFrame } : { firstFrame: null, lastFrame: null };
       if (!useFrames) setReferenceImages(references);
       const submitted = await submitGenerate({
         modelId: Number(currentModel.id),
@@ -1117,6 +1209,9 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
       }
       if (sameId(activeSessionIdRef.current, sessionId)) {
         setSubmitError(error.message || "提交失败");
+        if (/积分不足/.test(String(error?.message || ""))) {
+          setInsufficientCredits(true);
+        }
       }
       if (sessionId) {
         updateSessionMessages(sessionId, (items) => replacePendingMessage(items, pendingKey, failResult(error.message || "提交失败")));
@@ -1144,12 +1239,56 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     }
   }
 
+  function toReuseMaterial(item) {
+    if (!item || !(item.url || item.storageKey)) return null;
+    return {
+      ...item,
+      url: item.url || mediaUrl(item.storageKey),
+      poster: item.poster || "",
+    };
+  }
+
+  /**
+   * 复用参数：把历史任务的模型、比例、分辨率、时长、画质、副本、参考图/首尾帧与音色参数
+   * 全量回填到当前输入区；非法值由既有的模型约束 useEffect 自动校正（时长/分辨率钳制）。
+   */
+  function applyReusePayload(reuse) {
+    if (!reuse) return;
+    const category = ["video", "image", "audio"].includes(reuse.category) ? reuse.category : generationType;
+    setGenerationType(category);
+    if (reuse.modelId != null) setModel(String(reuse.modelId));
+    const framesMode = category === "video" && Boolean(reuse.framesMode);
+    if (category === "video") setVideoMode(framesMode ? "frames" : "reference");
+    if (reuse.ratio) setRatio(reuse.ratio);
+    if (reuse.resolution) setResolution(reuse.resolution);
+    if (reuse.quality) setQuality(reuse.quality);
+    if (reuse.durationSec) setDuration(reuse.durationSec);
+    if (reuse.copies) setCopies(Math.min(4, Math.max(1, reuse.copies)));
+    if (category === "audio") {
+      if (reuse.voiceId) setVoiceId(reuse.voiceId);
+      if (reuse.speed) setSpeed(reuse.speed);
+      if (reuse.audioFormat) setAudioFormat(reuse.audioFormat);
+    }
+    if (framesMode) {
+      setReferenceImages([]);
+      setFirstFrame(toReuseMaterial(reuse.frames?.firstFrame));
+      setLastFrame(toReuseMaterial(reuse.frames?.lastFrame));
+    } else {
+      setFirstFrame(null);
+      setLastFrame(null);
+      setReferenceImages((reuse.references || []).map(toReuseMaterial).filter(Boolean));
+    }
+  }
+
   function reuseResult(message, action) {
     setPrompt(promptForResult(activeSession.messages, message));
-    if (action === "regenerate" || action === "edit") {
-      window.setTimeout(() => document.querySelector(".creation-composer textarea")?.focus(), 0);
+    applyReusePayload(message.reuse);
+    if (action === "regenerate") {
+      regenerateRef.current = true;
+      setRegenerateTick((tick) => tick + 1);
+      return;
     }
-    if (message.media?.type && message.media.type !== generationType) changeType(message.media.type);
+    window.setTimeout(() => document.querySelector(".creation-composer textarea")?.focus(), 0);
   }
 
   return (
@@ -1192,14 +1331,22 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         </div>
         <div className="composer-shell composer-shell--expanded">
           <div className={`composer creation-composer ${referenceImages.length || firstFrame || lastFrame ? "has-material" : ""}`}>
-            <input ref={referenceInputRef} aria-label="上传参考素材" className="visually-hidden" type="file" accept={generationType === "video" && !imageOnlyRefs(selectedModel) ? "image/*,video/*" : "image/*"} multiple disabled={!supportsLibrary} onChange={(event) => { addReferenceImages(event.target.files); event.target.value = ""; }} />
-            <input ref={firstFrameInputRef} aria-label="上传视频首帧" className="visually-hidden" type="file" accept="image/*" disabled={!supportsFrames} onChange={(event) => { setFrame(event.target.files?.[0], setFirstFrame); event.target.value = ""; }} />
-            <input ref={lastFrameInputRef} aria-label="上传视频尾帧" className="visually-hidden" type="file" accept="image/*" disabled={!supportsFrames} onChange={(event) => { setFrame(event.target.files?.[0], setLastFrame); event.target.value = ""; }} />
+            <input ref={referenceInputRef} aria-label="上传参考素材" className="visually-hidden" type="file" accept={generationType === "video" && !imageOnlyRefs(selectedModel) ? `image/*,video/*${supportsAudioReference ? ",audio/*,.mp3,.wav,.m4a,.aac" : ""}` : "image/*"} multiple disabled={!supportsLibrary || sessionGenerating} onChange={(event) => { addReferenceImages(event.target.files); event.target.value = ""; }} />
+            <input ref={firstFrameInputRef} aria-label="上传视频首帧" className="visually-hidden" type="file" accept="image/*" disabled={!supportsFrames || sessionGenerating} onChange={(event) => { setFrame(event.target.files?.[0], setFirstFrame); event.target.value = ""; }} />
+            <input ref={lastFrameInputRef} aria-label="上传视频尾帧" className="visually-hidden" type="file" accept="image/*" disabled={!supportsFrames || sessionGenerating} onChange={(event) => { setFrame(event.target.files?.[0], setLastFrame); event.target.value = ""; }} />
             <div className="composer-kind-tabs" role="tablist" aria-label="创作类型"><button role="tab" aria-selected={generationType === "video"} className={generationType === "video" ? "active" : ""} onClick={() => changeType("video")}><Video size={14} />视频</button><button role="tab" aria-selected={generationType === "image"} className={generationType === "image" ? "active" : ""} onClick={() => changeType("image")}><Image size={14} />图片</button><button role="tab" aria-selected={generationType === "audio"} className={generationType === "audio" ? "active" : ""} onClick={() => changeType("audio")}><AudioLines size={14} />语音</button></div>
-            {submitError && <p className="create-submit-error">{submitError}</p>}
+            {submitError && (
+              <p className="create-submit-error">
+                {submitError}
+                {insufficientCredits && onNeedRecharge && (
+                  <button type="button" className="creation-recharge-link" onClick={() => { setSubmitError(""); setInsufficientCredits(false); onNeedRecharge(); }}>去充值</button>
+                )}
+              </p>
+            )}
+            {!selectedModel && <p className="create-submit-error">{modelCatalogMessage({ loading: modelCatalogLoading, error: modelCatalogError, category: generationType })}</p>}
             <div className="creation-composer__body">
               <div className={`creation-reference-slots ${videoMode === "frames" && generationType === "video" ? "is-frames" : ""}`}>
-                {generationType === "video" && videoMode === "frames" ? <><UploadTile label="首帧" detail="起始画面" material={firstFrame} onClick={() => firstFrameInputRef.current?.click()} onRemove={() => setFirstFrame(null)} /><ArrowLeftRight className="frame-bridge" size={15} /><UploadTile label="尾帧" detail="结束画面" material={lastFrame} onClick={() => lastFrameInputRef.current?.click()} onRemove={() => setLastFrame(null)} /></> : supportsLibrary ? <>{referenceImages.map((item, index) => <UploadTile key={item.storageKey || item.id || `${item.url}-${index}`} label={item.name || `参考 ${index + 1}`} material={item} onRemove={() => setReferenceImages((items) => items.filter((_, itemIndex) => itemIndex !== index))} />)}<UploadTile label="参考" detail={generationType === "video" ? (imageOnlyRefs(selectedModel) ? "图片" : "图片 / 视频") : "图片（可多选）"} onClick={() => referenceInputRef.current?.click()} /></> : null}
+                {generationType === "video" && videoMode === "frames" ? <><UploadTile label="首帧" detail="起始画面" material={firstFrame} disabled={sessionGenerating} onClick={() => firstFrameInputRef.current?.click()} onRemove={() => setFirstFrame(null)} /><ArrowLeftRight className="frame-bridge" size={15} /><UploadTile label="尾帧" detail="结束画面" material={lastFrame} disabled={sessionGenerating} onClick={() => lastFrameInputRef.current?.click()} onRemove={() => setLastFrame(null)} /></> : supportsLibrary ? <>{referenceImages.map((item, index) => <UploadTile key={item.storageKey || item.id || `${item.url}-${index}`} label={item.name || `参考 ${index + 1}`} material={item} disabled={sessionGenerating} onRemove={() => setReferenceImages((items) => items.filter((_, itemIndex) => itemIndex !== index))} />)}{referenceImages.length < MAX_REFERENCE_ASSETS && <UploadTile label="参考" detail={generationType === "video" ? (imageOnlyRefs(selectedModel) ? "图片" : supportsAudioReference ? `图片/视频/音频（最多${MAX_REFERENCE_ASSETS}个）` : `图片/视频（最多${MAX_REFERENCE_ASSETS}个）`) : `支持多选（最多${MAX_REFERENCE_ASSETS}个）`} disabled={sessionGenerating} onClick={() => referenceInputRef.current?.click()} />}</> : null}
               </div>
               <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendPrompt(); } }} placeholder={generationType === "video" ? (videoMode === "frames" ? "可选：描述镜头运动与画面变化。不填则根据首帧自动生成。" : "描述您想要生成的视频内容，例如，“一个孩子在公园里放风筝，金色阳光，镜头上移。”") : generationType === "audio" ? "输入需要朗读的文本，例如，“欢迎使用同道智能语音创作平台。”" : "描述您想生成的图片，例如，“夕阳映照在海面上，鲜艳的色彩与汹涌的波涛交相辉映。”"} maxLength={4096} />
               <span className={`creation-character-count${prompt.length >= 3800 ? " is-warning" : ""}`}>{prompt.length} / 4096{prompt.length >= 3800 ? " · 接近字数上限，请精简" : ""}</span>
@@ -1207,22 +1354,25 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
             <footer className="creation-composer__footer">
               <div className="creation-controls">
                 <div className="creation-control-wrap">
-                  <button type="button" className="creation-pill creation-model-pill" aria-haspopup="listbox" aria-expanded={openPanel === "model"} aria-label="选择模型" onClick={() => { setOpenPanel(openPanel === "model" ? null : "model"); setAssetPickerOpen(false); }}>
-                    <Box size={14} /><span>{selectedModel?.name || "选择模型"}</span><ChevronDown size={13} />
+                  <button type="button" className="creation-pill creation-model-pill" aria-haspopup="listbox" aria-expanded={openPanel === "model"} aria-label="选择模型" disabled={!availableModels.length} onClick={() => { setOpenPanel(openPanel === "model" ? null : "model"); setAssetPickerOpen(false); }}>
+                    {selectedModel?.logo ? <img src={selectedModel.logo} alt="" /> : <Box size={14} />}<span>{selectedModel?.name || "选择模型"}</span><ChevronDown size={13} />
                   </button>
                   {openPanel === "model" && <div className="creation-popover creation-model-popover" role="listbox" aria-label="可用模型">{availableModels.map((item) => {
                     const selected = String(item.id) === String(selectedModel?.id);
-                    return <button type="button" role="option" aria-selected={selected} className={selected ? "active" : ""} key={item.id} onClick={() => { setModel(String(item.id)); setOpenPanel(null); setAssetPickerOpen(false); }}><span><strong>{item.name}</strong><small>{item.description || item.badge || item.provider}</small></span>{selected && <Check size={14} />}</button>;
+                    return <button type="button" role="option" aria-selected={selected} className={selected ? "active" : ""} key={item.id} onClick={() => { setModel(String(item.id)); setOpenPanel(null); setAssetPickerOpen(false); }}>{item.logo ? <img src={item.logo} alt="" /> : <Box size={18} />}<span><strong>{item.name}</strong><small>{item.description || "适用于当前创作类型"}</small><em><i>{item.provider || "模型服务"}</i>{item.badge && <i>{item.badge}</i>}</em></span>{selected && <Check size={14} />}</button>;
                   })}</div>}
                 </div>
                 {showVideoModes && <div className="creation-control-wrap"><button type="button" className="creation-pill" aria-expanded={openPanel === "mode"} onClick={() => setOpenPanel(openPanel === "mode" ? null : "mode")}><Film size={14} />{videoMode === "reference" ? "参考生成" : "首/尾帧"}<ChevronDown size={13} /></button>{openPanel === "mode" && <div className="creation-popover creation-mode-popover"><button className={videoMode === "reference" ? "active" : ""} onClick={() => { setVideoMode("reference"); setFirstFrame(null); setLastFrame(null); setOpenPanel(null); }}><Images size={14} /><span><strong>参考生成</strong><small>{imageOnlyRefs(selectedModel) ? "可用图片作为参考（不支持参考视频）" : "可用图片或视频作为参考"}</small></span>{videoMode === "reference" && <Check size={14} />}</button><button className={videoMode === "frames" ? "active" : ""} disabled={!supportsFrames} onClick={() => { if (!supportsFrames) return; setVideoMode("frames"); setReferenceImages([]); setOpenPanel(null); }}><Film size={14} /><span><strong>首/尾帧</strong><small>{supportsFrames ? "控制视频起始与结束画面" : "当前模型不支持首尾帧"}</small></span>{videoMode === "frames" && <Check size={14} />}</button></div>}</div>}
                 <div className="creation-control-wrap"><button type="button" className={`creation-pill creation-spec-pill ${generationType === "audio" ? "is-audio" : ""}`} aria-expanded={openPanel === "params"} onClick={() => setOpenPanel(openPanel === "params" ? null : "params")}>{generationType === "audio" ? <AudioLines size={14} /> : <Maximize2 size={14} />}<span>{generationType === "video" ? `${resolution} · ${duration}s · ${ratio}` : generationType === "audio" ? `${voiceLabel(voices.find((voice) => voiceIdOf(voice) === voiceId) || voiceId)} · ${speed.toFixed(2)}x · ${audioFormat.toUpperCase()}` : `${resolution} · ${quality} · ${ratio}`}</span><ChevronDown size={13} /></button>{openPanel === "params" && (generationType === "audio" ? <AudioParameterPanel voices={voices} formats={audioFormats} voiceId={voiceId} setVoiceId={setVoiceId} audioFormat={audioFormat} setAudioFormat={setAudioFormat} speed={speed} setSpeed={setSpeed} minSpeed={minSpeed} maxSpeed={maxSpeed} /> : <ParameterPanel generationType={generationType} ratio={ratio} setRatio={setRatio} resolution={resolution} setResolution={setResolution} duration={duration} setDuration={setDuration} quality={quality} setQuality={setQuality} durationOptions={durationOptionsFor(selectedModel)} resolutionOptions={generationType === "video" ? videoResolutionsFor(selectedModel) : ["1K", "2K", "4K"]} />)}</div>
-                {generationType !== "audio" && <button type="button" className="creation-icon-action" title={supportsLibrary ? (generationType === "video" ? (videoMode === "frames" ? "从素材库引用首尾帧图片" : "从素材库引用图片或视频") : "从素材库引用") : (generationType === "video" && videoMode === "frames" ? "当前模型不支持首尾帧" : "当前模型不支持参考素材")} aria-label={videoMode === "frames" && generationType === "video" ? "从素材库引用首尾帧" : "从素材库引用素材"} disabled={!supportsLibrary} onClick={() => { if (supportsLibrary) openAssetPicker(); }}><AtSign size={16} /></button>}
+                {generationType !== "audio" && <button type="button" className="creation-icon-action" title={sessionGenerating ? "生成中不可变更引用" : supportsLibrary ? (generationType === "video" ? (videoMode === "frames" ? "从素材库引用首尾帧图片" : "从素材库引用图片或视频") : "从素材库引用") : (generationType === "video" && videoMode === "frames" ? "当前模型不支持首尾帧" : "当前模型不支持参考素材")} aria-label={videoMode === "frames" && generationType === "video" ? "从素材库引用首尾帧" : "从素材库引用素材"} disabled={!supportsLibrary || sessionGenerating} onClick={() => { if (supportsLibrary) openAssetPicker(); }}><AtSign size={16} /></button>}
                 <button type="button" className="creation-icon-action" title="重置输入" aria-label="重置输入内容与参数" onClick={resetComposer}><RotateCcw size={15} /></button>
               </div>
               <div className="creation-submit-group">
                 <div className="creation-control-wrap"><button type="button" className="creation-copy-button" aria-label={`副本数 ${copiesLimited ? 1 : copies}`} aria-expanded={openPanel === "copies"} disabled={copiesLimited} title={copiesLimited ? "当前模型仅支持 1 份" : undefined} onClick={() => { if (!copiesLimited) setOpenPanel(openPanel === "copies" ? null : "copies"); }}><Layers3 size={15} /><span>{copiesLimited ? 1 : copies}</span></button>{!copiesLimited && openPanel === "copies" && <div className="creation-popover creation-copy-popover">{[1, 2, 3, 4].map((item) => <button key={item} className={copies === item ? "active" : ""} onClick={() => { setCopies(item); setOpenPanel(null); }}>{item}{copies === item && <Check size={13} />}</button>)}</div>}</div>
-                <span className="creation-cost" title="根据模型售价、参数与副本数计算"><Coins size={15} /><b>{creditCost}</b></span>
+                <span className={`creation-cost${creditShortage ? " is-insufficient" : ""}`} title={selectedModel ? "根据模型售价、参数与副本数计算" : "暂无可用模型"}><Coins size={15} /><b>{selectedModel ? `消耗 ${creditCost} 积分` : "--"}</b></span>
+                {creditShortage && onNeedRecharge && (
+                  <button type="button" className="creation-recharge-link" onClick={onNeedRecharge}>积分不足 · 去充值</button>
+                )}
                 <button className="creation-submit" aria-label="开始创作" onClick={sendPrompt} disabled={!canSubmit}><Sparkles size={16} />{sessionGenerating ? "生成中" : "创作"}</button>
               </div>
             </footer>
@@ -1230,7 +1380,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         </div>
       </section>
       {assetPickerOpen && supportsLibrary && (
-        <AssetPicker
+        <AssetPickerDialog
           title={generationType === "video" && videoMode === "frames" ? "选择首尾帧图片" : "选择引用素材"}
           hint={generationType === "video" && videoMode === "frames" ? "第 1 张为首帧，第 2 张为尾帧" : undefined}
           emptyText={generationType === "video" && videoMode === "frames" ? "暂无可用图片素材" : "暂无可用素材"}
@@ -1242,6 +1392,9 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
             })
             .map((item) => toReferenceMaterial(item))}
           selectedItems={pendingAssets}
+          loading={libraryLoading}
+          error={libraryError}
+          maxSelection={generationType === "video" && videoMode === "frames" ? 2 : MAX_REFERENCE_ASSETS}
           onToggle={togglePendingAsset}
           onClose={() => setAssetPickerOpen(false)}
           onConfirm={() => {
