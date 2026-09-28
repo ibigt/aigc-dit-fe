@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchAssets } from "../api/assets.js";
 import { createSession, deleteSession, fetchSession, fetchSessions, saveCreationToAsset } from "../api/creations.js";
 import { IMAGE_POLL_TIMEOUT_MS, pollGenerateTask, submitGenerate, VIDEO_POLL_TIMEOUT_MS } from "../api/generate.js";
-import { friendlyGenerateError, FRAMES_EMPTY_PROMPT_LABEL, materialToAsset, promptForResult, tasksToMessages, taskToResultMessage } from "../lib/createFlow.js";
+import { friendlyGenerateError, FRAMES_EMPTY_PROMPT_LABEL, materialToAsset, promptForDisplay, promptForResult, tasksToMessages, taskToResultMessage } from "../lib/createFlow.js";
 import { formatDateTime, mediaUrl, storageKeyOf } from "../lib/media.js";
 import { calculateCreditEstimate } from "../lib/pricing.js";
 import { modelCatalogMessage } from "../lib/modelCatalog.js";
@@ -437,7 +437,7 @@ function ResultMessage({ message, onReuse, onSave, savedIds = [], savingId }) {
             }}
           >
             <small>生成 Prompt</small>
-            <p>{message.prompt}</p>
+            <p>{promptForDisplay(message.prompt) || message.prompt}</p>
           </div>
         )}
         <div className="result-actions">
@@ -1281,7 +1281,8 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   }
 
   function reuseResult(message, action) {
-    setPrompt(promptForResult(activeSession.messages, message));
+    const raw = promptForResult(activeSession.messages, message);
+    setPrompt(promptForDisplay(raw) || raw || "");
     applyReusePayload(message.reuse);
     if (action === "regenerate") {
       regenerateRef.current = true;

@@ -2,6 +2,7 @@ import { AudioLines, CalendarDays, Check, Copy, Download, Expand, FolderInput, G
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteCreation, fetchCreationProjects, fetchCreations, saveCreationToAsset } from "../api/creations.js";
+import { creationTitleForDisplay, promptForDisplay } from "../lib/createFlow.js";
 import { MediaCover } from "../lib/MediaCover.jsx";
 import { formatDateTime, mediaUrl } from "../lib/media.js";
 import { zipStore } from "../lib/zipStore.js";
@@ -41,7 +42,7 @@ function extensionOf(item) {
 }
 
 function fileNameOf(item, used) {
-  const base = String(item.title || "作品").replace(/[\\/:*?"<>|]/g, " ").trim().slice(0, 40) || "作品";
+  const base = String(creationTitleForDisplay(item) || "作品").replace(/[\\/:*?"<>|]/g, " ").trim().slice(0, 40) || "作品";
   const ext = extensionOf(item);
   let name = `${base}.${ext}`;
   let index = 2;
@@ -154,7 +155,7 @@ export function MyCreations({ onReuse }) {
       ratio: item.ratio,
       resolution: item.resolution,
       durationSec: item.durationSec,
-      prompt: item.prompt || "",
+      prompt: promptForDisplay(item.prompt) || "",
       sessionId: item.sessionId,
     });
     setSelected(null);
@@ -229,12 +230,15 @@ export function MyCreations({ onReuse }) {
       )}
       {notice && <p className={`creation-notice ${notice.tone === "error" ? "is-error" : ""}`}>{notice.text}</p>}
       <section className={`creation-grid ${view === "list" ? "creation-grid--list" : ""}`}>
-        {visible.map((item) => (
+        {visible.map((item) => {
+          const title = creationTitleForDisplay(item);
+          const promptText = promptForDisplay(item.prompt) || "—";
+          return (
           <article className={`creation-card ${item.type === "audio" ? "creation-card--audio" : ""} ${picked.includes(item.id) ? "is-picked" : ""}`} key={item.id}>
             <label className="creation-pick">
-              <input type="checkbox" checked={picked.includes(item.id)} onChange={() => togglePicked(item.id)} aria-label={`选择${item.title || "作品"}`} />
+              <input type="checkbox" checked={picked.includes(item.id)} onChange={() => togglePicked(item.id)} aria-label={`选择${title}`} />
             </label>
-            <button className={`creation-card__preview ${item.type === "audio" ? "is-audio" : ""}`} type="button" onClick={() => setSelected(item)} aria-label={`查看作品：${item.title}`}>
+            <button className={`creation-card__preview ${item.type === "audio" ? "is-audio" : ""}`} type="button" onClick={() => setSelected(item)} aria-label={`查看作品：${title}`}>
               <MediaCover item={item} />
               <span className={`creation-type creation-type--${item.type}`}>{typeLabel(item.type)}</span>
               <span className="creation-spec">{item.type === "audio" ? "音频" : <>{item.ratio} · {item.resolution}{item.type === "video" ? ` · ${item.duration}` : ""}</>}</span>
@@ -242,37 +246,38 @@ export function MyCreations({ onReuse }) {
             </button>
             <div className="creation-card__body">
               <div>
-                <strong>{item.title}</strong>
-                <small className="creation-card__model">{item.model || "未记录模型"}</small>
-                <p>{item.prompt}</p>
+                <strong title={title}>{title}</strong>
+                <small className="creation-card__model" title={item.model || undefined}>{item.model || "未记录模型"}</small>
+                <p title={promptText}>{promptText}</p>
               </div>
               <footer>
                 <span><CalendarDays size={12} /> {item.createdAtLabel} · {item.elapsed}</span>
                 <div className="creation-card__actions">
-                  <a href={item.src} download aria-label={`下载${item.title}`}><Download size={15} /></a>
-                  <button type="button" className="danger" aria-label={`删除${item.title}`} onClick={() => confirmDelete(item)}><Trash2 size={15} /></button>
+                  <a href={item.src} download aria-label={`下载${title}`}><Download size={15} /></a>
+                  <button type="button" className="danger" aria-label={`删除${title}`} onClick={() => confirmDelete(item)}><Trash2 size={15} /></button>
                 </div>
               </footer>
             </div>
           </article>
-        ))}
+          );
+        })}
       </section>
       {selected && (
         <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelected(null); }}>
           <section className="creation-viewer" role="dialog" aria-modal="true">
             <header>
-              <div><span className="modal-kicker">CREATION PREVIEW</span><h2>{selected.title}</h2></div>
+              <div><span className="modal-kicker">CREATION PREVIEW</span><h2>{creationTitleForDisplay(selected)}</h2></div>
               <button className="modal-close" type="button" aria-label="关闭作品预览" onClick={() => setSelected(null)}><X size={19} /></button>
             </header>
             <div className={`creation-viewer__media ${selected.type === "audio" ? "is-audio" : ""}`}>
               {selected.type === "video"
                 ? <video src={selected.src} poster={selected.poster} controls playsInline />
                 : selected.type === "audio"
-                  ? <div className="creation-audio-viewer"><span><AudioLines size={26} /></span><div><small>音频作品</small><strong>{selected.title}</strong></div><audio src={selected.src} controls preload="metadata" /></div>
-                  : <img src={selected.src} alt={selected.title} />}
+                  ? <div className="creation-audio-viewer"><span><AudioLines size={26} /></span><div><small>音频作品</small><strong>{creationTitleForDisplay(selected)}</strong></div><audio src={selected.src} controls preload="metadata" /></div>
+                  : <img src={selected.src} alt={creationTitleForDisplay(selected)} />}
             </div>
             <div className="creation-viewer__meta">
-              <div><span>生成提示</span><p>{selected.prompt}</p></div>
+              <div><span>生成提示</span><p>{promptForDisplay(selected.prompt) || "—"}</p></div>
               <dl>
                 <div><dt>规格</dt><dd>{selected.type === "audio" ? "音频" : `${selected.ratio} · ${selected.resolution}${selected.type === "video" ? ` · ${selected.duration}` : ""}`}</dd></div>
                 <div><dt>模型</dt><dd>{selected.model || "未记录模型"}</dd></div>
@@ -299,7 +304,7 @@ export function MyCreations({ onReuse }) {
         eyebrow="我的创作"
         title="删除作品？"
         message={deleteTarget
-          ? `确定删除作品「${deleteTarget.title || "未命名"}」吗？删除后不可恢复。`
+          ? `确定删除作品「${creationTitleForDisplay(deleteTarget)}」吗？删除后不可恢复。`
           : ""}
         confirmLabel="删除"
         busy={deleteMutation.isPending}

@@ -4,6 +4,42 @@ import { reusePayloadOf } from "./reuseParams.js";
 
 export const FRAMES_EMPTY_PROMPT_LABEL = "根据首帧自动生成";
 
+/**
+ * 清洗给用户看的提示词：去掉模型侧的 Picture/Video/Audio 锚点与结构标签。
+ * 完整编译 prompt 仍存库，仅影响展示与回填文案。
+ */
+export function promptForDisplay(prompt) {
+  const lines = String(prompt || "").split(/\r?\n/);
+  const visible = lines.map((source) => {
+    const trimmed = source.trim();
+    if (/^(Active References|Voice References|Identities):?$/i.test(trimmed)) return "";
+
+    let line = source.replace(/^\s*(Must start|Must|Scene|Action|Dialogue|Continuity in|Continuity out|Cast|Duration|Audio):\s*/i, "");
+    line = line
+      .replace(/[（(]\s*<Picture\s+\d+>\s*[)）]/gi, "")
+      .replace(/\s*=\s*<Picture\s+\d+>/gi, "")
+      .replace(/<(Picture|Video|Audio)\s+\d+>/gi, "")
+      .replace(/\b(\d+)\s+seconds?\b/gi, "$1 秒")
+      .replace(/[ \t]{2,}/g, " ")
+      .trim();
+    return line;
+  });
+
+  return visible
+    .filter((line, index) => line || (index > 0 && visible[index - 1]))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+export function creationTitleForDisplay(item) {
+  const fromTitle = promptForDisplay(item?.title);
+  if (fromTitle) return fromTitle;
+  const fromPrompt = promptForDisplay(item?.prompt);
+  if (fromPrompt) return fromPrompt.length > 24 ? fromPrompt.slice(0, 24) : fromPrompt;
+  return "未命名作品";
+}
+
 export async function materialToAsset(material) {
   if (!material) return null;
   const storageKey = material.storageKey || storageKeyOf(material.url || material.src);
@@ -119,7 +155,11 @@ export function tasksToMessages(tasks = []) {
 
 export function userPromptOf(task) {
   const prompt = String(task?.prompt || "").trim();
-  if (prompt) return prompt;
+  if (prompt) {
+    const visible = promptForDisplay(prompt);
+    if (visible) return visible;
+    return isFramesTask(task) ? FRAMES_EMPTY_PROMPT_LABEL : "参考素材生成";
+  }
   return isFramesTask(task) ? FRAMES_EMPTY_PROMPT_LABEL : "";
 }
 

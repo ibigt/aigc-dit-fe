@@ -25,6 +25,7 @@ import {
   generateDramaShotOpeningStill,
   attachDramaShotPrevTail,
 } from "../../api/drama.js";
+import { promptForDisplay as promptTextForDisplay } from "../../lib/createFlow.js";
 import { mediaUrl } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 import { isRetryableRequestError } from "../../api/client.js";
@@ -175,33 +176,6 @@ function shotPromptText(shot) {
   const override = String(shot.promptOverride || "").trim();
   if (override) return override;
   return shot.compiledPrompt || "";
-}
-
-/**
- * 视频模型仍使用完整编译提示词；这里只清理分镜面板里的结构标记，避免干扰阅读。
- */
-function promptTextForDisplay(prompt) {
-  const lines = String(prompt || "").split(/\r?\n/);
-  const visible = lines.map((source) => {
-    const trimmed = source.trim();
-    if (/^(Active References|Voice References|Identities):?$/i.test(trimmed)) return "";
-
-    let line = source.replace(/^\s*(Must start|Must|Scene|Action|Dialogue|Continuity in|Continuity out|Cast|Duration|Audio):\s*/i, "");
-    line = line
-      .replace(/[（(]\s*<Picture\s+\d+>\s*[)）]/gi, "")
-      .replace(/\s*=\s*<Picture\s+\d+>/gi, "")
-      .replace(/<Picture\s+\d+>/gi, "")
-      .replace(/<Audio\s+\d+>/gi, "")
-      .replace(/\b(\d+)\s+seconds?\b/gi, "$1 秒")
-      .replace(/[ \t]{2,}/g, " ")
-      .trim();
-    return line;
-  });
-
-  return visible
-    .filter((line, index) => line || (index > 0 && visible[index - 1]))
-    .join("\n")
-    .trim();
 }
 
 function firstFrameTitle(source) {
