@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Clapperboard, Film, Images, LogOut, Moon, ShieldCheck, Sparkles, Sun, UserRound, Zap } from "lucide-react";
+import { ChevronDown, Clapperboard, FileText, Film, Images, LogOut, Moon, ShieldCheck, Sparkles, Sun, UserRound, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useMatch, useNavigate } from "react-router-dom";
 import { rechargeCredits } from "../api/credits.js";
@@ -12,11 +12,13 @@ import { DramaWorkbench } from "./Drama/DramaWorkbench.jsx";
 import { FastCreate } from "./FastCreate.jsx";
 import { MyCreations } from "./MyCreations.jsx";
 import { ProfileModal } from "./ProfileModal.jsx";
+import { ScriptCreation } from "./ScriptCreation.jsx";
 import { AdminConsole } from "./AdminConsole.jsx";
 
 const tabs = [
   { id: "create", label: "快速创作", icon: Sparkles },
   { id: "drama", label: "短剧创作", icon: Film },
+  { id: "script", label: "剧本创作", icon: FileText },
   { id: "creations", label: "我的创作", icon: Clapperboard },
   { id: "assets", label: "素材库", icon: Images },
 ];
@@ -33,6 +35,7 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
   const [profileMode, setProfileMode] = useState(null);
   const [creditsOpen, setCreditsOpen] = useState(false);
   const [recentTransactions, setRecentTransactions] = useState([]);
+  const [creationReuse, setCreationReuse] = useState(null);
   const modelsQuery = useQuery({
     queryKey: ["public-models"],
     queryFn: fetchEnabledModels,
@@ -56,6 +59,11 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
   function goTab(tabId) {
     setActive(tabId);
     if (location.pathname !== "/console") navigate("/console", { replace: true, state: tabId === "drama" ? { tab: "drama" } : {} });
+  }
+
+  function reuseCreation(seed) {
+    setCreationReuse(seed);
+    goTab("create");
   }
 
   return (
@@ -86,14 +94,15 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
         </div>
       </header>
       <main className="console-content">
-        {active === "create" && <FastCreate config={{ ...config, models }} theme={theme} onOpenAssets={() => goTab("assets")} onConsumeCredits={(_points, details) => {
+        {active === "create" && <FastCreate config={{ ...config, models }} theme={theme} reuse={creationReuse} onReuseApplied={() => setCreationReuse(null)} onOpenAssets={() => goTab("assets")} onConsumeCredits={(_points, details) => {
           queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
           queryClient.invalidateQueries({ queryKey: ["credits"] });
           queryClient.invalidateQueries({ queryKey: ["creations"] });
           if (details?.refresh === false) return;
         }} />}
         {active === "drama" && (dramaId ? <DramaWorkbench seriesId={dramaId} /> : <DramaHome />)}
-        {active === "creations" && <MyCreations />}
+        {active === "script" && <ScriptCreation />}
+        {active === "creations" && <MyCreations onReuse={reuseCreation} />}
         {active === "assets" && <AssetLibrary />}
         {active === "admin" && isAdmin && <AdminConsole />}
       </main>

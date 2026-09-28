@@ -557,7 +557,7 @@ function usePerSessionDraft(activeSessionId, initial = "") {
   return [value, setValue];
 }
 
-export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light", onOpenAssets }) {
+export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light", onOpenAssets, reuse = null, onReuseApplied = () => {} }) {
   const queryClient = useQueryClient();
   const [sessions, setSessions] = useState(() => [makeInitialSession()]);
   const [activeSessionId, setActiveSessionId] = useState(DEFAULT_SESSION_ID);
@@ -589,6 +589,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const [pendingAssets, setPendingAssets] = useState([]);
   const [sessionMenuId, setSessionMenuId] = useState(null);
+  const [queuedPrompt, setQueuedPrompt] = useState(null);
   const referenceInputRef = useRef(null);
   const firstFrameInputRef = useRef(null);
   const lastFrameInputRef = useRef(null);
@@ -663,14 +664,25 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     }
   }, [supportsLibrary, supportsFrames, supportsAudioReference, videoMode]);
   useEffect(() => {
+    if (!queuedPrompt || !sameId(activeSessionId, queuedPrompt.sessionId)) return;
+    setPrompt(queuedPrompt.text);
+    setQueuedPrompt(null);
+    window.setTimeout(() => document.querySelector(".creation-composer textarea")?.focus(), 0);
+  }, [queuedPrompt, activeSessionId, setPrompt]);
+
+  useEffect(() => {
     let cancelled = false;
+    const seed = reuse;
     fetchSessions().then(async (items) => {
       if (cancelled) return;
       if (!items?.length) {
-        const created = await createSession({ title: "新建创作", category: "video" });
+        const category = ["video", "image", "audio"].includes(seed?.type) ? seed.type : "video";
+        const created = await createSession({ title: "新建创作", category });
         if (cancelled) return;
-        setSessions([{ ...makeInitialSession(), id: created.id, title: created.title, generationType: created.category || "video" }]);
+        setSessions([{ ...makeInitialSession(), id: created.id, title: created.title, generationType: created.category || category }]);
         setActiveSessionId(created.id);
+        activeSessionIdRef.current = created.id;
+        if (seed) queueCreationSeed(seed, created.id);
         return;
       }
       const mapped = items.map((item) => ({
@@ -680,13 +692,29 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         updated: formatDateTime(item.updatedAt) || "刚刚",
         messages: [],
       }));
+      const preferred = seed?.sessionId != null ? mapped.find((item) => sameId(item.id, seed.sessionId)) : null;
+      const first = preferred || mapped[0];
       setSessions(mapped);
-      setActiveSessionId(mapped[0].id);
-      const detail = await fetchSession(mapped[0].id);
+      setActiveSessionId(first.id);
+      activeSessionIdRef.current = first.id;
+      const detail = await fetchSession(first.id);
       if (!cancelled && detail) applySessionDetail(detail);
+      if (!cancelled && seed) queueCreationSeed(seed, first.id);
     }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
+
+  function queueCreationSeed(seed, sessionId) {
+    const category = ["video", "image", "audio"].includes(seed.type) ? seed.type : "image";
+    setGenerationType(category);
+    if (seed.modelId != null && seed.modelId !== "") setModel(String(seed.modelId));
+    if (seed.ratio && seed.ratio !== "—") setRatio(seed.ratio);
+    if (seed.resolution && seed.resolution !== "—") setResolution(seed.resolution);
+    const seconds = Number(seed.durationSec);
+    if (Number.isFinite(seconds) && seconds > 0) setDuration(seconds);
+    setQueuedPrompt({ sessionId, text: seed.prompt || "" });
+    onReuseApplied();
+  }
 
   useEffect(() => {
     if (sessionMenuId == null) return undefined;

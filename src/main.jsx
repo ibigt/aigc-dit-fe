@@ -6,6 +6,7 @@ import { App } from "./App.jsx";
 import { AuthProvider } from "./auth/AuthContext.jsx";
 import "./styles.css";
 import "./short-drama.css";
+import "./script-creation.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
