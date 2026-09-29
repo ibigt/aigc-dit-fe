@@ -354,8 +354,8 @@ function ShotInspector({
                 const next = event.target.value;
                 if (next === "i2v" && (!supportsI2v || firstInChapter)) return;
                 const payload = { videoGenerateMode: next };
-                payload.videoChainPrevTail = next === "r2v" && generateMode === "r2v"
-                  ? Boolean(chainPrevTail)
+                payload.videoChainPrevTail = next === "r2v"
+                  ? (generateMode === "r2v" ? Boolean(chainPrevTail) : !firstInChapter)
                   : false;
                 onSave(selected, payload).catch(() => {});
               }}

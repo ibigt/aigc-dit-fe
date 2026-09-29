@@ -325,6 +325,9 @@ export function DramaScriptPanel({
             placeholder={"第一场 幻梦侦探社 日 内\n人物：洛白、夏安、局长\n道具：古铜怀表\n洛白：开始了。"}
             onChange={(event) => setRaw(event.target.value)}
           />
+          {raw.length > 5000 && (
+            <p className="drama-script__hint">剧本文本较长，解析文本可能会被拆分，导致耗时较长</p>
+          )}
         </label>
 
         {episode?.canGenerate === false && episode?.textServiceAvailable && (
