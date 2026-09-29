@@ -47,6 +47,18 @@ export const DRAMA_STYLES = [
     cover: "/drama/styles/rural.jpg",
     fallback: "/drama/styles/rural.svg",
   },
+  {
+    key: "realistic-3d",
+    name: "真人3D风",
+    cover: "/drama/styles/realistic-3d.jpg",
+    fallback: "/drama/styles/realistic-3d.svg",
+  },
+  {
+    key: "guofeng-3d",
+    name: "古风3D风",
+    cover: "/drama/styles/guofeng-3d.jpg",
+    fallback: "/drama/styles/guofeng-3d.svg",
+  },
 ];
 
 export const DEFAULT_DRAMA_STYLE_KEY = DRAMA_STYLES[0].key;

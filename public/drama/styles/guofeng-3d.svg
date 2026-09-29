@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="guofeng 3d">
+  <defs>
+    <linearGradient id="gf-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1c2438"/>
+      <stop offset="46%" stop-color="#6d5344"/>
+      <stop offset="100%" stop-color="#e7c27a"/>
+    </linearGradient>
+    <linearGradient id="gf-robe" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f3e2b8"/>
+      <stop offset="100%" stop-color="#b4532a"/>
+    </linearGradient>
+    <linearGradient id="gf-roof" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8f3b32"/>
+      <stop offset="100%" stop-color="#4e1d1a"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#gf-sky)"/>
+  <path d="M0 230 L140 150 L250 210 L360 120 L500 200 L640 150 V360 H0z" fill="#3a4658" opacity=".85"/>
+  <path d="M0 270 L180 200 L320 250 L460 180 L640 240 V360 H0z" fill="#2a241c"/>
+  <path d="M430 118 L520 168 L340 168 Z" fill="url(#gf-roof)"/>
+  <rect x="368" y="168" width="124" height="78" fill="#c4a27a"/>
+  <rect x="412" y="188" width="36" height="58" fill="#4e1d1a" opacity=".45"/>
+  <circle cx="210" cy="168" r="26" fill="#f0d2b4"/>
+  <path d="M178 192c8-16 20-26 32-26s24 10 32 26l16 96H162z" fill="url(#gf-robe)"/>
+  <path d="M162 228c36 10 76 10 112 0" fill="none" stroke="#f6e7bf" stroke-width="7"/>
+  <path d="M186 150c14-20 36-22 50-4" fill="#1b140f"/>
+  <circle cx="248" cy="86" r="18" fill="#f2d48a" opacity=".55"/>
+  <text x="40" y="328" fill="#f8f1e4" font-family="Georgia, serif" font-size="18" font-weight="700">GUOFENG / 3D</text>
+</svg>
