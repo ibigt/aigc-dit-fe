@@ -497,17 +497,17 @@ function ShotInspector({
                           <Plus size={11} /> {asset.name}
                         </button>
                       ))}
-                      {!options.length && <i>没有可添加的已锁定{type}</i>}
+                      {!options.length && <i>没有可添加的已出图{type}</i>}
                     </div>
                   </div>
                 );
               })}
-              {!lockedAssets?.length && <i>资产页锁定的设定图才能作为本镜参考，请先去资产页确认。</i>}
+              {!lockedAssets?.length && <i>资产页已选用参考图的设定才能加入本镜。</i>}
             </div>
           )}
         </section>
         {selected.unboundNames?.length > 0 && (
-          <p className="drama-form-error">未锁定：{selected.unboundNames.join("、")}</p>
+          <p className="drama-form-error">还没有参考图：{selected.unboundNames.join("、")}</p>
         )}
         {selected.compiledStale && (
           <p className="drama-form-error">
@@ -593,12 +593,12 @@ function ShotInspector({
                   ) : <i />}
                   <b>Picture {ref.pictureIndex}</b>
                   {ref.name}
-                  <small>{ref.type}{ref.locked === false ? " · 未锁定" : ""}</small>
+                  <small>{ref.type}{ref.locked === false ? " · 无参考图" : ""}</small>
                 </figure>
               );
             })}
             {!refs.length && (
-              <em>锁定本镜角色 / 场景 / 道具后，出片会自动带上对应参考图</em>
+              <em>为本镜指定角色 / 场景 / 道具后，出片会带上当前选用的参考图</em>
             )}
           </div>
         </div>
@@ -1478,7 +1478,7 @@ export function DramaStoryboard({ series, episode }) {
           <div className="youxi-shot-center-toolbar__actions">
             <button
               type="button"
-              title="按当前动作、台词和锁定资产，重算本集所有分镜的视频提示词，不会生成视频"
+              title="按当前动作、台词和已选用的资产图，重算本集所有分镜的视频提示词，不会生成视频"
               disabled={compileAllMutation.isPending || frozenByRecompile || !shots.length || drafting}
               onClick={() => setCompileConfirmOpen(true)}
             >
@@ -1523,7 +1523,7 @@ export function DramaStoryboard({ series, episode }) {
             <Lock size={16} />
             <div>
               <strong>先锁定分场剧本</strong>
-              <p>剧本锁定后才能拆分镜。未锁定资产不能作为参考图。</p>
+              <p>剧本锁定后才能拆分镜。出片会使用资产当前选用的参考图。</p>
             </div>
           </div>
         )}
@@ -1542,8 +1542,8 @@ export function DramaStoryboard({ series, episode }) {
           <div className="drama-asset-gate youxi-story-gate">
             <Lock size={16} />
             <div>
-              <strong>还没有已锁定参考图</strong>
-              <p>可先拆镜预览结构；出片时会按本镜角色 / 场景 / 道具自动绑定已锁定参考图。</p>
+              <strong>还没有可用参考图</strong>
+              <p>可先拆镜预览结构；出片时会按本镜角色 / 场景 / 道具绑定当前选用的参考图。</p>
             </div>
           </div>
         )}
@@ -1657,8 +1657,8 @@ export function DramaStoryboard({ series, episode }) {
                             ? "正在画开场静帧，完成后自动出片"
                             : "正在按侧栏首帧出片")
                           : chainPrevTail
-                            ? "参考图 + 上一镜尾帧：锁定资产参考图与尾帧一起提交"
-                            : "默认参考图：锁定资产参考图 + 编译后的提示词")
+                            ? "参考图 + 上一镜尾帧：当前选用的资产图与尾帧一起提交"
+                            : "默认参考图：当前选用的资产图 + 编译后的提示词")
                         : selected?.prevTailStale && generateMode === "i2v"
                           ? "上一镜已更新，本镜不会自动重出"
                           : selected?.compiledStale
@@ -1847,7 +1847,7 @@ export function DramaStoryboard({ series, episode }) {
         open={compileConfirmOpen}
         eyebrow="分镜"
         title="重新编译本集提示词？"
-        message={`将按当前动作、台词和锁定资产，重算本集全部 ${shots.length} 个分镜的视频提示词（不会生成视频）。手动编辑过的完整提示词会被清除并恢复为自动编译结果；已锁定且未过期的分镜会跳过。`}
+        message={`将按当前动作、台词和已选用的资产图，重算本集全部 ${shots.length} 个分镜的视频提示词（不会生成视频）。手动编辑过的完整提示词会被清除并恢复为自动编译结果；已锁定且未过期的分镜会跳过。`}
         confirmLabel="确认重新编译"
         busy={compileAllMutation.isPending}
         busyLabel="编译中…"

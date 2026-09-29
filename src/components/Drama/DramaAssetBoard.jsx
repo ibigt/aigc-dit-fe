@@ -31,7 +31,6 @@ import {
   fetchDramaImageModels,
   generateDramaAssetImage,
   importDramaAssetGeneration,
-  lockDramaAsset,
   lockDramaScript,
   pollDramaAssetGenerate,
   selectDramaAssetGeneration,
@@ -324,7 +323,6 @@ function SubjectInspector({
   onDeleteGeneration,
   onImportGeneration,
 }) {
-  const locked = asset?.status === "已锁定";
   const voiceDescriptionChanged = (voiceLock || "").trim() !== (asset?.voiceLock || "").trim();
   const effectiveVoiceReferenceStatus = asset?.voiceReferenceUrl && voiceReferenceStatus.state === "ready"
     ? { ...voiceReferenceStatus, state: "success", label: "已绑定参考音频" }
@@ -450,7 +448,7 @@ function SubjectInspector({
               <GenerationHistoryPanel
                 switchLabel="切换最终资产"
                 records={generations}
-                locked={locked}
+                locked={false}
                 mediaKind="image"
                 showImport
                 compactActions
@@ -465,7 +463,7 @@ function SubjectInspector({
               />
             )}
 
-            <p className="youxi-inspector-hint">在卡片右上角生成或锁定。锁定且有图后，才能作为分镜参考。改提示词或重生成会重新待确认。</p>
+            <p className="youxi-inspector-hint">生成或上传后，当前选用的图会直接作为分镜参考。切换最终资产后，分镜会改用新图。</p>
           </>
         ) : (
           <p className="youxi-story-side-empty">选中{type}后，可在此改提示词并生图。</p>
@@ -688,17 +686,6 @@ export function DramaAssetBoard({ series, episode }) {
     await Promise.all(pending.map((item) => generate(item)));
   }
 
-  async function confirm(asset) {
-    markBusy(asset.id, "lock", true);
-    try {
-      await saveFields(asset);
-      await lockDramaAsset(asset.id);
-      invalidate();
-    } finally {
-      markBusy(asset.id, "lock", false);
-    }
-  }
-
   async function remove(asset) {
     markBusy(asset.id, "delete", true);
     try {
@@ -758,6 +745,7 @@ export function DramaAssetBoard({ series, episode }) {
       await selectDramaAssetGeneration(selected.id, record.id);
       setSwitchFinalOpen(false);
       await invalidateAssetHistory(selected.id);
+      invalidate();
     } catch (err) {
       showToast(err.message);
     } finally {
@@ -778,6 +766,7 @@ export function DramaAssetBoard({ series, episode }) {
       await deleteDramaAssetGeneration(selected.id, record.id);
       setDeleteGenerationTarget(null);
       await invalidateAssetHistory(selected.id);
+      invalidate();
     } catch (err) {
       showToast(err.message);
     } finally {
@@ -967,7 +956,7 @@ export function DramaAssetBoard({ series, episode }) {
               <Lock size={16} />
               <div>
                 <strong>请先锁定分场剧本</strong>
-                <p>锁定后可从剧本当中提取角色、场景、道具。未锁定资产不能进分镜。</p>
+                <p>锁定后可从剧本当中提取角色、场景、道具。已有选用图的资产会直接作为分镜参考。</p>
               </div>
             </div>
           )}
@@ -994,7 +983,7 @@ export function DramaAssetBoard({ series, episode }) {
                           type="button"
                           className="youxi-subject-card__gen"
                           aria-label={generating ? "生成中" : item.imageStorageKey ? `重新生成${item.name}` : `生成${item.name}图片`}
-                          disabled={!modelBound || generating || !cardPrompt || isBusy(item.id, "lock") || isBusy(item.id, "delete")}
+                          disabled={!modelBound || generating || !cardPrompt || isBusy(item.id, "delete")}
                           title={!modelBound ? "先选择顶部图像模型" : !cardPrompt ? "先填写图片提示词" : (item.imageStorageKey ? "按当前提示词重新生成设定图" : "生成设定图")}
                           onClick={(event) => {
                             event.stopPropagation();
@@ -1004,21 +993,6 @@ export function DramaAssetBoard({ series, episode }) {
                         >
                           <Sparkles size={13} />
                           <span className="youxi-subject-card__label">{generating ? "生成中" : item.imageStorageKey ? "重新生成" : "图片生成"}</span>
-                        </button>
-                        <button
-                          type="button"
-                          className={`youxi-subject-card__lock${item.status === "已锁定" ? " is-locked" : ""}`}
-                          aria-label={item.status === "已锁定" ? `${item.name}已锁定` : `锁定${item.name}`}
-                          disabled={isBusy(item.id, "lock") || generating || !item.imageStorageKey || item.status === "已锁定"}
-                          title={item.status === "已锁定" ? "已锁定" : !item.imageStorageKey ? "先生成或上传图片再锁定" : "锁定后可作为分镜参考"}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setSelectedId(item.id);
-                            confirm(item).catch((err) => showToast(err.message));
-                          }}
-                        >
-                          <Lock size={13} />
-                          <span className="youxi-subject-card__label">{item.status === "已锁定" ? "已锁定" : isBusy(item.id, "lock") ? "锁定中" : "锁定"}</span>
                         </button>
                         <button
                           type="button"
@@ -1127,10 +1101,7 @@ export function DramaAssetBoard({ series, episode }) {
         generations={generations}
         generationsLoading={generationsQuery.isLoading}
         historyBusy={isBusy(selected?.id, "history")}
-        onSwitchFinal={() => {
-          if (selected?.status === "已锁定") return;
-          setSwitchFinalOpen(true);
-        }}
+        onSwitchFinal={() => setSwitchFinalOpen(true)}
         onPreviewGeneration={(record) => setPreview({
           src: mediaUrl(record.url || record.storageKey),
           title: `${selected?.name || ""} · ${record.label}`,
@@ -1143,7 +1114,7 @@ export function DramaAssetBoard({ series, episode }) {
         open={switchFinalOpen}
         title="切换最终资产"
         records={generations}
-        locked={selected?.status === "已锁定"}
+        locked={false}
         mediaKind="image"
         busy={isBusy(selected?.id, "history")}
         onClose={() => setSwitchFinalOpen(false)}
