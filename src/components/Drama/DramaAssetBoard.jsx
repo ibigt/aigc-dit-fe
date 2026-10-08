@@ -176,7 +176,8 @@ function promptOf(asset) {
 
 function statusLabel(status) {
   if (status === "已锁定") return "已确认";
-  return status || "未开始";
+  if (!status || status === "待确认" || status === "未开始") return "";
+  return status;
 }
 
 function stateLabel(tag) {
@@ -974,6 +975,8 @@ export function DramaAssetBoard({ series, episode }) {
                 const src = mediaUrl(item.imageStorageKey || item.imageUrl, { w: MEDIA_THUMB_WIDTH });
                 const generating = Boolean(item.generating) || isBusy(item.id, "generate");
                 const cardPrompt = (item.id === selected?.id ? promptDraft : promptOf(item)).trim();
+                const badge = generating ? "生成中" : statusLabel(item.status);
+                const meta = cardMeta(item);
                 return (
                   <article className={`youxi-subject-card ${selected?.id === item.id ? "active" : ""}`} key={item.id}>
                     <header>
@@ -1019,7 +1022,7 @@ export function DramaAssetBoard({ series, episode }) {
                         {src ? (
                           <>
                             <img key={src} src={src} alt={item.name} />
-                            <span>{generating ? "生成中" : statusLabel(item.status)}</span>
+                            {badge ? <span>{badge}</span> : null}
                           </>
                         ) : (
                           <div className="youxi-subject-empty">
@@ -1030,7 +1033,7 @@ export function DramaAssetBoard({ series, episode }) {
                         )}
                       </div>
                     </button>
-                    <p className="youxi-subject-card__meta">{cardMeta(item)}</p>
+                    {meta ? <p className="youxi-subject-card__meta">{meta}</p> : null}
                   </article>
                 );
               })}

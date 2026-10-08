@@ -634,8 +634,14 @@ function ShotInspector({
             );
           })()}
         </label>
+        {selected.cameraMotion && (
+          <p className="youxi-story-goal">运镜：{selected.cameraMotion}</p>
+        )}
         {selected.narrativeGoal && selected.narrativeGoal !== selected.dialogue && (
           <p className="youxi-story-goal">{selected.narrativeGoal}</p>
+        )}
+        {selected.ambianceAudio && (
+          <p className="youxi-story-goal">环境声：{selected.ambianceAudio}</p>
         )}
         {!generationsLoading && (
           <GenerationHistoryPanel
