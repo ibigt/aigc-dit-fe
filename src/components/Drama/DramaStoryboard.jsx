@@ -110,7 +110,7 @@ function modelSupportsI2v(model) {
 function friendlyShotError(message, model) {
   const text = message || "出片失败";
   if (/real person/i.test(text) || text.includes("真人")) {
-    return "参考图可能包含真人，官方 Seedance 已拒绝。请更换不含真人脸的参考图，或改用 MiniMax。";
+    return "官方 Seedance 把本镜参考图判成了真人脸，已停止出片。请使用seedream-5.0系列生成角色资产图，或使用其他模型";
   }
   if (isOfficialSeedance(model) && /agnes/i.test(text)) {
     return "官方 Seedance 仍在生成中，请稍后刷新。若确认失败，请换参考图后再点「生成当前镜头」";
@@ -245,7 +245,7 @@ function ShotInspector({
   const frozen = generating || readOnly;
   const locked = selected?.status === "已锁定";
   const serverPrompt = shotPromptText(selected);
-  const visiblePrompt = promptTextForDisplay(serverPrompt);
+  const visiblePrompt = promptTextForDisplay(serverPrompt, { keepPictures: true });
   useEffect(() => {
     setPromptEditorOpen(false);
     setPromptDraft("");
@@ -424,7 +424,7 @@ function ShotInspector({
             readOnly
             value={visiblePrompt}
             placeholder={serverPrompt ? "" : "拆镜完成后会自动填入视频提示词，也可直接手写覆盖"}
-            title="界面已隐藏结构标签，视频生成仍使用完整提示词"
+            title="Picture 编号与下方参考图缩略图对应，视频生成仍使用完整提示词"
           />
           <div className="drama-prompt-field__actions">
             <button

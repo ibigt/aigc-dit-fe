@@ -5,20 +5,28 @@ import { reusePayloadOf } from "./reuseParams.js";
 export const FRAMES_EMPTY_PROMPT_LABEL = "根据首帧自动生成";
 
 /**
- * 清洗给用户看的提示词：去掉模型侧的 Picture/Video/Audio 锚点与结构标签。
+ * 清洗给用户看的提示词：去掉结构标签。创作记录默认也去掉 Picture 锚点。
+ * 分镜面板传 keepPictures，把 Picture 锚点显示成 Picture 1，与下方参考图缩略图对齐。
  * 完整编译 prompt 仍存库，仅影响展示与回填文案。
  */
-export function promptForDisplay(prompt) {
+export function promptForDisplay(prompt, options = {}) {
+  const keepPictures = Boolean(options.keepPictures);
   const lines = String(prompt || "").split(/\r?\n/);
   const visible = lines.map((source) => {
     const trimmed = source.trim();
     if (/^(Active References|Voice References|Identities):?$/i.test(trimmed)) return "";
 
     let line = source.replace(/^\s*(Must start|Must|Scene|Action|Dialogue|Continuity in|Continuity out|Cast|Duration|Audio):\s*/i, "");
+    if (keepPictures) {
+      line = line.replace(/<Picture\s+(\d+)>/gi, "Picture $1");
+    } else {
+      line = line
+        .replace(/[（(]\s*<Picture\s+\d+>\s*[)）]/gi, "")
+        .replace(/\s*=\s*<Picture\s+\d+>/gi, "")
+        .replace(/<Picture\s+\d+>/gi, "");
+    }
     line = line
-      .replace(/[（(]\s*<Picture\s+\d+>\s*[)）]/gi, "")
-      .replace(/\s*=\s*<Picture\s+\d+>/gi, "")
-      .replace(/<(Picture|Video|Audio)\s+\d+>/gi, "")
+      .replace(/<(Video|Audio)\s+\d+>/gi, "")
       .replace(/\b(\d+)\s+seconds?\b/gi, "$1 秒")
       .replace(/[ \t]{2,}/g, " ")
       .trim();
