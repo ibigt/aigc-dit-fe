@@ -38,6 +38,146 @@ const DURATIONS = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 const DIALOGUE_EMOTIONS = new Set(["高兴", "愤怒", "悲伤", "恐惧", "惊讶", "厌恶", "紧张"]);
 
+/** 镜头序列编辑器暂不展示，shot_beats 仍随草稿落库并参与编译。 */
+const SHOW_SHOT_BEAT_EDITOR = false;
+
+function hasShotBeats(shot) {
+  return (shot?.shotBeats?.beats || []).some((beat) => (
+    beat && (String(beat.camera || "").trim() || String(beat.action || "").trim() || String(beat.dialogue || "").trim())
+  ));
+}
+
+function joinedBeatDialogue(shotBeats) {
+  return (shotBeats?.beats || [])
+    .map((beat) => String(beat?.dialogue || "").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function ShotBeatsEditor({ shotBeats, frozen, onSave }) {
+  const [blocking, setBlocking] = useState(shotBeats?.blocking || "");
+  const [beats, setBeats] = useState(() => (shotBeats?.beats || []).map((beat) => ({
+    camera: beat?.camera || "",
+    action: beat?.action || "",
+    continuity: beat?.continuity || "",
+    dialogue: beat?.dialogue || "",
+  })));
+
+  function commit(nextBlocking, nextBeats) {
+    onSave({
+      blocking: nextBlocking,
+      beats: nextBeats.map((beat) => ({
+        camera: beat.camera,
+        action: beat.action,
+        continuity: beat.continuity,
+        dialogue: beat.dialogue,
+      })),
+    });
+  }
+
+  return (
+    <div className="youxi-beat-editor">
+      <label>
+        <span>起始站位</span>
+        <textarea
+          rows={2}
+          disabled={frozen}
+          value={blocking}
+          onChange={(event) => setBlocking(event.target.value)}
+          onBlur={(event) => {
+            const value = event.target.value;
+            if (value === (shotBeats?.blocking || "")) return;
+            setBlocking(value);
+            commit(value, beats);
+          }}
+          placeholder="谁在画面左/右，门和关键道具在哪"
+        />
+      </label>
+      {beats.map((beat, index) => (
+        <section key={`beat-${index}`} className="youxi-beat-card">
+          <h3>镜头{index + 1}</h3>
+          <label>
+            <span>景别</span>
+            <input
+              disabled={frozen}
+              value={beat.camera}
+              onChange={(event) => {
+                const value = event.target.value;
+                setBeats((current) => current.map((item, i) => (i === index ? { ...item, camera: value } : item)));
+              }}
+              onBlur={(event) => {
+                const value = event.target.value;
+                if (value === (shotBeats?.beats?.[index]?.camera || "")) return;
+                const next = beats.map((item, i) => (i === index ? { ...item, camera: value } : item));
+                setBeats(next);
+                commit(blocking, next);
+              }}
+            />
+          </label>
+          <label>
+            <span>动作</span>
+            <textarea
+              rows={2}
+              disabled={frozen}
+              value={beat.action}
+              onChange={(event) => {
+                const value = event.target.value;
+                setBeats((current) => current.map((item, i) => (i === index ? { ...item, action: value } : item)));
+              }}
+              onBlur={(event) => {
+                const value = event.target.value;
+                if (value === (shotBeats?.beats?.[index]?.action || "")) return;
+                const next = beats.map((item, i) => (i === index ? { ...item, action: value } : item));
+                setBeats(next);
+                commit(blocking, next);
+              }}
+            />
+          </label>
+          <label>
+            <span>连续性</span>
+            <input
+              disabled={frozen}
+              value={beat.continuity}
+              onChange={(event) => {
+                const value = event.target.value;
+                setBeats((current) => current.map((item, i) => (i === index ? { ...item, continuity: value } : item)));
+              }}
+              onBlur={(event) => {
+                const value = event.target.value;
+                if (value === (shotBeats?.beats?.[index]?.continuity || "")) return;
+                const next = beats.map((item, i) => (i === index ? { ...item, continuity: value } : item));
+                setBeats(next);
+                commit(blocking, next);
+              }}
+              placeholder="接上一镜头的哪一个动作"
+            />
+          </label>
+          <label>
+            <span>本镜头台词</span>
+            <textarea
+              rows={2}
+              disabled={frozen}
+              value={beat.dialogue}
+              onChange={(event) => {
+                const value = event.target.value;
+                setBeats((current) => current.map((item, i) => (i === index ? { ...item, dialogue: value } : item)));
+              }}
+              onBlur={(event) => {
+                const value = event.target.value;
+                if (value === (shotBeats?.beats?.[index]?.dialogue || "")) return;
+                const next = beats.map((item, i) => (i === index ? { ...item, dialogue: value } : item));
+                setBeats(next);
+                commit(blocking, next);
+              }}
+              placeholder="可空。角色（情绪）：这一句"
+            />
+          </label>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 /** 只读解析「角色（情绪）：台词」行，供 badge 展示；非法情绪忽略。 */
 function parseDialogueEmotionBadges(dialogue) {
   if (!dialogue || !String(dialogue).trim()) return [];
@@ -602,46 +742,72 @@ function ShotInspector({
             )}
           </div>
         </div>
-        <label className="youxi-field">
-          <span>台词</span>
-          <small>镜 {selected.shotIndex}</small>
-          <p className="youxi-dialogue-hint">
-            格式：角色（情绪）：台词；旁白：台词。情绪词表：高兴/愤怒/悲伤/恐惧/惊讶/厌恶/紧张（不明显可省略）
-          </p>
-          <textarea
-            rows={5}
-            disabled={frozen}
-            defaultValue={selected.dialogue || ""}
-            key={`${selected.id}:dialogue:${selected.dialogue || ""}`}
-            onBlur={(event) => {
-              const value = event.target.value;
-              if (value === (selected.dialogue || "")) return;
-              onSave(selected, { dialogue: value }).catch(() => {});
-            }}
-            placeholder={"局长（愤怒）：你给我站住！\n旁白：夜色渐深。"}
-          />
-          {(() => {
-            const emotionBadges = parseDialogueEmotionBadges(selected.dialogue);
-            if (!emotionBadges.length) return null;
-            return (
-              <div className="youxi-dialogue-emotions" aria-label="台词情绪">
-                {emotionBadges.map((item, index) => (
-                  <span key={`${item.speaker}-${item.emotion}-${index}`} className="drama-tag drama-tag--emotion">
-                    {item.speaker} · {item.emotion}
-                  </span>
-                ))}
-              </div>
-            );
-          })()}
-        </label>
-        {selected.cameraMotion && (
-          <p className="youxi-story-goal">运镜：{selected.cameraMotion}</p>
-        )}
-        {selected.narrativeGoal && selected.narrativeGoal !== selected.dialogue && (
-          <p className="youxi-story-goal">{selected.narrativeGoal}</p>
-        )}
-        {selected.ambianceAudio && (
-          <p className="youxi-story-goal">环境声：{selected.ambianceAudio}</p>
+        {SHOW_SHOT_BEAT_EDITOR && hasShotBeats(selected) ? (
+          <>
+            {selected.narrativeGoal && (
+              <p className="youxi-story-goal">{selected.narrativeGoal}</p>
+            )}
+            <ShotBeatsEditor
+              key={`${selected.id}:${JSON.stringify(selected.shotBeats)}`}
+              shotBeats={selected.shotBeats}
+              frozen={frozen}
+              onSave={(shotBeats) => onSave(selected, { shotBeats }).catch(() => {})}
+            />
+            {(() => {
+              const emotionBadges = parseDialogueEmotionBadges(joinedBeatDialogue(selected.shotBeats));
+              if (!emotionBadges.length) return null;
+              return (
+                <div className="youxi-dialogue-emotions" aria-label="台词情绪">
+                  {emotionBadges.map((item, index) => (
+                    <span key={`${item.speaker}-${item.emotion}-${index}`} className="drama-tag drama-tag--emotion">
+                      {item.speaker} · {item.emotion}
+                    </span>
+                  ))}
+                </div>
+              );
+            })()}
+            {selected.ambianceAudio && (
+              <p className="youxi-story-goal">环境声：{selected.ambianceAudio}</p>
+            )}
+          </>
+        ) : (
+          <>
+            <label className="youxi-field">
+              <span>台词</span>
+              <small>镜 {selected.shotIndex}</small>
+              <p className="youxi-dialogue-hint">
+                格式：角色（情绪）：台词；旁白：台词。情绪词表：高兴/愤怒/悲伤/恐惧/惊讶/厌恶/紧张（不明显可省略）
+              </p>
+              <textarea
+                rows={5}
+                disabled={frozen}
+                defaultValue={selected.dialogue || ""}
+                key={`${selected.id}:dialogue:${selected.dialogue || ""}`}
+                onBlur={(event) => {
+                  const value = event.target.value;
+                  if (value === (selected.dialogue || "")) return;
+                  onSave(selected, { dialogue: value }).catch(() => {});
+                }}
+                placeholder={"局长（愤怒）：你给我站住！\n旁白：夜色渐深。"}
+              />
+              {(() => {
+                const emotionBadges = parseDialogueEmotionBadges(selected.dialogue);
+                if (!emotionBadges.length) return null;
+                return (
+                  <div className="youxi-dialogue-emotions" aria-label="台词情绪">
+                    {emotionBadges.map((item, index) => (
+                      <span key={`${item.speaker}-${item.emotion}-${index}`} className="drama-tag drama-tag--emotion">
+                        {item.speaker} · {item.emotion}
+                      </span>
+                    ))}
+                  </div>
+                );
+              })()}
+            </label>
+            {selected.ambianceAudio && (
+              <p className="youxi-story-goal">环境声：{selected.ambianceAudio}</p>
+            )}
+          </>
         )}
         {!generationsLoading && (
           <GenerationHistoryPanel
@@ -1193,6 +1359,9 @@ export function DramaStoryboard({ series, episode }) {
       propNames: patch.propNames ?? shot.propNames ?? [],
       locationName: patch.locationName ?? shot.locationName ?? "",
     };
+    if (Object.prototype.hasOwnProperty.call(patch, "shotBeats")) {
+      payload.shotBeats = patch.shotBeats;
+    }
     if (Object.prototype.hasOwnProperty.call(patch, "promptOverride")) {
       payload.promptOverride = patch.promptOverride;
     }

@@ -2063,6 +2063,44 @@
   font-size: 12px;
   line-height: 1.55;
 }
+.youxi-beat-editor {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 12px;
+}
+.youxi-beat-editor > label,
+.youxi-beat-card label {
+  display: grid;
+  gap: 4px;
+}
+.youxi-beat-editor span,
+.youxi-beat-card h3 {
+  margin: 0;
+  color: #4e5868;
+  font-size: 12px;
+  font-weight: 700;
+}
+.youxi-beat-card {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--drama-line);
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+.youxi-beat-editor textarea,
+.youxi-beat-card textarea,
+.youxi-beat-card input {
+  min-height: 0;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--drama-line);
+  border-radius: 8px;
+  background: #fff;
+  color: #263140;
+  font: 12px/1.55 inherit;
+}
+.youxi-beat-card input { height: 32px; }
 .youxi-story-inspector .youxi-story-meta {
   width: 100%;
   justify-content: flex-start;
@@ -2189,6 +2227,16 @@
 .console-shell[data-theme="dark"] .youxi-story-refs figure,
 .console-shell[data-theme="dark"] .youxi-first-frame figure { color: #e5eaf2; background: #171d26; border-color: #303a47; }
 .console-shell[data-theme="dark"] .youxi-story-inspector .youxi-story-goal { color: #aeb9c6; }
+.console-shell[data-theme="dark"] .youxi-beat-editor span,
+.console-shell[data-theme="dark"] .youxi-beat-card h3 { color: #bdc7d3; }
+.console-shell[data-theme="dark"] .youxi-beat-card { background: #151b23; border-color: #303a47; }
+.console-shell[data-theme="dark"] .youxi-beat-editor textarea,
+.console-shell[data-theme="dark"] .youxi-beat-card textarea,
+.console-shell[data-theme="dark"] .youxi-beat-card input {
+  color: #edf1f7;
+  border-color: #3a4553;
+  background: #111720;
+}
 
 @media (max-width: 1120px) {
   .youxi-storyboard-layout.youxi-storyboard-layout--board { grid-template-columns: 158px minmax(0, 1fr) 400px; }
