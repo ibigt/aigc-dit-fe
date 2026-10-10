@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { fetchCurrentUser, loginRequest, registerRequest } from "../api/auth.js";
 import { TOKEN_KEY } from "../api/client.js";
 import { normalizeUser } from "../lib/user.js";
@@ -39,9 +39,16 @@ export function AuthProvider({ children }) {
     }
   }, [meQuery.error]);
 
+  const lastRefreshAtRef = useRef(0);
   useEffect(() => {
     const onInvalid = () => clearSession();
-    const onRefresh = () => meQuery.refetch();
+    const onRefresh = () => {
+      // 节流：轮询页面持续收到 403 时不至于背靠背刷 /auth/me（其自身 401 已由上方 meQuery.error 分支处理）。
+      const now = Date.now();
+      if (now - lastRefreshAtRef.current < 30000) return;
+      lastRefreshAtRef.current = now;
+      meQuery.refetch();
+    };
     window.addEventListener("lightflow:auth-invalid", onInvalid);
     window.addEventListener("lightflow:auth-refresh", onRefresh);
     return () => {

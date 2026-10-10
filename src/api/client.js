@@ -34,7 +34,10 @@ api.interceptors.response.use(
     const status = Number(error.response?.status || body?.code);
     const code = body?.code || error.response?.status;
     const requestUrl = String(error.config?.url || "");
-    const isAuthEntry = requestUrl.includes("/auth/login") || requestUrl.includes("/auth/register");
+    // /auth/me 也要排除：它自身 403 时派发 auth-refresh 会触发对自己的 refetch，形成请求环。
+    const isAuthEntry = requestUrl.includes("/auth/login")
+      || requestUrl.includes("/auth/register")
+      || requestUrl.includes("/auth/me");
     if (!isAuthEntry && window.localStorage.getItem(TOKEN_KEY)) {
       if (status === 401) {
         clearLocalAuth();
