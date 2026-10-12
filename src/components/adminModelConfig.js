@@ -35,6 +35,7 @@ export function audioFormatsForAdapter(adapterKey) {
 }
 
 export function adapterSpecificFields(adapterKey, provider) {
+  if (adapterKey === "minimax-h3-sglang") return ["shortEdge", "numInferenceSteps", "flowShift", "audioFlowShift", "seed"];
   if ((adapterKey === "seedance-2.0" || adapterKey === "seedance-2.5") && String(provider || "").startsWith("官方API")) {
     return ["generateAudio"];
   }
@@ -49,6 +50,7 @@ export function adapterSpecificFields(adapterKey, provider) {
 }
 
 const ALL_ADAPTER_SPECIFIC_FIELDS = [
+  "shortEdge", "numInferenceSteps", "flowShift", "audioFlowShift", "seed",
   "generateAudio", "steps", "unetName", "loraName", "instructions",
   "volume", "pitch", "sampleRate", "bitrate", "channel", "languageBoost",
 ];

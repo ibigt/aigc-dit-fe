@@ -89,6 +89,7 @@ const MODE_CAP_OPTIONS = [
 ];
 
 const ADAPTER_OPTIONS = [
+  { key: "minimax-h3-sglang", label: "MiniMax-H3（SGLang）", category: "video", provider: "SGLang", defaultEndpoint: "http://127.0.0.1:30010", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "MiniMaxAI/MiniMax-H3" },
   { key: "gpt-image-2", label: "GPT Image 2", category: "image", provider: "RunningHub", defaultEndpoint: "https://www.runninghub.ai", modes: ["t2i", "i2i"], defaultPaths: { t2iPath: "rhart-image-g-2/text-to-image", i2iPath: "rhart-image-g-2/image-to-image" } },
   { key: "gpt-image-2.0", label: "GPT Image 2.0", category: "image", provider: "官方API", defaultEndpoint: "https://api.openai.com/v1", modes: ["t2i", "i2i"], defaultPaths: {}, defaultModelKey: "gpt-image-2" },
   { key: "gpt-image-2.5", label: "GPT Image 2.5", category: "image", provider: "官方API", defaultEndpoint: "https://api.openai.com/v1", modes: ["t2i", "i2i"], defaultPaths: {}, defaultModelKey: "gpt-image-2.5-sunburst" },
@@ -107,7 +108,7 @@ const ADAPTER_OPTIONS = [
   { key: "openai-compat", label: "OpenAI 兼容", category: "text", provider: "自定义配置", defaultEndpoint: "", modes: [], defaultPaths: {}, defaultModelKey: "" },
 ];
 
-const PROVIDER_SOURCE_ORDER = ["官方API", "官方API（token plan）", "RunningHub", "ComfyUI", "自定义配置"];
+const PROVIDER_SOURCE_ORDER = ["官方API", "官方API（token plan）", "RunningHub", "ComfyUI", "SGLang", "自定义配置"];
 const PROVIDER_OFFICIAL_TOKEN_PLAN = "官方API（token plan）";
 
 function isComfyUiSource(provider) {
@@ -144,6 +145,7 @@ function providersOfAdapter(adapter) {
 }
 
 function normalizeProviderSource(provider) {
+  if (/sglang/i.test(String(provider || ""))) return "SGLang";
   if (isOfficialTokenPlan(provider)) return PROVIDER_OFFICIAL_TOKEN_PLAN;
   if (isComfyUiSource(provider)) return "ComfyUI";
   if (isOfficialSource(provider)) return "官方API";
@@ -212,6 +214,7 @@ function audioCapabilityOf(model) {
   if (/seedance[-.]1[-.](0|5)/.test(key)) return { supported: false, max: 0, audioOnly: false };
   if (model.adapterKey === "seedance-2.5") return { supported: true, max: 10, audioOnly: true };
   if (model.adapterKey === "seedance-2.0") return { supported: true, max: 3, audioOnly: false };
+  if (model.adapterKey === "minimax-h3-sglang") return { supported: true, max: 3, audioOnly: true };
   if (model.adapterKey === "minimax-h3") return { supported: true, max: 3, audioOnly: false };
   if (model.adapterKey === "agnes-video-2.5") return { supported: true, max: 5, audioOnly: false };
   return { supported: false, max: 0, audioOnly: false };
@@ -258,6 +261,7 @@ function looksLikeComfyEndpoint(endpoint) {
 }
 
 function officialHint(adapterKey, isText, provider) {
+  if (adapterKey === "minimax-h3-sglang") return "填写后端可访问的 SGLang 地址，如 http://服务器IP:30010；无鉴权时 API Key 可留空。文生视频和首尾帧需要 fl2va 部署，参考生成需要 ref2va 部署。每次生成一个视频。";
   if (adapterKey === "minimax-h3") {
     return isComfyUiSource(provider)
       ? "地址填 ComfyUI 服务，如 http://127.0.0.1:8188。模型标识可用 minimax-h3。本地网关无鉴权时 API Key 可留空。"
@@ -314,6 +318,7 @@ function inferAdapterKey(model) {
   if (key.includes("seedance-2.5") || key.includes("seedance-2-5") || key.includes("doubao-seedance-2-5")) return "seedance-2.5";
   if (key.includes("doubao-seedance-2-0") || key.includes("doubao-seedance-2.0") || key.includes("seedance-2-0-fast") || key.includes("seedance-2.0-fast") || provider.includes("ark") || provider.includes("火山") || provider.includes("方舟")) return "seedance-2.0";
   if (key.includes("agnes")) return "agnes-video-2.5";
+  if (provider.includes("sglang") && category === "video") return "minimax-h3-sglang";
   if (key.includes("minimax") || (provider.includes("comfy") && category === "video")) return "minimax-h3";
   if (key.includes("seedance") || (provider.includes("running") && category === "video")) return "seedance-2";
   if (key.includes("gpt-image-2.5") || key.includes("2.5-sunburst") || key.includes("2.5-flare")) return "gpt-image-2.5";
@@ -935,6 +940,9 @@ function ModelDialog({ model, onClose, onSave, saving }) {
       provider,
       capabilities: filterCapsForAdapter(current.capabilities, category, adapter.key),
     };
+    if (adapter.key === "minimax-h3-sglang") {
+      next.adapterConfig = { shortEdge: 768, numInferenceSteps: 50, flowShift: 12, audioFlowShift: 3, ...(current.adapterConfig || {}) };
+    }
     if (category === "audio" && current.adapterKey !== adapter.key) {
       const minimaxSpeech = isMiniMaxSpeech(adapter.key);
       next.defaultVoice = minimaxSpeech ? "male-qn-qingse" : "alloy";
@@ -1110,8 +1118,8 @@ function ModelDialog({ model, onClose, onSave, saving }) {
           <label>接入来源<select required value={draft.provider || ""} onChange={(event) => changeProviderSource(event.target.value)}>{providerChoicesForCategory(draft.category).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
           <label>适配协议<select required value={draft.adapterKey} onChange={(event) => changeAdapter(event.target.value)}>{sourceAdapters.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
           <label>模型标识<input required value={draft.modelKey} onChange={(event) => updateIdentity({ modelKey: event.target.value })} placeholder={adapter?.key === "openai-compat" ? "如 deepseek-v3-flash" : (adapter?.defaultModelKey || (isText ? "对话模型名，如 gpt-4o-mini" : "商品标识，如 seedance-2.0"))} /></label>
-          <label className="model-form-wide">{endpointLabel(draft.provider)}<input required value={draft.endpoint || ""} onChange={(event) => update("endpoint", event.target.value)} placeholder={draft.provider === "自定义配置" ? "https://api.openai.com/v1 或兼容网关" : ""} />{(isOfficialSource(draft.provider) || (isMiniMaxH3(adapter?.key) && isComfyUiSource(draft.provider))) && <small className="model-logo-hint">{officialHint(adapter?.key, isText, draft.provider)}</small>}</label>
-          <label className="model-form-wide">API Key<input type="password" value={draft.apiKey || ""} onChange={(event) => update("apiKey", event.target.value)} placeholder={draft.hasApiKey ? "已加密保存，留空则保持不变" : ((adapter?.provider === "自定义配置" || (isMiniMaxH3(adapter?.key) && isComfyUiSource(draft.provider))) ? "可留空（本地网关无鉴权）" : "明文仅提交一次，服务端加密落库")} />{isOfficialSource(draft.provider) && !isText && <small className="model-logo-hint">{draft.hasApiKey ? "卡片显示「密钥已配置」后才会用这条 Key 调官方接口。" : (adapter?.key === "minimax-h3" ? "当前尚未落库。请粘贴 MiniMax 按量接口密钥（不要用 Token Plan 订阅 Key），再点右下角保存配置。" : (isOfficialTokenPlan(draft.provider) ? "当前尚未落库。请粘贴 Agent Plan 订阅 Key，再点右下角保存配置。" : "当前尚未落库。请粘贴火山方舟 API Key（不要用 IAM AK/SK），再点右下角保存配置。"))}</small>}</label>
+          <label className="model-form-wide">{endpointLabel(draft.provider)}<input required value={draft.endpoint || ""} onChange={(event) => update("endpoint", event.target.value)} placeholder={draft.provider === "自定义配置" ? "https://api.openai.com/v1 或兼容网关" : ""} />{(adapter?.key === "minimax-h3-sglang" || isOfficialSource(draft.provider) || (isMiniMaxH3(adapter?.key) && isComfyUiSource(draft.provider))) && <small className="model-logo-hint">{officialHint(adapter?.key, isText, draft.provider)}</small>}</label>
+          <label className="model-form-wide">API Key<input type="password" value={draft.apiKey || ""} onChange={(event) => update("apiKey", event.target.value)} placeholder={draft.hasApiKey ? "已加密保存，留空则保持不变" : ((adapter?.provider === "SGLang" || adapter?.provider === "自定义配置" || (isMiniMaxH3(adapter?.key) && isComfyUiSource(draft.provider))) ? "可留空（本地网关无鉴权）" : "明文仅提交一次，服务端加密落库")} />{isOfficialSource(draft.provider) && !isText && <small className="model-logo-hint">{draft.hasApiKey ? "卡片显示「密钥已配置」后才会用这条 Key 调官方接口。" : (adapter?.key === "minimax-h3" ? "当前尚未落库。请粘贴 MiniMax 按量接口密钥（不要用 Token Plan 订阅 Key），再点右下角保存配置。" : (isOfficialTokenPlan(draft.provider) ? "当前尚未落库。请粘贴 Agent Plan 订阅 Key，再点右下角保存配置。" : "当前尚未落库。请粘贴火山方舟 API Key（不要用 IAM AK/SK），再点右下角保存配置。"))}</small>}</label>
           <div className="model-form-wide model-cap-field"><span>品牌图标</span><div className="model-logo-picker">{MODEL_LOGO_CATALOG.map((item) => <button type="button" key={item.file} className={draft.logo === item.file ? "active" : ""} title={item.label} aria-label={item.label} onClick={() => update("logo", item.file)}><img src={item.file} alt="" /></button>)}</div><small className="model-logo-hint">按名称 / 标识自动匹配，也可手动点选。未命中时使用通用图标。</small></div>
           {isText && <div className="model-form-wide model-cap-field"><label className="model-cap-chip"><input type="checkbox" checked={draft.enableThinking === true} onChange={(event) => setDraft((current) => ({ ...current, enableThinking: event.target.checked }))} />启用思考</label><small className="model-logo-hint">结构化剧本分析建议关闭，避免思考内容占满输出额度。</small></div>}
           {!isText && <div className="model-form-wide model-cap-field"><span>能力勾选</span><div className="model-cap-row">{visibleCapOptions.map((cap) => <label key={cap.id} className="model-cap-chip"><input type="checkbox" checked={caps.includes(cap.id)} onChange={() => toggleCap(cap.id)} />{cap.label}</label>)}</div></div>}
@@ -1120,6 +1128,20 @@ function ModelDialog({ model, onClose, onSave, saving }) {
           {isMiniMaxAudio && <><label>默认音量<input type="number" step="0.1" min="0.1" max="10" value={draft.adapterConfig?.volume ?? 1} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), volume: Number(event.target.value) } }))} /></label><label>默认音调<input type="number" min="-12" max="12" value={draft.adapterConfig?.pitch ?? 0} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), pitch: Number(event.target.value) } }))} /></label><label>采样率<input type="number" min="8000" value={draft.adapterConfig?.sampleRate ?? 32000} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), sampleRate: Number(event.target.value) } }))} /></label><label>比特率<input type="number" min="32000" value={draft.adapterConfig?.bitrate ?? 128000} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), bitrate: Number(event.target.value) } }))} /></label><label>声道数<select value={draft.adapterConfig?.channel ?? 1} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), channel: Number(event.target.value) } }))}><option value={1}>单声道</option><option value={2}>双声道</option></select></label><label>语言增强<input value={draft.adapterConfig?.languageBoost || "auto"} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), languageBoost: event.target.value } }))} placeholder="auto / Chinese / English" /></label></>}
           {specificFields.has("instructions") && <label className="model-form-wide">语音风格指令<input value={draft.adapterConfig?.instructions || ""} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), instructions: event.target.value } }))} placeholder="例如：语气温暖、节奏自然" /></label>}
           {specificFields.has("generateAudio") && <div className="model-form-wide model-cap-field"><label className="model-cap-chip"><input type="checkbox" checked={draft.adapterConfig?.generateAudio !== false} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), generateAudio: event.target.checked } }))} />生成视频原声</label><small className="model-logo-hint">关闭后向 Seedance 官方接口明确传递 generate_audio=false。</small></div>}
+          {specificFields.has("numInferenceSteps") && <>
+            {[
+              ["shortEdge", "视频短边像素", 768, 1, 1],
+              ["numInferenceSteps", "采样步数", 50, 1, 1],
+              ["flowShift", "视频 Flow Shift", 12, 0, 0.1],
+              ["audioFlowShift", "音频 Flow Shift", 3, 0, 0.1],
+              ["seed", "随机种子（留空随机）", "", 0, 1],
+            ].map(([field, label, fallback, min, step]) => <label key={field}>{label}<input type="number" min={min} step={step} value={draft.adapterConfig?.[field] ?? fallback} onChange={(event) => setDraft((current) => {
+              const config = { ...(current.adapterConfig || {}) };
+              if (event.target.value === "") delete config[field];
+              else config[field] = Number(event.target.value);
+              return { ...current, adapterConfig: config };
+            })} /></label>)}
+          </>}
           {specificFields.has("steps") && <><label>采样步数<input type="number" min="1" max="100" value={draft.adapterConfig?.steps || 20} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), steps: Number(event.target.value) } }))} /></label><div /><label className="model-form-wide">UNet 文件名<input value={draft.adapterConfig?.unetName || ""} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), unetName: event.target.value } }))} placeholder="留空使用内置 MiniMax-H3 工作流默认值" /></label><label className="model-form-wide">LoRA 文件名<input value={draft.adapterConfig?.loraName || ""} onChange={(event) => setDraft((current) => ({ ...current, adapterConfig: { ...(current.adapterConfig || {}), loraName: event.target.value } }))} placeholder="留空使用内置 MiniMax-H3 工作流默认值" /></label></>}
           {!isText && !isAudio && !isOfficialSource(draft.provider) && visibleCapOptions.filter((cap) => caps.includes(cap.id)).map((cap) => (
             <label key={cap.pathKey} className="model-form-wide">{cap.pathLabel}<input value={pathValue(draft, cap.pathKey)} onChange={(event) => update(cap.pathKey, event.target.value)} placeholder={pathPlaceholder(cap, draft.adapterKey)} /></label>
@@ -1172,6 +1194,7 @@ function toModelPayload(draft) {
   if (adapterConfig.v2vPath && !adapterConfig.i2vPath) adapterConfig.i2vPath = adapterConfig.v2vPath;
   delete adapterConfig.v2vPath;
   adapterConfig = sanitizeAdapterSpecificConfig(adapterKey, draft.provider, adapterConfig);
+  if (adapterKey === "minimax-h3-sglang") adapterConfig = { shortEdge: 768, numInferenceSteps: 50, flowShift: 12, audioFlowShift: 3, ...adapterConfig };
   if (category === "text" && draft.modelKey) adapterConfig.chatModel = draft.modelKey;
   if (category === "text") Object.assign(adapterConfig, withTextReasoning(adapterConfig, draft.enableThinking));
   if (category === "audio") {
