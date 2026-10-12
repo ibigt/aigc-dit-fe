@@ -3,6 +3,7 @@ import {
   Clapperboard,
   AudioLines,
   Check,
+  Folder,
   Image as ImageIcon,
   Lock,
   Plus,
@@ -61,8 +62,16 @@ function sameAssetId(a, b) {
 }
 
 function ImageLibraryDialog({ assets, loading, busy, error, onClose, onConfirm }) {
-  const [selectedId, setSelectedId] = useState(null);
-  const selected = assets.find((item) => sameAssetId(item.id, selectedId)) || null;
+  const [selectedIds, setSelectedIds] = useState([]);
+  const selected = assets.filter((item) => selectedIds.some((id) => sameAssetId(id, item.id)));
+
+  function toggle(id) {
+    setSelectedIds((current) => (
+      current.some((item) => sameAssetId(item, id))
+        ? current.filter((item) => !sameAssetId(item, id))
+        : [...current, id]
+    ));
+  }
 
   const body = (
     <div
@@ -93,7 +102,7 @@ function ImageLibraryDialog({ assets, loading, busy, error, onClose, onConfirm }
           {!loading && assets.map((asset) => {
             const label = asset.title || asset.name;
             const preview = mediaUrl(asset.poster || asset.src || asset.url || asset.storageKey, { w: MEDIA_THUMB_WIDTH });
-            const isSelected = sameAssetId(asset.id, selectedId);
+            const isSelected = selectedIds.some((id) => sameAssetId(id, asset.id));
             return (
               <button
                 type="button"
@@ -101,7 +110,7 @@ function ImageLibraryDialog({ assets, loading, busy, error, onClose, onConfirm }
                 key={asset.id || asset.storageKey || preview}
                 aria-pressed={isSelected}
                 disabled={busy}
-                onClick={() => setSelectedId(asset.id)}
+                onClick={() => toggle(asset.id)}
               >
                 <img src={preview} alt={label} />
                 <span>
@@ -118,15 +127,15 @@ function ImageLibraryDialog({ assets, loading, busy, error, onClose, onConfirm }
           })}
         </div>
         <footer>
-          <span>{error ? <em className="drama-form-error" style={{ fontStyle: "normal" }}>{error}</em> : (selected ? "已选择 1 项" : "请选择一张图片")}</span>
+          <span>{error ? <em className="drama-form-error" style={{ fontStyle: "normal" }}>{error}</em> : (selected.length ? `已选择 ${selected.length} 项` : "请选择图片，支持多选")}</span>
           <div>
             <button type="button" disabled={busy} onClick={onClose}>取消</button>
             <button
               type="button"
               className="primary"
-              disabled={busy || !selected}
+              disabled={busy || selected.length === 0}
               onClick={() => {
-                if (!selected) return;
+                if (!selected.length) return;
                 onConfirm(selected);
               }}
             >
@@ -445,6 +454,33 @@ function SubjectInspector({
 
             {asset.genErrorMessage && <p className="drama-form-error">{asset.genErrorMessage}</p>}
 
+            <section className="youxi-material-block" aria-label="参考图片">
+              <header>
+                <strong>参考图片</strong>
+                <span>支持多选</span>
+              </header>
+              <div>
+                <button
+                  type="button"
+                  className="youxi-upload-tile"
+                  disabled={busy || generating || historyBusy}
+                  onClick={onUploadClick}
+                >
+                  <Upload size={16} />
+                  本地上传
+                </button>
+                <button
+                  type="button"
+                  className="youxi-upload-tile"
+                  disabled={busy || generating || historyBusy}
+                  onClick={onCiteClick}
+                >
+                  <Folder size={16} />
+                  素材库
+                </button>
+              </div>
+            </section>
+
             {!generationsLoading && (
               <GenerationHistoryPanel
                 switchLabel="切换最终资产"
@@ -458,9 +494,6 @@ function SubjectInspector({
                 onPreview={onPreviewGeneration}
                 onDelete={onDeleteGeneration}
                 onImport={onImportGeneration}
-                onCiteClick={onCiteClick}
-                onUploadClick={onUploadClick}
-                uploadLabel="上传"
               />
             )}
 
@@ -698,42 +731,57 @@ export function DramaAssetBoard({ series, episode }) {
     }
   }
 
-  async function onUpload(file) {
-    if (!file || !selected?.id) return;
-    markBusy(selected.id, "upload", true);
+  function rememberAsset(updated) {
+    if (!updated?.id) return;
+    queryClient.setQueryData(["drama-assets", episodeId], (current) => {
+      if (!Array.isArray(current)) return current;
+      return current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item));
+    });
+  }
+
+  async function onUploadFiles(files) {
+    const list = Array.from(files || []).filter(Boolean);
+    const targetId = selected?.id;
+    if (!list.length || !targetId) return;
+    markBusy(targetId, "upload", true);
     try {
-      const updated = await uploadDramaAssetImage(selected.id, file);
-      queryClient.setQueryData(["drama-assets", episodeId], (current) => {
-        if (!Array.isArray(current)) return current;
-        return current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item));
-      });
+      let updated = null;
+      for (const file of list) {
+        updated = await uploadDramaAssetImage(targetId, file);
+        rememberAsset(updated);
+      }
       invalidate();
     } finally {
-      markBusy(selected.id, "upload", false);
+      markBusy(targetId, "upload", false);
     }
   }
 
-  async function onCiteFromLibrary(libraryAsset) {
+  async function onCiteFromLibrary(libraryAssets) {
+    const items = (Array.isArray(libraryAssets) ? libraryAssets : [libraryAssets]).filter((item) => item?.id != null);
     const targetId = selected?.id;
-    const libraryId = libraryAsset?.id;
-    if (!targetId || libraryId == null) return;
+    if (!targetId || !items.length) return;
     setImageLibraryError("");
     markBusy(targetId, "upload", true);
+    let done = 0;
     try {
-      const updated = await bindDramaAssetImageFromLibrary(targetId, libraryId);
-      queryClient.setQueryData(["drama-assets", episodeId], (current) => {
-        if (!Array.isArray(current)) return current;
-        return current.map((entry) => (entry.id === updated.id ? { ...entry, ...updated } : entry));
-      });
+      for (const item of items) {
+        const updated = await bindDramaAssetImageFromLibrary(targetId, item.id);
+        rememberAsset(updated);
+        done += 1;
+      }
       setImageLibraryOpen(false);
       setImageLibraryError("");
       await invalidateAssetHistory(targetId);
       invalidate();
-      showToast("已引用素材");
+      showToast(done > 1 ? `已引用 ${done} 个素材` : "已引用素材");
     } catch (err) {
       const message = err?.message || "引用失败";
       setImageLibraryError(message);
       showToast(message);
+      if (done > 0) {
+        await invalidateAssetHistory(targetId);
+        invalidate();
+      }
     } finally {
       markBusy(targetId, "upload", false);
     }
@@ -1197,11 +1245,12 @@ export function DramaAssetBoard({ series, episode }) {
         ref={fileRef}
         type="file"
         accept="image/*"
+        multiple
         hidden
         onChange={(event) => {
-          const file = event.target.files?.[0];
+          const files = Array.from(event.target.files || []);
           event.target.value = "";
-          onUpload(file).catch((err) => showToast(err.message));
+          onUploadFiles(files).catch((err) => showToast(err.message));
         }}
       />
 

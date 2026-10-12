@@ -868,6 +868,7 @@
   flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
+  margin-left: auto;
 }
 .youxi-history-block__actions .youxi-history-upload,
 .youxi-history-block__actions .youxi-history-switch {
@@ -2382,7 +2383,15 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.youxi-subject-inspector .youxi-upload-tile { cursor: pointer; }
+.youxi-subject-inspector .youxi-upload-tile {
+  padding: 0;
+  cursor: pointer;
+}
+.youxi-subject-inspector .youxi-upload-tile:hover:not(:disabled) {
+  color: #4f5ed5;
+  border-color: #6572ed;
+  background: #f7f8ff;
+}
 .youxi-subject-inspector .youxi-upload-tile:disabled { opacity: .55; cursor: not-allowed; }
 .generation-chip-grid button.active {
   color: #4f5ed5;
@@ -2457,6 +2466,12 @@
   color: #d9deff;
   border-color: #7c89f0;
   background: #29324d;
+}
+.console-shell[data-theme="dark"] .youxi-material-block > header span { color: #8e99a8; }
+.console-shell[data-theme="dark"] .youxi-subject-inspector .youxi-upload-tile:hover:not(:disabled) {
+  color: #d5dbff;
+  border-color: #6572ed;
+  background: #252c45;
 }
 .console-shell[data-theme="dark"] .youxi-subject-inspector .youxi-asset-thumb {
   border-color: #3a4553;

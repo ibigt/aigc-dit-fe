@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { Trash2, Upload, X } from "lucide-react";
+import { Trash2, X } from "lucide-react";
 import { MEDIA_THUMB_WIDTH, mediaUrl } from "../../lib/media.js";
 
 function sourceMeta(source, record) {
@@ -26,10 +26,6 @@ export function GenerationHistoryPanel({
   onPreview,
   onDelete,
   onImport,
-  onCiteClick,
-  citeLabel = "引用素材",
-  onUploadClick,
-  uploadLabel = "上传",
 }) {
   const countText = countLabel
     || (mediaKind === "video"
@@ -53,28 +49,6 @@ export function GenerationHistoryPanel({
           >
             {switchLabel}
           </button>
-          {onCiteClick && (
-            <button
-              type="button"
-              className="button button--primary youxi-history-switch youxi-history-cite"
-              disabled={busy}
-              title={citeLabel}
-              onClick={onCiteClick}
-            >
-              {citeLabel}
-            </button>
-          )}
-          {onUploadClick && (
-            <button
-              type="button"
-              className="youxi-history-upload"
-              disabled={busy}
-              title={uploadLabel}
-              onClick={onUploadClick}
-            >
-              <Upload size={compactActions ? 12 : 13} /> {uploadLabel}
-            </button>
-          )}
         </div>
       </header>
       {records.length ? (
