@@ -55,7 +55,8 @@ const TYPES = [
 ];
 const RESOLUTIONS = ["1K", "2K"];
 const PROMPT_MAX = 4000;
-const BATCH_LIMIT = 4;
+// 并发数与后端 DramaContract.MAX_ASSET_GENERATE 对齐：一次点击滚动跑完所有勾选资产。
+const BATCH_CONCURRENCY = 16;
 const emptyCreate = { name: "", meta: "", prompt: "" };
 
 function sameAssetId(a, b) {
@@ -551,6 +552,7 @@ export function DramaAssetBoard({ series, episode }) {
   const [voicePending, setVoicePending] = useState([]);
   const [promptDirty, setPromptDirty] = useState(false);
   const [summaryDirty, setSummaryDirty] = useState(false);
+  const [batchAssetIds, setBatchAssetIds] = useState(() => new Set());
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
   const [preview, setPreview] = useState(null);
@@ -619,6 +621,8 @@ export function DramaAssetBoard({ series, episode }) {
   }, [assets]);
 
   const selected = filtered.find((item) => item.id === selectedId) || filtered[0] || null;
+  const checkedCount = filtered.filter((item) => batchAssetIds.has(String(item.id))).length;
+  const allChecked = filtered.length > 0 && checkedCount === filtered.length;
 
   const generationsQuery = useQuery({
     queryKey: ["drama-asset-generations", selected?.id],
@@ -736,15 +740,67 @@ export function DramaAssetBoard({ series, episode }) {
   }
 
   async function generateBatch() {
-    const pending = filtered.filter((item) => {
-      const imagePrompt = (item.id === selected?.id ? promptDraft : promptOf(item)).trim();
-      return imagePrompt && !item.imageStorageKey && !item.generating && !isBusy(item.id, "generate");
-    }).slice(0, BATCH_LIMIT);
-    if (!pending.length) {
-      showToast("当前分类没有待生成的资产图");
+    const checkedAssets = filtered.filter((item) => batchAssetIds.has(String(item.id)));
+    if (!checkedAssets.length) {
+      showToast("请先勾选要生成的资产");
       return;
     }
-    await Promise.all(pending.map((item) => generate(item)));
+    const queue = checkedAssets.filter((item) => {
+      const imagePrompt = (item.id === selected?.id ? promptDraft : promptOf(item)).trim();
+      return imagePrompt && !item.generating && !isBusy(item.id, "generate");
+    });
+    if (!queue.length) {
+      showToast("勾选的资产没有可生成的图片");
+      return;
+    }
+    const limitRetries = new Map();
+    const failures = [];
+    const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+    const runQueued = async () => {
+      for (let item = queue.shift(); item; item = queue.shift()) {
+        try {
+          await generate(item);
+        } catch (error) {
+          const retried = limitRetries.get(item.id) || 0;
+          // 后端限制同集并发生图数，撞上限说明名额被占用（一张图要生成几十秒）：
+          // 属于排队等待而非失败，排到队尾 3 秒后重试，累计可等 6 分钟再判失败。
+          if (retried < 120 && /同时生图不能超过/.test(error?.message || "")) {
+            limitRetries.set(item.id, retried + 1);
+            queue.push(item);
+            await wait(3000);
+          } else {
+            failures.push(`${item.name}：${error?.message || "生成失败"}`);
+          }
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(BATCH_CONCURRENCY, queue.length) }, () => runQueued()));
+    if (failures.length) {
+      showToast(`批量生图完成，${failures.length} 个失败：${failures.join("；")}`);
+    }
+  }
+
+  function toggleBatchAsset(id) {
+    setBatchAssetIds((current) => {
+      const next = new Set(current);
+      const key = String(id);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleAllBatchAssets() {
+    setBatchAssetIds((current) => {
+      const next = new Set(current);
+      const shouldClear = filtered.every((item) => current.has(String(item.id)));
+      if (shouldClear) {
+        filtered.forEach((item) => next.delete(String(item.id)));
+      } else {
+        filtered.forEach((item) => next.add(String(item.id)));
+      }
+      return next;
+    });
   }
 
   async function remove(asset) {
@@ -1027,9 +1083,21 @@ export function DramaAssetBoard({ series, episode }) {
             </button>
           )}
           <div>
+            <label className="youxi-batch-select">
+              <input
+                type="checkbox"
+                checked={allChecked}
+                disabled={!filtered.length}
+                aria-label={`全选当前${type}`}
+                onChange={toggleAllBatchAssets}
+              />
+              <span>全选{filtered.length ? `(${checkedCount}/${filtered.length})` : ""}</span>
+            </label>
             <button
               type="button"
-              disabled={!modelBound || extractMutation.isPending}
+              className="youxi-batch-generate"
+              disabled={!modelBound || extractMutation.isPending || !checkedCount}
+              title={!modelBound ? "先选择顶部图像模型" : (checkedCount ? `生成已勾选的 ${checkedCount} 个${type}，并发生成、逐个完成` : "先勾选要生成的资产")}
               onClick={() => generateBatch().catch((err) => showToast(err.message))}
             >
               <Sparkles size={15} /> 批量生图
@@ -1098,6 +1166,16 @@ export function DramaAssetBoard({ series, episode }) {
                         >
                           <Trash2 size={14} />
                         </button>
+                        <label className="youxi-subject-card__check">
+                          <input
+                            type="checkbox"
+                            checked={batchAssetIds.has(String(item.id))}
+                            disabled={generating}
+                            aria-label={`勾选${item.name}参与批量生图`}
+                            onClick={(event) => event.stopPropagation()}
+                            onChange={() => toggleBatchAsset(item.id)}
+                          />
+                        </label>
                       </div>
                     </header>
                     <button

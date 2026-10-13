@@ -218,6 +218,34 @@
 .style-card-grid button span { position: absolute; z-index: 2; left: 8px; right: 8px; bottom: 7px; color: #fff; font-size: 11px; text-align: left; }
 .style-card-grid button svg { position: absolute; z-index: 3; top: 6px; right: 6px; color: #fff; fill: #6572ed; }
 .style-card-grid button.active { border-color: #6572ed; }
+.drama-style-picker { display: flex; flex-direction: column; gap: 10px; }
+.drama-style-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #e4e7eb;
+  border-radius: 10px;
+  background: #f1f3f6;
+}
+.drama-style-tabs button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  color: #5f6975;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 650;
+  transition: color .2s ease, background-color .2s ease, box-shadow .2s ease;
+}
+.drama-style-tabs button:hover:not(:disabled):not(.active) { color: #3f4a55; }
+.drama-style-tabs button.active {
+  color: #31394a;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(35,43,54,.08);
+}
+.drama-style-tabs button:disabled { opacity: .45; cursor: not-allowed; }
 
 .youxi-assistant { height: calc(100% - 52px); min-height: 0; padding: 32px 20px 18px; display: flex; flex-direction: column; align-items: center; }
 .youxi-assistant__avatar { width: 54px; height: 54px; display: grid; place-items: center; color: #fff; border-radius: 17px; background: linear-gradient(145deg,#6572ed,#8e67e8); box-shadow: 0 10px 25px rgba(101,114,237,.24); }
@@ -471,6 +499,9 @@
 .youxi-subject-card__actions .youxi-subject-card__gen:disabled { color: #fff; opacity: .45; cursor: not-allowed; box-shadow: none; transform: none; }
 .youxi-subject-card__actions .youxi-subject-card__trash { width: 28px; height: 28px; padding: 0; color: #8e97a3; border: 0; background: transparent; box-shadow: none; }
 .youxi-subject-card__actions .youxi-subject-card__trash:hover:not(:disabled) { color: #b95767; background: #fff0f2; box-shadow: none; transform: none; }
+.youxi-subject-card__check { flex: 0 0 auto; display: grid; place-items: center; width: 20px; height: 28px; cursor: pointer; }
+.youxi-subject-card__check input { width: 15px; height: 15px; margin: 0; accent-color: #4c59c6; cursor: pointer; }
+.youxi-subject-card__check input:disabled { cursor: not-allowed; opacity: .45; }
 @container (max-width: 248px) {
   .youxi-subject-card__label { display: none; }
   .youxi-subject-card__actions .youxi-subject-card__gen,
@@ -678,7 +709,15 @@
 .youxi-subject-narration > label + button { border-color: transparent; background: #f5f6fb; }
 .youxi-subject-narration > label + button strong { color: #5362d4; }
 .youxi-subject-narration > div { display: flex; align-items: center; gap: 7px; }
-.youxi-subject-narration > div button:first-child { color: #4f5ed5; border-color: #b8bef0; background: #f5f6ff; }
+.youxi-batch-select { height: 34px; padding: 0 9px; display: inline-flex; align-items: center; gap: 7px; color: #4f5a69; border: 1px solid #dfe4eb; border-radius: 8px; background: #fff; font-size: 12px; cursor: pointer; user-select: none; }
+.youxi-batch-select input { width: 15px; height: 15px; margin: 0; accent-color: #4c59c6; cursor: pointer; }
+.youxi-batch-select:has(input:disabled) { color: #9aa4b0; cursor: not-allowed; }
+.youxi-batch-select:has(input:disabled) input { cursor: not-allowed; }
+.youxi-batch-select:has(input:checked) { color: #4352ca; border-color: #b8bef0; background: #f5f6ff; }
+.youxi-subject-narration > div .youxi-batch-generate { color: #4f5ed5; border-color: #b8bef0; background: #f5f6ff; }
+.youxi-subject-narration > div .youxi-batch-generate:hover:not(:disabled),
+.youxi-subject-narration > div .youxi-batch-generate:focus-visible { color: #3a47c4; border-color: #8891ee; background: #eef0ff; box-shadow: 0 2px 8px rgba(79, 94, 213, .18); }
+.youxi-subject-narration > div .youxi-batch-generate:disabled { color: #9aa4b0; border-color: #e4e8ee; background: #f3f5f8; cursor: not-allowed; }
 .youxi-subject-narration > div button:last-child { color: #fff; border-color: #6572ed; background: #6572ed; }
 .youxi-subject-card__select > div.is-empty { background: #f7f8fa; }
 .youxi-subject-empty { width: 100%; height: 100%; display: grid; place-content: center; justify-items: center; gap: 7px; color: #8a94a2; }
@@ -1206,6 +1245,13 @@
 .console-shell[data-theme="dark"] .overview-only-header > h2 { color: #e5eaf2; }
 .console-shell[data-theme="dark"] :is(.youxi-shots-center,.youxi-shot-center-toolbar,.youxi-subject-narration) { color: #edf1f7; border-color: #303a47; background: #171d26; box-shadow: none; }
 .console-shell[data-theme="dark"] :is(.youxi-shot-center-toolbar button,.youxi-subject-narration button,.dialog-action-footer button,.director-settings select,.drama-create-form select,.reference-thumb) { color: #e1e7ef; border-color: #3a4553; background: #202832; }
+.console-shell[data-theme="dark"] .youxi-batch-select { color: #e1e7ef; border-color: #3a4553; background: #202832; }
+.console-shell[data-theme="dark"] .youxi-batch-select:has(input:checked) { color: #cbd2ff; border-color: #5966a6; background: #252c45; }
+.console-shell[data-theme="dark"] .youxi-batch-select:has(input:disabled) { color: #727f8f; }
+.console-shell[data-theme="dark"] .youxi-subject-narration > div .youxi-batch-generate { color: #d6dcff; border-color: #5966a6; background: #252c45; }
+.console-shell[data-theme="dark"] .youxi-subject-narration > div .youxi-batch-generate:hover:not(:disabled),
+.console-shell[data-theme="dark"] .youxi-subject-narration > div .youxi-batch-generate:focus-visible { color: #e2e7ff; border-color: #7481f0; background: #303958; box-shadow: 0 2px 10px rgba(91, 104, 224, .28); }
+.console-shell[data-theme="dark"] .youxi-subject-narration > div .youxi-batch-generate:disabled { color: #727f8f; border-color: #303a47; background: #1a212b; cursor: not-allowed; }
 .console-shell[data-theme="dark"] .youxi-shot-center-toolbar .drama-view-switch { background: #111720; }
 .console-shell[data-theme="dark"] .youxi-shot-center-toolbar .drama-view-switch button.active { color: #d6dcff; background: #303958; }
 .console-shell[data-theme="dark"] .youxi-subject-narration > label + button { color: #e1e7ef; background: #202832; }
@@ -1309,6 +1355,7 @@
 .console-shell[data-theme="dark"] .global-director-prompt footer button { color: #e1e7ef; border-color: #3a4553; background: #202832; }
 .console-shell[data-theme="dark"] .global-director-prompt footer .button--primary { color: #fff; border-color: #7481f0; background: #6572ed; }
 .console-shell[data-theme="dark"] .youxi-subject-narration > div button:first-child { color: #cbd2ff; border-color: #5966a6; background: #252c45; }
+.console-shell[data-theme="dark"] .youxi-subject-narration > div button:first-child:hover:not(:disabled) { color: #e5e9ff; border-color: #6f7cc0; background: #2b3450; box-shadow: 0 2px 8px rgba(0, 0, 0, .3); }
 .console-shell[data-theme="dark"] .youxi-subject-narration > div button:last-child { color: #fff; border-color: #7481f0; background: #6572ed; }
 .console-shell[data-theme="dark"] :is(.youxi-subject-card__select > div.is-empty,.youxi-empty-subject-media,.youxi-shot-thumb__empty) { color: #aeb9c6; border-color: #465363; background: #111720; }
 .console-shell[data-theme="dark"] .youxi-subject-empty b { color: #d7dcff; background: #303958; }
@@ -1665,8 +1712,9 @@
 .drama-spec-label + .ratio-card-grid + .drama-spec-label { margin-top: 14px; }
 .console-shell[data-theme="dark"] .drama-spec-label { color: #aeb9c6; }
 .drama-script-settings .style-card-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
-.drama-script-settings .drama-script__hint { margin: 10px 0 0; }
-.drama-script-settings__save { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--drama-line, #e5e8ee); }
+.drama-script-settings .drama-script__hint { margin: 10px 0 0; min-height: 3.1em; min-height: 2lh; }
+.drama-script-settings .settings-block { padding-bottom: 14px; margin-bottom: 14px; }
+.drama-script-settings__save { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--drama-line, #e5e8ee); }
 .drama-script-settings__save .button { width: 100%; justify-content: center; }
 .console-shell[data-theme="dark"] .drama-script-settings__save { border-top-color: #303a47; }
 .console-shell[data-theme="dark"] .drama-script-settings { background: #171d26; border-color: #303a47; }
