@@ -1070,13 +1070,6 @@ export function DramaStoryboard({ series, episode }) {
         next.delete(shot.id);
         return next;
       }
-      if (next.size > 0) {
-        const firstSelected = shots.find((item) => next.has(item.id));
-        if (firstSelected && firstSelected.chapterId !== shot.chapterId) {
-          setBatchToast("不能跨场次选择分镜");
-          return current;
-        }
-      }
       next.add(shot.id);
       return next;
     });
@@ -1673,7 +1666,7 @@ export function DramaStoryboard({ series, episode }) {
               title={batchRunning
                 ? "分镜批量生成中"
                 : selectedIds.size === 0
-                  ? "请先在胶片条勾选同场分镜"
+                  ? "请先在胶片条勾选分镜"
                   : "批量生成选中镜头"}
               onClick={() => setBatchModalOpen(true)}
             >
