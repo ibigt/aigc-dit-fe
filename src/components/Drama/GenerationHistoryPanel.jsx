@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import { Trash2, X } from "lucide-react";
-import { MEDIA_THUMB_WIDTH, mediaUrl } from "../../lib/media.js";
+import { MEDIA_THUMB_WIDTH, mediaUrl, retryMediaOnce } from "../../lib/media.js";
 
 function sourceMeta(source, record) {
   if (source === "library" || record?.libraryAssetId) return "引用";
@@ -26,11 +26,15 @@ export function GenerationHistoryPanel({
   onPreview,
   onDelete,
   onImport,
+  review = null,
 }) {
   const countText = countLabel
     || (mediaKind === "video"
       ? `${records.length} 次生成`
       : `${records.length} 张图片`);
+  const reviewStatus = review?.status || "idle";
+  const reviewLabel = reviewStatus === "reviewing" ? "审核中" : reviewStatus === "active" ? "已审核" : "角色审核";
+  const reviewQuiet = Boolean(review) && (reviewStatus !== "idle" || review.disabled || busy || locked);
 
   return (
     <section className={`youxi-history-block asset-generation-records${compactActions ? " asset-generation-records--compact" : ""}`}>
@@ -40,6 +44,16 @@ export function GenerationHistoryPanel({
           <span>{countText}</span>
         </div>
         <div className="youxi-history-block__actions">
+          {review ? (
+            <button
+              type="button"
+              className={`youxi-history-review${reviewQuiet ? " is-muted" : ""}`}
+              disabled={reviewQuiet}
+              onClick={review.onClick}
+            >
+              {reviewLabel}
+            </button>
+          ) : null}
           <button
             type="button"
             className="button button--primary youxi-history-switch"
@@ -51,6 +65,7 @@ export function GenerationHistoryPanel({
           </button>
         </div>
       </header>
+      {review?.error ? <p className="drama-form-error">{review.error}</p> : null}
       {records.length ? (
         <div className={mediaKind === "video" ? "youxi-history-grid" : "asset-generation-grid"}>
           {records.map((record) => {
@@ -92,7 +107,7 @@ export function GenerationHistoryPanel({
                   {mediaKind === "video" ? (
                     <video muted preload="metadata" poster={thumb || undefined} src={videoSrc || undefined} />
                   ) : (
-                    <img src={thumb || ""} alt={record.label} />
+                    <img src={thumb || ""} alt={record.label} onError={retryMediaOnce} />
                   )}
                 </button>
                 <div>
@@ -174,7 +189,7 @@ export function SwitchFinalModal({
                   {mediaKind === "video" ? (
                     <video muted preload="metadata" poster={thumb || undefined} src={videoSrc || undefined} />
                   ) : (
-                    <img src={thumb || ""} alt={record.label} />
+                    <img src={thumb || ""} alt={record.label} onError={retryMediaOnce} />
                   )}
                   <div>
                     <strong>{record.label}</strong>

@@ -51,6 +51,23 @@ function appendMediaWidth(url, width) {
   }
 }
 
+/** 缩略图正在生成时，落选的请求会马上结束。过一会儿再要一次，这时缓存通常已经写好。 */
+export function retryMediaOnce(event) {
+  const img = event.currentTarget;
+  if (!img || img.dataset.retried === "1") {
+    if (img) img.onerror = null;
+    return;
+  }
+  img.dataset.retried = "1";
+  const next = img.currentSrc || img.src;
+  if (!next) return;
+  window.setTimeout(() => {
+    if (!img.isConnected) return;
+    img.removeAttribute("src");
+    img.src = next;
+  }, 1500);
+}
+
 export function authenticatedApiUrl(path) {
   if (!path) return "";
   const token = window.localStorage.getItem(TOKEN_KEY) || "";

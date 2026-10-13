@@ -147,6 +147,14 @@ export function importDramaAssetGeneration(assetId, generationId) {
   return api.post(`/drama/assets/${assetId}/generations/${generationId}/import-library`);
 }
 
+export function reviewDramaAsset(assetId) {
+  return api.post(`/drama/assets/${assetId}/ark-review`, null, { timeout: 150000 });
+}
+
+export function fetchDramaArkReviewAvailability() {
+  return api.get("/drama/ark-review");
+}
+
 export function fetchDramaStoryboard(episodeId) {
   return api.get(`/drama/episodes/${episodeId}/storyboard`);
 }

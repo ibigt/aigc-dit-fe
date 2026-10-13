@@ -76,6 +76,14 @@ export function testAdminModelConnection(payload) {
   return api.post("/admin/models/test-connection", payload, { timeout: 45000 });
 }
 
+export function fetchArkReviewCredential() {
+  return api.get("/admin/models/review-credential");
+}
+
+export function saveArkReviewCredential(payload) {
+  return api.put("/admin/models/review-credential", payload);
+}
+
 export function fetchAdminRequests(params = {}) {
   return api.get("/admin/requests", { params: { pageNum: 1, pageSize: 20, hours: 24, ...params } });
 }

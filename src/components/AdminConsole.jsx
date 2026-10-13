@@ -54,6 +54,8 @@ import {
   fetchDashboard,
   resetAdminUserPassword,
   retryAdminQueueTask,
+  fetchArkReviewCredential,
+  saveArkReviewCredential,
   testAdminModelConnection,
   updateAdminModel,
   updateAdminUser,
@@ -1228,6 +1230,28 @@ function toModelPayload(draft) {
   };
 }
 
+function ReviewKeyDialog({ status, saving, error, onClose, onSave }) {
+  const [accessKey, setAccessKey] = useState("");
+  const [secretKey, setSecretKey] = useState("");
+  const configured = status?.configured === true;
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}>
+    <section className="model-dialog" role="dialog" aria-modal="true" aria-labelledby="review-key-title">
+      <header><div><span>角色审核</span><h2 id="review-key-title">配置审核密钥</h2><p>火山引擎 Access Key 和 Secret Key。加密保存，不会回到列表。这不是模型 API Key。</p></div><button type="button" className="modal-close" aria-label="关闭" onClick={onClose}><X size={18} /></button></header>
+      <form onSubmit={(event) => { event.preventDefault(); onSave({ accessKey, secretKey }); }}>
+        <div className="model-form-grid">
+          <label className="model-form-wide">Access Key<input type="password" autoComplete="off" value={accessKey} onChange={(event) => setAccessKey(event.target.value)} placeholder={status?.hasAccessKey ? "已加密保存，留空则保持不变" : "AKLT 开头的 Access Key ID"} /></label>
+          <label className="model-form-wide">Secret Key<input type="password" autoComplete="new-password" value={secretKey} onChange={(event) => setSecretKey(event.target.value)} placeholder={status?.hasSecretKey ? "已加密保存，留空则保持不变" : "Secret Access Key，只在创建时显示一次"} /></label>
+        </div>
+        {error ? <p className="drama-form-error">{error}</p> : null}
+        <footer>
+          <span>{configured ? "当前已配置，角色审核会用这条密钥" : "当前未配置，角色审核不可用"}</span>
+          <div><button type="button" onClick={onClose} disabled={saving}>取消</button><button className="button button--primary" type="submit" disabled={saving}>{saving ? "保存中…" : "保存"}</button></div>
+        </footer>
+      </form>
+    </section>
+  </div>;
+}
+
 function ModelsPage() {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
@@ -1236,8 +1260,11 @@ function ModelsPage() {
   const [category, setCategory] = useState("all");
   const [view, setView] = useState("cards");
   const [editing, setEditing] = useState(undefined);
+  const [reviewKeyOpen, setReviewKeyOpen] = useState(false);
+  const [reviewKeyError, setReviewKeyError] = useState("");
   const [notice, setNotice] = useState("");
   const [noticeError, setNoticeError] = useState(false);
+  const reviewKeyQuery = useQuery({ queryKey: ["admin-review-credential"], queryFn: fetchArkReviewCredential });
   const modelsQuery = useQuery({ queryKey: ["admin-models"], queryFn: fetchAdminModels });
   const models = modelsQuery.data || [];
   const modelItems = models.filter((model) => model.category !== "tool");
@@ -1272,6 +1299,18 @@ function ModelsPage() {
     },
   });
 
+  const reviewKeyMutation = useMutation({
+    mutationFn: saveArkReviewCredential,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-review-credential"] });
+      setReviewKeyOpen(false);
+      setReviewKeyError("");
+      setNoticeError(false);
+      setNotice("审核密钥已加密保存");
+    },
+    onError: (error) => setReviewKeyError(errorMessage(error, "保存审核密钥失败")),
+  });
+
   const removeMutation = useMutation({
     mutationFn: (model) => deleteAdminModel(model.id),
     onSuccess: () => {
@@ -1286,7 +1325,7 @@ function ModelsPage() {
   });
 
   return <div className="admin-page">
-    <SectionHeading title="模型管理" description="按适配协议接入模型；来源与默认地址由协议带出。" action={<button className="button button--primary" onClick={() => setEditing(null)}><Plus size={16} /> 接入模型</button>} />
+    <SectionHeading title="模型管理" description="按适配协议接入模型；来源与默认地址由协议带出。" action={<div className="admin-heading-actions"><button type="button" className="admin-date" onClick={() => { setReviewKeyError(""); setReviewKeyOpen(true); }}><KeyRound size={15} /> 配置审核密钥</button><button className="button button--primary" onClick={() => setEditing(null)}><Plus size={16} /> 接入模型</button></div>} />
     {notice && <div className={`admin-notice${noticeError ? " admin-notice--error" : ""}`}>{noticeError ? null : <Check size={15} />}{notice}<button aria-label="关闭提示" onClick={() => setNotice("")}><X size={14} /></button></div>}
     {modelsQuery.error && <div className="admin-notice admin-notice--error">{errorMessage(modelsQuery.error, "模型列表加载失败")}</div>}
     <div className="model-category-tabs" role="tablist" aria-label="模型类型">{categoryTabs.map((tab) => <button role="tab" aria-selected={category === tab.id} className={category === tab.id ? "active" : ""} key={tab.id} onClick={() => setCategory(tab.id)}>{tab.label}<span>{tab.id === "all" ? modelItems.length : modelItems.filter((item) => item.category === tab.id).length}</span></button>)}</div>
@@ -1310,6 +1349,7 @@ function ModelsPage() {
       }}
     />}
     {editing !== undefined && <ModelDialog model={editing} saving={saveMutation.isPending} onClose={() => setEditing(undefined)} onSave={(draft) => saveMutation.mutate(draft)} />}
+    {reviewKeyOpen && <ReviewKeyDialog status={reviewKeyQuery.data} saving={reviewKeyMutation.isPending} error={reviewKeyError} onClose={() => setReviewKeyOpen(false)} onSave={(payload) => reviewKeyMutation.mutate(payload)} />}
   </div>;
 }
 

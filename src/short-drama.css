@@ -871,7 +871,8 @@
   margin-left: auto;
 }
 .youxi-history-block__actions .youxi-history-upload,
-.youxi-history-block__actions .youxi-history-switch {
+.youxi-history-block__actions .youxi-history-switch,
+.youxi-history-block__actions .youxi-history-review {
   height: 34px;
   min-height: 34px;
   min-width: 0;
@@ -908,6 +909,24 @@
   border-color: #5462df;
   transform: none;
 }
+.youxi-history-block__actions .youxi-history-review {
+  color: #fff;
+  border: 1px solid #6572ed;
+  background: #6572ed;
+  cursor: pointer;
+}
+.youxi-history-block__actions .youxi-history-review:hover:not(:disabled) {
+  background: #5462df;
+  border-color: #5462df;
+}
+.youxi-history-block__actions .youxi-history-review.is-muted,
+.youxi-history-block__actions .youxi-history-review:disabled {
+  color: #fff;
+  border-color: #8b93a7;
+  background: #8b93a7;
+  opacity: 1;
+  cursor: not-allowed;
+}
 .youxi-history-block__actions .youxi-history-upload:disabled,
 .youxi-history-block__actions .youxi-history-switch:disabled {
   opacity: .45;
@@ -925,7 +944,8 @@
   gap: 6px;
 }
 .asset-generation-records--compact .youxi-history-block__actions .youxi-history-upload,
-.asset-generation-records--compact .youxi-history-block__actions .youxi-history-switch {
+.asset-generation-records--compact .youxi-history-block__actions .youxi-history-switch,
+.asset-generation-records--compact .youxi-history-block__actions .youxi-history-review {
   height: 28px;
   min-height: 28px;
   padding: 0 8px;
@@ -1049,8 +1069,13 @@
   color: #e1e7ef; border-color: #3a4553; background: #202832;
 }
 .console-shell[data-theme="dark"] .youxi-history-block__actions .youxi-history-switch.button,
-.console-shell[data-theme="dark"] .youxi-history-block__actions .youxi-history-switch {
+.console-shell[data-theme="dark"] .youxi-history-block__actions .youxi-history-switch,
+.console-shell[data-theme="dark"] .youxi-history-block__actions .youxi-history-review {
   color: #fff; border-color: #6572ed; background: #6572ed;
+}
+.console-shell[data-theme="dark"] .youxi-history-block__actions .youxi-history-review.is-muted,
+.console-shell[data-theme="dark"] .youxi-history-block__actions .youxi-history-review:disabled {
+  color: #fff; border-color: #6e7788; background: #6e7788; opacity: 1;
 }
 .console-shell[data-theme="dark"] .youxi-history-block__actions .youxi-history-upload:disabled,
 .console-shell[data-theme="dark"] .youxi-history-block__actions .youxi-history-switch:disabled {

@@ -27,19 +27,21 @@ import {
   deleteDramaAsset,
   deleteDramaAssetGeneration,
   extractDramaAssets,
+  fetchDramaArkReviewAvailability,
   fetchDramaAssetGenerations,
   fetchDramaAssets,
   fetchDramaImageModels,
   generateDramaAssetImage,
   importDramaAssetGeneration,
   lockDramaScript,
+  reviewDramaAsset,
   pollDramaAssetGenerate,
   selectDramaAssetGeneration,
   updateDramaAsset,
   uploadDramaAssetImage,
   uploadDramaAssetVoiceReference,
 } from "../../api/drama.js";
-import { MEDIA_THUMB_WIDTH, mediaUrl } from "../../lib/media.js";
+import { MEDIA_THUMB_WIDTH, mediaUrl, retryMediaOnce } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
 import { AssetPickerDialog } from "../AssetPickerDialog.jsx";
@@ -332,8 +334,27 @@ function SubjectInspector({
   onPreviewGeneration,
   onDeleteGeneration,
   onImportGeneration,
+  reviewing = false,
+  onReview,
+  reviewEnabled = false,
 }) {
   const voiceDescriptionChanged = (voiceLock || "").trim() !== (asset?.voiceLock || "").trim();
+  const currentGeneration = generations.find((item) => item.selected)
+    || generations.find((item) => item.storageKey && item.storageKey === asset?.imageStorageKey);
+  const reviewStatus = reviewing
+    ? "reviewing"
+    : currentGeneration?.arkReviewStatus === "Active"
+      ? "active"
+      : "idle";
+  const reviewError = reviewStatus === "idle" && currentGeneration?.arkReviewStatus === "Failed"
+    ? (currentGeneration.arkReviewError || "素材入库失败")
+    : "";
+  const characterReview = reviewEnabled && type === "角色" ? {
+    status: reviewStatus,
+    disabled: !asset?.imageStorageKey,
+    error: reviewError,
+    onClick: onReview,
+  } : null;
   const effectiveVoiceReferenceStatus = asset?.voiceReferenceUrl && voiceReferenceStatus.state === "ready"
     ? { ...voiceReferenceStatus, state: "success", label: "已绑定参考音频" }
     : voiceReferenceStatus;
@@ -489,11 +510,12 @@ function SubjectInspector({
                 mediaKind="image"
                 showImport
                 compactActions
-                busy={historyBusy || generating || busy}
+                busy={historyBusy || generating || busy || reviewing}
                 onSwitchClick={onSwitchFinal}
                 onPreview={onPreviewGeneration}
                 onDelete={onDeleteGeneration}
                 onImport={onImportGeneration}
+                review={characterReview}
               />
             )}
 
@@ -549,6 +571,11 @@ export function DramaAssetBoard({ series, episode }) {
     queryKey: ["drama-image-models"],
     queryFn: fetchDramaImageModels,
   });
+  const reviewAvailabilityQuery = useQuery({
+    queryKey: ["drama-ark-review"],
+    queryFn: fetchDramaArkReviewAvailability,
+  });
+  const reviewEnabled = reviewAvailabilityQuery.data?.configured === true;
   const assetsQuery = useQuery({
     queryKey: ["drama-assets", episodeId],
     queryFn: () => fetchDramaAssets(episodeId),
@@ -784,6 +811,20 @@ export function DramaAssetBoard({ series, episode }) {
       }
     } finally {
       markBusy(targetId, "upload", false);
+    }
+  }
+
+  async function reviewCharacter(asset) {
+    if (!asset?.id || !asset.imageStorageKey) return;
+    markBusy(asset.id, "review", true);
+    try {
+      await reviewDramaAsset(asset.id);
+      await invalidateAssetHistory(asset.id);
+    } catch (err) {
+      showToast(err.message);
+      await invalidateAssetHistory(asset.id);
+    } finally {
+      markBusy(asset.id, "review", false);
     }
   }
 
@@ -1069,7 +1110,7 @@ export function DramaAssetBoard({ series, episode }) {
                       <div className={`${!src ? "is-empty" : ""} ${generating ? "is-generating" : ""}`}>
                         {src ? (
                           <>
-                            <img key={src} src={src} alt={item.name} />
+                            <img key={src} src={src} alt={item.name} onError={retryMediaOnce} />
                             {badge ? <span>{badge}</span> : null}
                           </>
                         ) : (
@@ -1152,6 +1193,9 @@ export function DramaAssetBoard({ series, episode }) {
         generations={generations}
         generationsLoading={generationsQuery.isLoading}
         historyBusy={isBusy(selected?.id, "history")}
+        reviewing={isBusy(selected?.id, "review")}
+        reviewEnabled={reviewEnabled}
+        onReview={() => reviewCharacter(selected)}
         onSwitchFinal={() => setSwitchFinalOpen(true)}
         onPreviewGeneration={(record) => setPreview({
           src: mediaUrl(record.url || record.storageKey),
