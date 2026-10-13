@@ -54,10 +54,9 @@ const TYPES = [
   { id: "道具", label: "道具", Icon: Clapperboard },
 ];
 const RESOLUTIONS = ["1K", "2K"];
-const PROMPT_MAX = 4000;
 // 并发数与后端 DramaContract.MAX_ASSET_GENERATE 对齐：一次点击滚动跑完所有勾选资产。
 const BATCH_CONCURRENCY = 16;
-const emptyCreate = { name: "", meta: "", prompt: "" };
+const emptyCreate = { name: "", meta: "" };
 
 function sameAssetId(a, b) {
   if (a == null || b == null) return false;
@@ -198,8 +197,32 @@ function stateLabel(tag) {
   return "";
 }
 
+function isSkeletonIdentity(asset) {
+  const id = asset?.identityInvariants?.trim() || "";
+  if (!id) return true;
+  if (id.includes("外貌、发型、服装和年龄必须保持一致")) return true;
+  if (id.includes("与主身份同一张脸和发型")) return true;
+  return false;
+}
+
+function looksLikeImageTemplate(text) {
+  const value = (text || "").trim();
+  if (!value) return false;
+  return value.includes("角色设定图")
+    || value.includes("三视图")
+    || value.includes("固定四格")
+    || value.includes("场景概念图")
+    || value.includes("道具设定图")
+    || value.includes("只要这一个角色");
+}
+
+/** 外形设定：优先真实 identity；骨架时回退到非模板 description。 */
 function identityOf(asset) {
-  return asset?.identityInvariants?.trim() || "";
+  const id = asset?.identityInvariants?.trim() || "";
+  if (id && !isSkeletonIdentity(asset)) return id;
+  const desc = asset?.description?.trim() || "";
+  if (desc && !looksLikeImageTemplate(desc) && desc.length <= 220) return desc;
+  return id;
 }
 
 function cardMeta(asset) {
@@ -237,22 +260,15 @@ function SubjectCreateDialog({ type, pending, error, onClose, onCreate }) {
             />
           </label>
           <label>
-            设定摘要
-            <input
-              maxLength={256}
-              value={form.meta}
-              onChange={(event) => setForm({ ...form, meta: event.target.value })}
-              placeholder={`补充${type}身份、环境或用途`}
-            />
-          </label>
-          <label>
-            图片提示词
+            外形设定
             <textarea
               rows={5}
-              maxLength={PROMPT_MAX}
-              value={form.prompt}
-              onChange={(event) => setForm({ ...form, prompt: event.target.value })}
-              placeholder="可留空，创建后会按风格自动生成可改的设定图提示词。入梦、换装请另建一条。"
+              maxLength={512}
+              value={form.meta}
+              onChange={(event) => setForm({ ...form, meta: event.target.value })}
+              placeholder={type === "角色"
+                ? "例：女性；青年；短发；清秀面容；浅色衬衫。构图与风格由系统自动附加。"
+                : `补充${type}外形、空间或材质要点。构图与风格由系统自动附加。`}
             />
           </label>
           {error && <p className="drama-form-error">{error}</p>}
@@ -315,10 +331,6 @@ function SubjectInspector({
   onSummaryChange,
   onSummaryBlur,
   onSummarySave,
-  onPromptChange,
-  onPromptSave,
-  promptChanged,
-  promptSaving,
   onResolution,
   onCiteClick,
   onUploadClick,
@@ -379,23 +391,31 @@ function SubjectInspector({
             </label>
 
             <div className="youxi-prompt-block">
-              <label className="youxi-field">
-                <span>图片提示词</span>
+              <label className="youxi-field youxi-field--summary">
+                <span>外形设定</span>
                 <textarea
-                  value={prompt}
-                  maxLength={PROMPT_MAX}
-                  onChange={onPromptChange}
-                  placeholder="提取后会自动带出设定图提示词，可按角色/场景/道具继续改"
+                  rows={8}
+                  maxLength={512}
+                  value={summaryDraft}
+                  onChange={onSummaryChange}
+                  onBlur={onSummaryBlur}
+                  placeholder={type === "角色"
+                    ? "例：20岁，女，杏眼，黑色短发，白色圆领T恤，深蓝工装背心，深色长裤。须含性别、年龄、长相、衣着。"
+                    : `${type}可复用的外形、空间或材质要点`}
                 />
               </label>
-              <div className="field-count">{(prompt || "").length} / {PROMPT_MAX}</div>
+              <div className="field-count">{(summaryDraft || "").length} / 512</div>
+              <p className="youxi-prompt-hint">
+                此处只编辑性别、年龄、长相、衣着等角色信息（主展示，不会折叠）。
+                三视图构图与视觉风格由系统在生图时自动附加。
+              </p>
               <button
-                className={`button youxi-prompt-save ${promptChanged ? "button--primary" : ""}`}
+                className={`button youxi-prompt-save ${summaryChanged ? "button--primary" : ""}`}
                 type="button"
-                disabled={!promptChanged || generating || busy || promptSaving}
-                onClick={onPromptSave}
+                disabled={!summaryChanged || generating || busy || summarySaving}
+                onClick={onSummarySave}
               >
-                <Save size={14} /> {promptSaving ? "保存中…" : "保存修改"}
+                <Save size={14} /> {summarySaving ? "保存中…" : "保存外形设定"}
               </button>
             </div>
 
@@ -436,27 +456,10 @@ function SubjectInspector({
               </section>
             )}
 
-            <div className="youxi-prompt-block">
-              <label className="youxi-field youxi-field--summary">
-                <span>设定摘要</span>
-                <textarea
-                  rows={3}
-                  maxLength={512}
-                  value={summaryDraft}
-                  onChange={onSummaryChange}
-                  onBlur={onSummaryBlur}
-                  placeholder={`${type}身份、外形或用途，入梦/换装须独立成条`}
-                />
-              </label>
-              <button
-                className={`button youxi-prompt-save ${summaryChanged ? "button--primary" : ""}`}
-                type="button"
-                disabled={!summaryChanged || generating || busy || summarySaving}
-                onClick={onSummarySave}
-              >
-                <Save size={14} /> {summarySaving ? "保存中…" : "保存摘要"}
-              </button>
-            </div>
+            <details className="youxi-prompt-advanced">
+              <summary>完整生图提示词（系统自动拼装，只读）</summary>
+              <pre className="youxi-prompt-compiled">{prompt || "保存外形设定或生图后可在此预览完整提示词"}</pre>
+            </details>
 
             <div className="youxi-field youxi-resolution-field">
               <span>分辨率</span>
@@ -550,7 +553,6 @@ export function DramaAssetBoard({ series, episode }) {
   const [imageLibraryError, setImageLibraryError] = useState("");
   const [voiceTarget, setVoiceTarget] = useState(null);
   const [voicePending, setVoicePending] = useState([]);
-  const [promptDirty, setPromptDirty] = useState(false);
   const [summaryDirty, setSummaryDirty] = useState(false);
   const [batchAssetIds, setBatchAssetIds] = useState(() => new Set());
   const [busy, setBusy] = useState({});
@@ -637,7 +639,6 @@ export function DramaAssetBoard({ series, episode }) {
   }, [filtered, selected, selectedId]);
 
   useEffect(() => {
-    setPromptDirty(false);
     setSummaryDirty(false);
     setNameDraft(selected?.name || "");
     setSummaryDraft(identityOf(selected));
@@ -646,9 +647,8 @@ export function DramaAssetBoard({ series, episode }) {
   }, [selected?.id]);
 
   useEffect(() => {
-    if (!selected || promptDirty) return;
     setPromptDraft(promptOf(selected));
-  }, [selected?.imagePrompt, selected?.identityInvariants, selected?.description, promptDirty]);
+  }, [selected?.imagePrompt, selected?.description]);
 
   useEffect(() => {
     if (summaryDirty) return;
@@ -688,7 +688,7 @@ export function DramaAssetBoard({ series, episode }) {
   const extractMutation = useMutation({
     mutationFn: () => extractDramaAssets(episodeId),
     onSuccess: () => {
-      setPromptDirty(false);
+      setSummaryDirty(false);
       invalidate();
     },
     onError: (err) => showToast(err.message),
@@ -704,7 +704,6 @@ export function DramaAssetBoard({ series, episode }) {
       type,
       description: form.meta.trim() || undefined,
       identityInvariants: form.meta.trim() || undefined,
-      imagePrompt: form.prompt.trim() || undefined,
     }),
     onSuccess: (created) => {
       setCreating(false);
@@ -714,23 +713,21 @@ export function DramaAssetBoard({ series, episode }) {
   });
 
   async function saveFields(asset, extra = {}) {
-    const imagePrompt = (extra.imagePrompt ?? (asset.id === selected?.id ? promptDraft : promptOf(asset))).trim();
     const name = (extra.name ?? (asset.id === selected?.id ? nameDraft : asset.name)).trim();
     const identity = (extra.identityInvariants ?? (asset.id === selected?.id ? summaryDraft : identityOf(asset))).trim();
     await updateDramaAsset(asset.id, {
       name,
-      imagePrompt,
       identityInvariants: identity,
     });
-    setPromptDirty(false);
+    setSummaryDirty(false);
   }
 
   async function generate(asset) {
-    const imagePrompt = (asset.id === selected?.id ? promptDraft : promptOf(asset)).trim();
-    if (!imagePrompt) return;
     markBusy(asset.id, "generate", true);
     try {
-      await saveFields(asset, { imagePrompt });
+      if (asset.id === selected?.id && summaryChanged) {
+        await saveFields(asset);
+      }
       const result = await generateDramaAssetImage(asset.id, { resolution });
       await pollDramaAssetGenerate(asset.id, result.task.id);
       invalidate();
@@ -745,12 +742,10 @@ export function DramaAssetBoard({ series, episode }) {
       showToast("请先勾选要生成的资产");
       return;
     }
-    const queue = checkedAssets.filter((item) => {
-      const imagePrompt = (item.id === selected?.id ? promptDraft : promptOf(item)).trim();
-      return imagePrompt && !item.generating && !isBusy(item.id, "generate");
-    });
+    // 方案 A：生图由后端按外形设定拼模板，不再要求库里已有整段 imagePrompt。
+    const queue = checkedAssets.filter((item) => !item.generating && !isBusy(item.id, "generate"));
     if (!queue.length) {
-      showToast("勾选的资产没有可生成的图片");
+      showToast("勾选的资产正在生成中，请稍后再试");
       return;
     }
     const limitRetries = new Map();
@@ -985,7 +980,6 @@ export function DramaAssetBoard({ series, episode }) {
   const modelBound = Boolean(imageModelId);
   const selectedBusy = isBusy(selected?.id, "lock") || isBusy(selected?.id, "save") || isBusy(selected?.id, "upload");
   const selectedGenerating = Boolean(selected?.generating) || isBusy(selected?.id, "generate");
-  const promptChanged = Boolean(selected) && promptDraft.trim() !== promptOf(selected).trim();
   const summaryChanged = Boolean(selected) && summaryDraft.trim() !== identityOf(selected);
 
   async function saveSummary() {
@@ -997,17 +991,6 @@ export function DramaAssetBoard({ series, episode }) {
       setSummaryDirty(false);
     } finally {
       markBusy(selected.id, "summary", false);
-    }
-  }
-
-  async function savePrompt() {
-    if (!selected || !promptChanged) return;
-    markBusy(selected.id, "save", true);
-    try {
-      await saveFields(selected, { imagePrompt: promptDraft });
-      invalidate();
-    } finally {
-      markBusy(selected.id, "save", false);
     }
   }
 
@@ -1035,7 +1018,7 @@ export function DramaAssetBoard({ series, episode }) {
                 setType(item.id);
                 const first = assets.find((asset) => asset.type === item.id);
                 setSelectedId(first?.id || null);
-                setPromptDirty(false);
+                setSummaryDirty(false);
               }}
             >
               <item.Icon size={16} />
@@ -1044,7 +1027,7 @@ export function DramaAssetBoard({ series, episode }) {
             </button>
           ))}
         </div>
-        <p>在三个标签页中管理全剧统一使用的角色、场景与道具。提取后会带出可改的图片提示词。</p>
+        <p>在三个标签页中管理全剧统一使用的角色、场景与道具。外形设定展示性别、年龄、长相、衣着；构图与风格由系统在生图时自动附加。</p>
       </aside>
 
       <section className="youxi-subject-main">
@@ -1131,7 +1114,6 @@ export function DramaAssetBoard({ series, episode }) {
               {filtered.map((item) => {
                 const src = mediaUrl(item.imageStorageKey || item.imageUrl, { w: MEDIA_THUMB_WIDTH });
                 const generating = Boolean(item.generating) || isBusy(item.id, "generate");
-                const cardPrompt = (item.id === selected?.id ? promptDraft : promptOf(item)).trim();
                 const badge = generating ? "生成中" : statusLabel(item.status);
                 const meta = cardMeta(item);
                 return (
@@ -1143,8 +1125,8 @@ export function DramaAssetBoard({ series, episode }) {
                           type="button"
                           className="youxi-subject-card__gen"
                           aria-label={generating ? "生成中" : item.imageStorageKey ? `重新生成${item.name}` : `生成${item.name}图片`}
-                          disabled={!modelBound || generating || !cardPrompt || isBusy(item.id, "delete")}
-                          title={!modelBound ? "先选择顶部图像模型" : !cardPrompt ? "先填写图片提示词" : (item.imageStorageKey ? "按当前提示词重新生成设定图" : "生成设定图")}
+                          disabled={!modelBound || generating || isBusy(item.id, "delete")}
+                          title={!modelBound ? "先选择顶部图像模型" : (item.imageStorageKey ? "按当前外形设定重新生成设定图" : "按外形设定生成设定图")}
                           onClick={(event) => {
                             event.stopPropagation();
                             setSelectedId(item.id);
@@ -1222,8 +1204,6 @@ export function DramaAssetBoard({ series, episode }) {
         summaryDraft={summaryDraft}
         generating={selectedGenerating}
         busy={selectedBusy}
-        promptChanged={promptChanged}
-        promptSaving={isBusy(selected?.id, "save")}
         summaryChanged={summaryChanged}
         summarySaving={isBusy(selected?.id, "summary")}
         onNameChange={(event) => setNameDraft(event.target.value)}
@@ -1246,11 +1226,6 @@ export function DramaAssetBoard({ series, episode }) {
             .catch((err) => showToast(err.message));
         }}
         onSummarySave={() => saveSummary().catch((err) => showToast(err.message))}
-        onPromptChange={(event) => {
-          setPromptDirty(true);
-          setPromptDraft(event.target.value);
-        }}
-        onPromptSave={() => savePrompt().catch((err) => showToast(err.message))}
         onResolution={setResolution}
         onCiteClick={() => {
           setImageLibraryError("");

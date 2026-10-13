@@ -1599,8 +1599,9 @@ button.asset-card__preview {
 .drama-prompt-field__count { flex: 0 0 auto; margin-left: 8px; color: var(--muted); font-size: 11px; font-weight: 500; font-style: normal; }
 
 .drama-dialog--prompt {
-  width: min(960px, 96vw);
-  max-height: min(92vh, 900px);
+  width: min(1480px, 92vw);
+  height: min(88vh, 980px);
+  max-height: min(88vh, 980px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1629,10 +1630,10 @@ button.asset-card__preview {
 .drama-prompt-editor textarea {
   flex: 1 1 auto;
   width: 100%;
-  min-height: min(52vh, 520px);
+  min-height: 0;
   max-height: none;
   padding: 14px 16px;
-  resize: vertical;
+  resize: none;
   border: 1px solid #dfe3e7;
   border-radius: 10px;
   outline: 0;
