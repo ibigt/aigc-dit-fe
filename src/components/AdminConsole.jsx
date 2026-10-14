@@ -104,6 +104,7 @@ const ADAPTER_OPTIONS = [
   { key: "seedance-2.5", label: "Seedance 2.5", category: "video", provider: "官方API", providers: ["官方API", "官方API（token plan）"], defaultEndpoint: "https://ark.cn-beijing.volces.com/api/v3", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "doubao-seedance-2-5-260628" },
   { key: "minimax-h3", label: "MiniMax-H3", category: "video", provider: "官方API", providers: ["官方API", "ComfyUI"], defaultEndpoint: "https://api.minimax.cn", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "MiniMax-H3" },
   { key: "agnes-video-2.5", label: "Agnes Video 2.5", category: "video", provider: "官方API", defaultEndpoint: "https://api.agnes-ai.cn/v1", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "agnes-video-2.5-flash" },
+  { key: "wan3", label: "Wan 3.0", category: "video", provider: "官方API", defaultEndpoint: "https://dashscope.aliyuncs.com/api/v1", modes: ["t2v", "r2v", "i2v"], defaultPaths: {}, defaultModelKey: "wan3.0-video" },
   { key: "minimax-speech", label: "MiniMax Speech", category: "audio", provider: "官方API", defaultEndpoint: "https://api.minimax.cn/v1/t2a_v2", modes: ["t2a"], defaultPaths: {}, defaultModelKey: "speech-2.8-hd" },
   { key: "openai-speech", label: "OpenAI 兼容语音", category: "audio", provider: "自定义配置", defaultEndpoint: "https://api.openai.com/v1", modes: ["t2a"], defaultPaths: {}, defaultModelKey: "gpt-4o-mini-tts" },
   { key: "agnes-text", label: "Agnes 对话", category: "text", provider: "官方API", defaultEndpoint: "https://api.agnes-ai.cn/v1", modes: [], defaultPaths: {}, defaultModelKey: "agnes-2.5-flash" },
@@ -205,6 +206,7 @@ function isMiniMaxSpeech(adapterKey) {
 
 function audioCapabilityOf(model) {
   if (model?.category !== "video") return { supported: false, max: 0, audioOnly: false };
+  if (model.adapterKey === "wan3") return { supported: true, max: 5, audioOnly: false };
   if (typeof model.supportsAudioReference === "boolean") {
     return {
       supported: model.supportsAudioReference,
@@ -284,6 +286,9 @@ function officialHint(adapterKey, isText, provider) {
   if (adapterKey === "seedream-5.0") {
     return "来源为官方API（token plan），地址 /api/plan/v3。模型标识默认 doubao-seedream-5.0-lite，也可改为 doubao-seedream-5.0-pro 等控制台给出的名。Key 用订阅页专属 Key。";
   }
+  if (adapterKey === "wan3") {
+    return "来源为官方API，地址填你百炼工作区的实际调用地址（形如 https://[workspace-id].cn-beijing.maas.aliyuncs.com/api/v1）。模型标识 wan3.0-video。Key 用阿里云百炼 DashScope API Key。";
+  }
   return seedanceOfficialHint(adapterKey, isText, provider);
 }
 
@@ -320,6 +325,7 @@ function inferAdapterKey(model) {
   if (key.includes("seedance-2.5") || key.includes("seedance-2-5") || key.includes("doubao-seedance-2-5")) return "seedance-2.5";
   if (key.includes("doubao-seedance-2-0") || key.includes("doubao-seedance-2.0") || key.includes("seedance-2-0-fast") || key.includes("seedance-2.0-fast") || provider.includes("ark") || provider.includes("火山") || provider.includes("方舟")) return "seedance-2.0";
   if (key.includes("agnes")) return "agnes-video-2.5";
+  if (key.includes("wan3") || key.includes("wan-3") || provider.includes("dashscope")) return "wan3";
   if (provider.includes("sglang") && category === "video") return "minimax-h3-sglang";
   if (key.includes("minimax") || (provider.includes("comfy") && category === "video")) return "minimax-h3";
   if (key.includes("seedance") || (provider.includes("running") && category === "video")) return "seedance-2";
@@ -345,7 +351,7 @@ const MODEL_LOGO_CATALOG = [
   { file: "/model-logos/midjourney.svg", label: "Midjourney / Niji", keys: ["midjourney", "niji"] },
   { file: "/model-logos/qwen-color.svg", label: "通义千问", keys: ["qwen", "tongyi", "千问"] },
   { file: "/model-logos/kling-color.svg", label: "可灵", keys: ["kling", "可灵"] },
-  { file: "/model-logos/alibabacloud-color.svg", label: "阿里 / 万相", keys: ["wan2", "wan-", "万相", "alibaba", "aliyun"] },
+  { file: "/model-logos/alibabacloud-color.svg", label: "阿里 / 万相", keys: ["wan2", "wan3", "wan-", "万相", "alibaba", "aliyun"] },
   { file: "/model-logos/minimax-color.svg", label: "MiniMax", keys: ["minimax"] },
   { file: "/model-logos/hailuo-color.svg", label: "海螺", keys: ["hailuo", "海螺"] },
   { file: "/model-logos/runway.svg", label: "Runway", keys: ["runway", "aleph"] },

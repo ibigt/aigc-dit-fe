@@ -16,6 +16,7 @@ function adapterProviders(adapter) {
   if (adapter?.key === "seedance-2.0" || adapter?.key === "seedance-2.5") {
     return ["官方API", OFFICIAL_TOKEN_PLAN];
   }
+  if (adapter?.key === "wan3") return ["官方API"];
   return adapter?.provider ? [adapter.provider] : [];
 }
 
@@ -35,6 +36,7 @@ export function audioFormatsForAdapter(adapterKey) {
 }
 
 export function adapterSpecificFields(adapterKey, provider) {
+  if (adapterKey === "wan3") return ["generateAudio"];
   if (adapterKey === "minimax-h3-sglang") return ["shortEdge", "numInferenceSteps", "flowShift", "audioFlowShift", "seed"];
   if ((adapterKey === "seedance-2.0" || adapterKey === "seedance-2.5") && String(provider || "").startsWith("官方API")) {
     return ["generateAudio"];

@@ -9,6 +9,7 @@ export function BatchGenerateModal({
   open,
   onClose,
   onConfirm,
+  supportsR2v = true,
   supportsI2v,
   selectionHasFirstInChapter,
   busy = false,
@@ -17,14 +18,15 @@ export function BatchGenerateModal({
   const [chainPrevTail, setChainPrevTail] = useState(false);
   const [i2vFirstFrameMode, setI2vFirstFrameMode] = useState("auto");
   const [firstShotAutoStill, setFirstShotAutoStill] = useState(true);
+  const defaultMode = supportsR2v ? "r2v" : "i2v";
 
   useEffect(() => {
     if (!open) return;
-    setMode("r2v");
+    setMode(defaultMode);
     setChainPrevTail(false);
     setI2vFirstFrameMode("auto");
     setFirstShotAutoStill(true);
-  }, [open]);
+  }, [open, defaultMode]);
 
   if (!open) return null;
 
@@ -66,7 +68,9 @@ export function BatchGenerateModal({
               disabled={busy}
               onChange={(event) => setMode(event.target.value)}
             >
-              <option value="r2v">参考图</option>
+              <option value="r2v" disabled={!supportsR2v}>
+                {supportsR2v ? "参考图" : "参考图（当前模型不支持）"}
+              </option>
               <option value="i2v" disabled={!supportsI2v}>
                 {supportsI2v ? "首尾帧" : "首尾帧（当前模型不支持）"}
               </option>

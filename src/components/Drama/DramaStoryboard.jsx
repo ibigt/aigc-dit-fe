@@ -361,6 +361,7 @@ function ShotInspector({
   lockedAssets,
   generateMode,
   chainPrevTail,
+  supportsR2v = true,
   supportsI2v,
   firstInChapter,
   onSave,
@@ -506,7 +507,9 @@ function ShotInspector({
                 onSave(selected, payload).catch(() => {});
               }}
             >
-              <option value="r2v">参考图</option>
+              <option value="r2v" disabled={!supportsR2v}>
+                {supportsR2v ? "参考图" : "参考图（当前模型不支持）"}
+              </option>
               <option value="i2v" disabled={!supportsI2v || firstInChapter}>
                 {firstInChapter
                   ? "首尾帧（场内第一镜不可用）"
@@ -1961,6 +1964,7 @@ export function DramaStoryboard({ series, episode }) {
         lockedAssets={lockedAssets}
         generateMode={generateMode}
         chainPrevTail={chainPrevTail}
+        supportsR2v={selectedVideoModel?.supportsR2v !== false}
         supportsI2v={supportsI2v}
         firstInChapter={firstInChapter}
         onSave={saveShot}
@@ -2058,6 +2062,7 @@ export function DramaStoryboard({ series, episode }) {
         open={batchModalOpen}
         onClose={() => !batchSubmitting && setBatchModalOpen(false)}
         onConfirm={confirmBatchGenerate}
+        supportsR2v={selectedVideoModel?.supportsR2v !== false}
         supportsI2v={supportsI2v}
         selectionHasFirstInChapter={selectionHasFirstInChapter}
         busy={batchSubmitting}
