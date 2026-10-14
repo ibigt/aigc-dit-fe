@@ -202,7 +202,23 @@ function isSkeletonIdentity(asset) {
   if (!id) return true;
   if (id.includes("外貌、发型、服装和年龄必须保持一致")) return true;
   if (id.includes("与主身份同一张脸和发型")) return true;
+  if (id.includes("空间结构、陈设与光影氛围必须保持一致")) return true;
+  if (id.includes("外形、材质与标志性细节必须保持一致")) return true;
   return false;
+}
+
+function isCharacterIdentityMisapplied(asset) {
+  const type = asset?.type;
+  if (type === "角色" || !type) return false;
+  const id = asset?.identityInvariants?.trim() || "";
+  return id.includes("外貌、发型、服装和年龄必须保持一致")
+    || id.includes("与主身份同一张脸和发型");
+}
+
+function settingLabel(type) {
+  if (type === "场景") return "场景设定";
+  if (type === "道具") return "道具设定";
+  return "外形设定";
 }
 
 function looksLikeImageTemplate(text) {
@@ -216,13 +232,19 @@ function looksLikeImageTemplate(text) {
     || value.includes("只要这一个角色");
 }
 
-/** 外形设定：优先真实 identity；骨架时回退到非模板 description。 */
+/** 设定摘要：只展示真实内容；骨架空话 / 误套角色句一律视为未生成。 */
 function identityOf(asset) {
   const id = asset?.identityInvariants?.trim() || "";
-  if (id && !isSkeletonIdentity(asset)) return id;
+  if (id && !isSkeletonIdentity(asset) && !isCharacterIdentityMisapplied(asset)) return id;
   const desc = asset?.description?.trim() || "";
-  if (desc && !looksLikeImageTemplate(desc) && desc.length <= 220) return desc;
-  return id;
+  if (desc && !looksLikeImageTemplate(desc) && desc.length <= 220 && !isSkeletonIdentity({ identityInvariants: desc })) {
+    // 场景/道具不要把角色外貌短句当设定展示。
+    if (asset?.type !== "角色" && (desc.includes("外貌") || desc.includes("发型"))) {
+      return "";
+    }
+    return desc;
+  }
+  return "";
 }
 
 function cardMeta(asset) {
@@ -260,7 +282,7 @@ function SubjectCreateDialog({ type, pending, error, onClose, onCreate }) {
             />
           </label>
           <label>
-            外形设定
+            {settingLabel(type)}
             <textarea
               rows={5}
               maxLength={512}
@@ -268,7 +290,9 @@ function SubjectCreateDialog({ type, pending, error, onClose, onCreate }) {
               onChange={(event) => setForm({ ...form, meta: event.target.value })}
               placeholder={type === "角色"
                 ? "例：女性；青年；短发；清秀面容；浅色衬衫。构图与风格由系统自动附加。"
-                : `补充${type}外形、空间或材质要点。构图与风格由系统自动附加。`}
+                : type === "场景"
+                  ? "例：开放式办公区，玻璃隔断，夕阳侧光，地面反光。构图与风格由系统自动附加。"
+                  : "例：金属外壳磨损，侧面有划痕，可手持。构图与风格由系统自动附加。"}
             />
           </label>
           {error && <p className="drama-form-error">{error}</p>}
@@ -392,7 +416,7 @@ function SubjectInspector({
 
             <div className="youxi-prompt-block">
               <label className="youxi-field youxi-field--summary">
-                <span>外形设定</span>
+                <span>{settingLabel(type)}</span>
                 <textarea
                   rows={8}
                   maxLength={512}
@@ -401,13 +425,20 @@ function SubjectInspector({
                   onBlur={onSummaryBlur}
                   placeholder={type === "角色"
                     ? "例：20岁，女，杏眼，黑色短发，白色圆领T恤，深蓝工装背心，深色长裤。须含性别、年龄、长相、衣着。"
-                    : `${type}可复用的外形、空间或材质要点`}
+                    : type === "场景"
+                      ? "例：开放式办公区，玻璃隔断与工位，夕阳侧光，地面轻微反光。只写空间与陈设，不要人物外貌。"
+                      : "例：金属外壳磨损，侧面划痕，可手持。只写外形材质，不要人物外貌。"}
                 />
               </label>
               <div className="field-count">{(summaryDraft || "").length} / 512</div>
               <p className="youxi-prompt-hint">
-                此处只编辑性别、年龄、长相、衣着等角色信息（主展示，不会折叠）。
-                三视图构图与视觉风格由系统在生图时自动附加。
+                {!summaryDraft && (isSkeletonIdentity(asset) || isCharacterIdentityMisapplied(asset))
+                  ? "设定仍在生成或待补全，请稍候刷新；也可直接手写完整设定后保存。"
+                  : type === "角色"
+                    ? "此处只编辑性别、年龄、长相、衣着等角色信息（主展示，不会折叠）。三视图构图与视觉风格由系统在生图时自动附加。"
+                    : type === "场景"
+                      ? "此处只编辑空间结构、陈设与光影氛围，不要填写外貌、发型、服装或年龄。构图与风格由系统在生图时自动附加。"
+                      : "此处只编辑外形、材质与标志性细节，不要填写人物外貌。构图与风格由系统在生图时自动附加。"}
               </p>
               <button
                 className={`button youxi-prompt-save ${summaryChanged ? "button--primary" : ""}`}
@@ -415,7 +446,7 @@ function SubjectInspector({
                 disabled={!summaryChanged || generating || busy || summarySaving}
                 onClick={onSummarySave}
               >
-                <Save size={14} /> {summarySaving ? "保存中…" : "保存外形设定"}
+                <Save size={14} /> {summarySaving ? "保存中…" : `保存${settingLabel(type)}`}
               </button>
             </div>
 
@@ -584,6 +615,12 @@ export function DramaAssetBoard({ series, episode }) {
     queryKey: ["drama-assets", episodeId],
     queryFn: () => fetchDramaAssets(episodeId),
     enabled: Boolean(episodeId),
+    // 若仍有骨架空话（增强失败或旧数据），短时轮询等待补全。
+    refetchInterval: (query) => {
+      const list = query.state.data || [];
+      const pending = list.some((item) => isSkeletonIdentity(item) || isCharacterIdentityMisapplied(item));
+      return pending ? 2500 : false;
+    },
   });
   const voiceLibraryQuery = useQuery({
     queryKey: ["assets", "audio", ""],
@@ -645,6 +682,12 @@ export function DramaAssetBoard({ series, episode }) {
     setPromptDraft(promptOf(selected));
     setVoiceLockDraft(selected?.voiceLock || "");
   }, [selected?.id]);
+
+  // 分析增强完成后同一资产 id 会补上详细设定；未手改时同步刷新展示。
+  useEffect(() => {
+    if (summaryDirty) return;
+    setSummaryDraft(identityOf(selected));
+  }, [selected?.id, selected?.identityInvariants, selected?.description, summaryDirty]);
 
   useEffect(() => {
     setPromptDraft(promptOf(selected));
@@ -1027,7 +1070,7 @@ export function DramaAssetBoard({ series, episode }) {
             </button>
           ))}
         </div>
-        <p>在三个标签页中管理全剧统一使用的角色、场景与道具。外形设定展示性别、年龄、长相、衣着；构图与风格由系统在生图时自动附加。</p>
+        <p>在三个标签页中管理全剧统一使用的角色、场景与道具。角色填外形，场景填空间陈设，道具填材质细节；构图与风格由系统在生图时自动附加。</p>
       </aside>
 
       <section className="youxi-subject-main">

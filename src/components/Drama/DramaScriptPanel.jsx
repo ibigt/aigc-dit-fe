@@ -47,17 +47,17 @@ function sameSettings(left, right) {
 }
 
 const ANALYSIS_STAGES = [
-  { label: "读取剧本", detail: "正在识别人物、场景和剧情结构…", progress: 22 },
-  { label: "生成分场", detail: "正在把原文整理为可编辑的分场剧本…", progress: 58 },
-  { label: "落库资产", detail: "正在写入角色、场景和道具骨架…", progress: 82 },
-  { label: "收尾", detail: "正在锁定分场，随后后台增强资产并拆镜…", progress: 94 },
+  { label: "读取剧本", detail: "正在识别人物、场景和剧情结构…", progress: 18 },
+  { label: "生成分场", detail: "正在把原文整理为可编辑的分场剧本…", progress: 42 },
+  { label: "生成资产设定", detail: "正在生成角色外形、场景与道具设定…", progress: 72 },
+  { label: "收尾", detail: "正在锁定结果并排队后台拆镜…", progress: 92 },
 ];
 
 function analysisStage(elapsed) {
-  // 同步路径主要为整本分场 LLM；资产骨架本地很快，假进度对齐新阶段化节奏。
-  if (elapsed < 6) return ANALYSIS_STAGES[0];
-  if (elapsed < 28) return ANALYSIS_STAGES[1];
-  if (elapsed < 40) return ANALYSIS_STAGES[2];
+  // 同步路径含分场 LLM + 资产设定增强；假进度覆盖更长等待。
+  if (elapsed < 8) return ANALYSIS_STAGES[0];
+  if (elapsed < 35) return ANALYSIS_STAGES[1];
+  if (elapsed < 90) return ANALYSIS_STAGES[2];
   return ANALYSIS_STAGES[3];
 }
 
@@ -143,7 +143,7 @@ export function DramaScriptPanel({
       setAnalysis(result);
       setAnalysisStartedAt(null);
       refreshSeries();
-      // 资产 LLM 增强与拆镜在后台：短时轮询，便于首屏后看到描述补全与分镜进度。
+      // 拆镜在后台：短时轮询分镜进度；资产设定已在分析同步阶段生成。
       const epId = episode?.id;
       if (!epId) return;
       let ticks = 0;
