@@ -8,7 +8,7 @@ export const DRAMA_STYLES = [
   },
   {
     key: "live-realism",
-    name: "真人写实风",
+    name: "现代写实风",
     category: "realistic",
     cover: "/drama/styles/live-realism.jpg",
     fallback: "/drama/styles/live-realism.svg",
@@ -54,13 +54,6 @@ export const DRAMA_STYLES = [
     category: "anime",
     cover: "/drama/styles/rural.jpg",
     fallback: "/drama/styles/rural.svg",
-  },
-  {
-    key: "realistic-3d",
-    name: "真人3D风",
-    category: "realistic",
-    cover: "/drama/styles/realistic-3d.jpg",
-    fallback: "/drama/styles/realistic-3d.svg",
   },
   {
     key: "guofeng-3d",
