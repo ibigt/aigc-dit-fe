@@ -31,6 +31,8 @@ import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 import { isRetryableRequestError } from "../../api/client.js";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
 import { BatchGenerateModal } from "./BatchGenerateModal.jsx";
+import { PromptChipEditor } from "./PromptChipEditor.jsx";
+import { parsePromptToTokens } from "../../lib/promptChips.js";
 import { GenerationHistoryPanel, SwitchFinalModal } from "./GenerationHistoryPanel.jsx";
 import { VideoLightbox } from "./VideoLightbox.jsx";
 
@@ -410,6 +412,10 @@ function ShotInspector({
   }
   const refs = pictureRefs(selected);
   const cast = castOf(selected);
+  const plainTextLength = useMemo(
+    () => parsePromptToTokens(promptDraft).reduce((sum, t) => sum + (t.kind === "text" ? (t.value || "").length : 0), 0),
+    [promptDraft],
+  );
   const chips = [
     ...cast.characterNames.map((name) => ({ key: "characterNames", label: "角色", name })),
     ...(cast.locationName ? [{ key: "locationName", label: "场景", name: cast.locationName }] : []),
@@ -847,14 +853,15 @@ function ShotInspector({
             <div className="drama-prompt-editor">
               <div className="drama-prompt-editor__meta">
                 <span>提交给视频模型的完整提示词</span>
-                <em>{promptDraft.length} 字</em>
+                <em>{plainTextLength} 字</em>
               </div>
-              <textarea
+              <PromptChipEditor
                 ref={promptEditorRef}
                 value={promptDraft}
+                lockedAssets={lockedAssets}
+                refs={refs}
                 disabled={savingPrompt}
-                onChange={(event) => setPromptDraft(event.target.value)}
-                placeholder="输入本镜完整视频提示词"
+                onChange={setPromptDraft}
               />
             </div>
             <footer className="drama-dialog__actions">

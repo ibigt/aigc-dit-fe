@@ -1641,6 +1641,196 @@ button.asset-card__preview {
   color: #263140;
   font: 13px/1.75 inherit;
 }
+
+/* contentEditable 表面（替换弹窗内 textarea） */
+.drama-prompt-editor__surface {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: min(52vh, 520px);
+  padding: 14px 16px;
+  border: 1px solid #dfe3e7;
+  border-radius: 10px;
+  outline: 0;
+  background: #fff;
+  color: #263140;
+  font: 13px/1.75 inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+  cursor: text;
+  caret-color: #6572ed;
+}
+.drama-prompt-editor__surface:focus {
+  border-color: #6572ed;
+  box-shadow: 0 0 0 2px rgba(101, 114, 237, .12);
+}
+.drama-prompt-editor__surface[data-disabled="true"] {
+  background: #f6f7fa;
+  color: #3d4654;
+  cursor: default;
+}
+.drama-prompt-editor__surface:empty::before {
+  content: attr(data-placeholder);
+  color: #aab2bd;
+  pointer-events: none;
+}
+
+/* chip 内联元素（contentEditable=false，浏览器不会选中） */
+.drama-prompt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 2px;
+  padding: 2px 6px 2px 2px;
+  border: 1px solid #6572ed;
+  border-radius: 7px;
+  background: #eef0fc;
+  color: #263140;
+  font-size: 12px;
+  line-height: 1.2;
+  vertical-align: baseline;
+  user-select: none;
+  cursor: default;
+  white-space: nowrap;
+}
+.drama-prompt-chip__thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  flex: 0 0 22px;
+  background: #e8ebf0 center/cover no-repeat;
+  border: 0;
+  padding: 0;
+  cursor: zoom-in;
+  display: block;
+  overflow: hidden;
+}
+.drama-prompt-chip__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.drama-prompt-chip__label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #6572ed;
+}
+.drama-prompt-chip__name {
+  font-size: 12px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.drama-prompt-chip__close {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.05);
+  color: #6b7480;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  line-height: 1;
+}
+.drama-prompt-chip__close:hover {
+  background: rgba(0, 0, 0, 0.12);
+  color: #c0392b;
+}
+.drama-prompt-chip[data-state="broken"] {
+  border-style: dashed;
+  border-color: #c0392b;
+  background: #fdecea;
+  color: #8a3a35;
+}
+.drama-prompt-chip[data-state="broken"] .drama-prompt-chip__label {
+  color: #c0392b;
+}
+.drama-prompt-chip[data-state="broken"] .drama-prompt-chip__thumb {
+  background: #f0d4d2;
+  cursor: not-allowed;
+}
+
+/* @ 提及下拉（portal 到 body） */
+.drama-mention-dropdown {
+  position: fixed;
+  z-index: 410;
+  min-width: 260px;
+  max-width: 320px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #dfe3e7;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(27, 34, 44, 0.18);
+  padding: 4px;
+}
+.drama-mention-dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #263140;
+}
+.drama-mention-dropdown__item.is-active,
+.drama-mention-dropdown__item:hover {
+  background: #eef0fc;
+}
+.drama-mention-dropdown__item img {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 5px;
+  background: #e8ebf0;
+  flex: 0 0 28px;
+}
+.drama-mention-dropdown__item-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.drama-mention-dropdown__item-type {
+  color: #8b94a0;
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+.drama-mention-dropdown__item-bound {
+  color: #6572ed;
+  font-weight: 700;
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+.drama-mention-dropdown__empty {
+  padding: 12px;
+  color: #8b94a0;
+  font-size: 12px;
+  text-align: center;
+}
+.drama-mention-dropdown__hint {
+  padding: 6px 8px;
+  color: #9199a4;
+  font-size: 11px;
+  border-top: 1px solid #edf0f2;
+  display: flex;
+  gap: 8px;
+}
+.drama-mention-dropdown__hint kbd {
+  font-family: inherit;
+  background: #f1f3f5;
+  border: 1px solid #dfe3e7;
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 10px;
+  color: #4f5968;
+}
+
 .drama-dialog--prompt .drama-dialog__actions {
   flex: 0 0 auto;
   align-items: center;
@@ -1663,6 +1853,78 @@ button.asset-card__preview {
   color: #e5eaf2;
   background: #111720;
   border-color: #3a4553;
+}
+.console-shell[data-theme="dark"] .drama-prompt-editor__surface {
+  color: #e5eaf2;
+  background: #111720;
+  border-color: #3a4553;
+  caret-color: #7481f0;
+}
+.console-shell[data-theme="dark"] .drama-prompt-editor__surface:focus {
+  border-color: #7481f0;
+  box-shadow: 0 0 0 2px rgba(116, 129, 240, 0.2);
+}
+.console-shell[data-theme="dark"] .drama-prompt-editor__surface[data-disabled="true"] {
+  background: #0d131a;
+  color: #c5cbff;
+}
+.console-shell[data-theme="dark"] .drama-prompt-editor__surface:empty::before {
+  color: #5a6473;
+}
+.console-shell[data-theme="dark"] .drama-prompt-chip {
+  background: #252c45;
+  border-color: #7481f0;
+  color: #e1e7ef;
+}
+.console-shell[data-theme="dark"] .drama-prompt-chip__label {
+  color: #c5cbff;
+}
+.console-shell[data-theme="dark"] .drama-prompt-chip__close {
+  background: rgba(255, 255, 255, 0.1);
+  color: #c5cbff;
+}
+.console-shell[data-theme="dark"] .drama-prompt-chip__close:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ff8d8d;
+}
+.console-shell[data-theme="dark"] .drama-prompt-chip[data-state="broken"] {
+  background: #2a1a1a;
+  border-color: #c0392b;
+  color: #e0a8a3;
+}
+.console-shell[data-theme="dark"] .drama-prompt-chip[data-state="broken"] .drama-prompt-chip__label {
+  color: #ff8d8d;
+}
+.console-shell[data-theme="dark"] .drama-mention-dropdown {
+  background: #171d26;
+  border-color: #303a47;
+  color: #e4e9f1;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.console-shell[data-theme="dark"] .drama-mention-dropdown__item {
+  color: #e4e9f1;
+}
+.console-shell[data-theme="dark"] .drama-mention-dropdown__item.is-active,
+.console-shell[data-theme="dark"] .drama-mention-dropdown__item:hover {
+  background: #252c45;
+}
+.console-shell[data-theme="dark"] .drama-mention-dropdown__item-type {
+  color: #7d8693;
+}
+.console-shell[data-theme="dark"] .drama-mention-dropdown__item-bound {
+  color: #c5cbff;
+}
+.console-shell[data-theme="dark"] .drama-mention-dropdown__empty,
+.console-shell[data-theme="dark"] .drama-mention-dropdown__hint {
+  color: #7d8693;
+}
+.console-shell[data-theme="dark"] .drama-mention-dropdown__hint {
+  border-top-color: #303a47;
+}
+.console-shell[data-theme="dark"] .drama-mention-dropdown__hint kbd {
+  background: #1e2530;
+  border-color: #303a47;
+  color: #c5cbff;
 }
 .console-shell[data-theme="dark"] .drama-dialog__actions .button--primary {
   color: #fff;
