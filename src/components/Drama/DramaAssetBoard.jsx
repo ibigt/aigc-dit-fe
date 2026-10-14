@@ -350,6 +350,7 @@ function SubjectInspector({
   busy,
   summaryChanged,
   summarySaving,
+  analyzing = false,
   onNameChange,
   onNameBlur,
   onSummaryChange,
@@ -432,13 +433,15 @@ function SubjectInspector({
               </label>
               <div className="field-count">{(summaryDraft || "").length} / 512</div>
               <p className="youxi-prompt-hint">
-                {!summaryDraft && (isSkeletonIdentity(asset) || isCharacterIdentityMisapplied(asset))
-                  ? "设定仍在生成或待补全，请稍候刷新；也可直接手写完整设定后保存。"
-                  : type === "角色"
-                    ? "此处只编辑性别、年龄、长相、衣着等角色信息（主展示，不会折叠）。三视图构图与视觉风格由系统在生图时自动附加。"
-                    : type === "场景"
-                      ? "此处只编辑空间结构、陈设与光影氛围，不要填写外貌、发型、服装或年龄。构图与风格由系统在生图时自动附加。"
-                      : "此处只编辑外形、材质与标志性细节，不要填写人物外貌。构图与风格由系统在生图时自动附加。"}
+                {!summaryDraft && analyzing
+                  ? "设定仍在生成中，请稍候；也可直接手写完善后保存。"
+                  : !summaryDraft && (isSkeletonIdentity(asset) || isCharacterIdentityMisapplied(asset))
+                    ? `系统未写出可用的${settingLabel(type)}，请手写完善后保存（不会再自动变）。`
+                    : type === "角色"
+                      ? "此处只编辑性别、年龄、长相、衣着等角色信息（主展示，不会折叠）。三视图构图与视觉风格由系统在生图时自动附加。"
+                      : type === "场景"
+                        ? "此处只编辑空间结构、陈设与光影氛围，不要填写外貌、发型、服装或年龄。构图与风格由系统在生图时自动附加。"
+                        : "此处只编辑外形、材质与标志性细节，不要填写人物外貌。构图与风格由系统在生图时自动附加。"}
               </p>
               <button
                 className={`button youxi-prompt-save ${summaryChanged ? "button--primary" : ""}`}
@@ -615,12 +618,8 @@ export function DramaAssetBoard({ series, episode }) {
     queryKey: ["drama-assets", episodeId],
     queryFn: () => fetchDramaAssets(episodeId),
     enabled: Boolean(episodeId),
-    // 若仍有骨架空话（增强失败或旧数据），短时轮询等待补全。
-    refetchInterval: (query) => {
-      const list = query.state.data || [];
-      const pending = list.some((item) => isSkeletonIdentity(item) || isCharacterIdentityMisapplied(item));
-      return pending ? 2500 : false;
-    },
+    // 仅分析进行中才轮询；分析已结束后骨架空话不等于“还在补全”。
+    refetchInterval: episode?.analyzing ? 2500 : false,
   });
   const voiceLibraryQuery = useQuery({
     queryKey: ["assets", "audio", ""],
@@ -1249,6 +1248,7 @@ export function DramaAssetBoard({ series, episode }) {
         busy={selectedBusy}
         summaryChanged={summaryChanged}
         summarySaving={isBusy(selected?.id, "summary")}
+        analyzing={Boolean(episode?.analyzing)}
         onNameChange={(event) => setNameDraft(event.target.value)}
         onNameBlur={() => {
           if (!selected || nameDraft.trim() === selected.name) return;
