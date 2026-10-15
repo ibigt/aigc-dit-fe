@@ -8,6 +8,13 @@ function sourceMeta(source, record) {
   return "生成";
 }
 
+function switchCardMeta(record) {
+  if (record?.modelName) return record.modelName;
+  if (record?.source === "library" || record?.libraryAssetId) return "引用";
+  if (record?.source === "upload") return "上传";
+  return record?.selected ? "当前选用" : "可选";
+}
+
 /**
  * 资产 / 分镜侧栏生成记录区。
  * 缩略图点击仅预览；选用走 SwitchFinalModal。
@@ -184,6 +191,7 @@ export function SwitchFinalModal({
               const videoSrc = mediaKind === "video"
                 ? mediaUrl(record.videoUrl || record.videoKey)
                 : null;
+              const meta = switchCardMeta(record);
               return (
                 <article className={selected ? "active" : ""} key={record.id}>
                   {mediaKind === "video" ? (
@@ -193,7 +201,7 @@ export function SwitchFinalModal({
                   )}
                   <div>
                     <strong>{record.label}</strong>
-                    <span>{selected ? "当前选用" : "可选"}</span>
+                    <span title={meta}>{meta}</span>
                   </div>
                   <button
                     type="button"
