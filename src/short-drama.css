@@ -1075,11 +1075,14 @@
   color: #dce1ff; border-color: rgba(139,150,255,.5); background: rgba(73,84,177,.9);
 }
 
-.drama-dialog--switch-final { width: min(640px, 94vw); }
+.drama-dialog--switch-final { width: min(960px, 92vw); }
 .switch-final-grid {
   padding: 14px 18px 4px;
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
-  max-height: min(52vh, 420px); overflow: auto;
+  max-height: min(70vh, 640px); overflow: auto;
+}
+@media (min-width: 900px) {
+  .switch-final-grid:not(.switch-final-grid--video) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 .switch-final-grid article {
   position: relative; overflow: hidden; border: 1px solid #e0e4ea; border-radius: 10px; background: #f8f9fb;
@@ -1090,8 +1093,13 @@
 .switch-final-grid video { width: 100%; aspect-ratio: 1.35; object-fit: cover; background: #e8ebf0; display: block; }
 .switch-final-grid--video video { aspect-ratio: 16 / 9; }
 .switch-final-grid article > div { padding: 8px 9px 4px; display: flex; justify-content: space-between; gap: 6px; }
-.switch-final-grid article > div strong { font-size: 12px; }
-.switch-final-grid article > div span { color: #7b8593; font-size: 11px; }
+.switch-final-grid article > div strong {
+  min-width: 0; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap;
+}
+.switch-final-grid article > div span {
+  min-width: 0; max-width: 58%; overflow: hidden; color: #7b8593; font-size: 11px;
+  text-overflow: ellipsis; white-space: nowrap;
+}
 .switch-final-grid article > button { margin: 0 9px 9px; min-height: 32px; }
 
 .drama-lightbox__video {
