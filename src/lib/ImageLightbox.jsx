@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 
 export function ImageLightbox({ preview, onClose }) {
   useEffect(() => {
@@ -11,9 +12,9 @@ export function ImageLightbox({ preview, onClose }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [preview, onClose]);
 
-  if (!preview?.src) return null;
+  if (!preview?.src || typeof document === "undefined") return null;
 
-  return (
+  return createPortal(
     <div
       className="drama-lightbox"
       role="presentation"
@@ -26,6 +27,7 @@ export function ImageLightbox({ preview, onClose }) {
         </header>
         <img src={preview.src} alt={preview.title} onClick={onClose} />
       </figure>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -22,6 +22,7 @@ function switchCardMeta(record) {
 export function GenerationHistoryPanel({
   title = "生成记录",
   countLabel,
+  hint = "",
   switchLabel = "切换最终",
   records = [],
   locked = false,
@@ -49,6 +50,7 @@ export function GenerationHistoryPanel({
         <div>
           <strong>{title}</strong>
           <span>{countText}</span>
+          {hint ? <p className="youxi-history-hint">{hint}</p> : null}
         </div>
         <div className="youxi-history-block__actions">
           {review ? (

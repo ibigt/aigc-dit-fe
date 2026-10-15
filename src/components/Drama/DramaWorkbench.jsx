@@ -1,28 +1,64 @@
-import { ArrowLeft, ChevronRight, CircleCheck, Download, Film, Pencil, X } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { ArrowLeft, ChevronDown, ChevronRight, CircleCheck, Download, Film, Pencil, X } from "lucide-react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { fetchDramaFilm, fetchDramaSeriesDetail, createDramaEpisode, deleteDramaEpisode, updateDramaSeries } from "../../api/drama.js";
+import {
+  bindDramaVideoModel,
+  createDramaEpisode,
+  deleteDramaEpisode,
+  fetchDramaFilm,
+  fetchDramaSeriesDetail,
+  fetchDramaVideoModels,
+  updateDramaSeries,
+} from "../../api/drama.js";
 import { DramaAssetBoard } from "./DramaAssetBoard.jsx";
 import { DramaFilmPanel, downloadDramaFilm } from "./DramaFilmPanel.jsx";
 import { DramaScriptPanel } from "./DramaScriptPanel.jsx";
 import { DramaStoryboard } from "./DramaStoryboard.jsx";
+import { DramaStylePicker } from "./DramaStylePicker.jsx";
 import { dramaStyleOf } from "./dramaStyles.js";
+import { preferredResolution, resolutionOptionsFor } from "./dramaSpecs.js";
 
 const STEPS = [
-  { id: "script", label: "剧本", action: "资产提取" },
-  { id: "subjects", label: "资产", action: "智能分镜" },
-  { id: "shots", label: "分镜", action: "剪辑成片" },
-  { id: "film", label: "成片", action: "导出" },
+  { id: "script", label: "剧本" },
+  { id: "subjects", label: "资产" },
+  { id: "shots", label: "分镜" },
+  { id: "film", label: "成片" },
 ];
 const STEP_IDS = STEPS.map((item) => item.id);
-const STAGE_ICONS = { script: "/assets/workflow-icons/script.png", subjects: "/assets/workflow-icons/assets.png", shots: "/assets/workflow-icons/storyboard.png", film: "/assets/workflow-icons/film.png" };
-const STAGE_DETAILS = {
-  script: { step: "STEP 01", description: "章节原文与分场管理" },
-  subjects: { step: "STEP 02", description: "角色场景与素材沉淀" },
-  shots: { step: "STEP 03", description: "镜头顺序与画面描述" },
-  film: { step: "STEP 04", description: "预览、拼接与导出" },
+const STAGE_ICONS = {
+  script: "/assets/workflow-icons/script.png",
+  subjects: "/assets/workflow-icons/assets.png",
+  shots: "/assets/workflow-icons/storyboard.png",
+  film: "/assets/workflow-icons/film.png",
 };
+const STAGE_DETAILS = {
+  script: { step: "STEP 1", description: "编写故事、场景与台词" },
+  subjects: { step: "STEP 2", description: "管理角色、场景与素材" },
+  shots: { step: "STEP 3", description: "设计镜头、画面与节奏" },
+  film: { step: "STEP 4", description: "合成预览并导出作品" },
+};
+const RATIO_ORDER = ["9:16", "16:9", "21:9", "3:4", "4:3", "1:1"];
+const RATIO_NOTES = { "9:16": "竖屏", "16:9": "横屏", "21:9": "电影" };
+
+function RatioIcon({ ratio }) {
+  const vertical = ratio === "9:16" || ratio === "3:4";
+  const square = ratio === "1:1";
+  const width = vertical ? 8 : square ? 12 : 18;
+  const height = vertical ? 18 : square ? 12 : 10;
+  return (
+    <svg className="workspace-setting-icon" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+      <rect x={(24 - width) / 2} y={(24 - height) / 2} width={width} height={height} rx="1.8" />
+    </svg>
+  );
+}
+
+function modelLogo(name = "") {
+  const text = name.toLowerCase();
+  if (text.includes("doubao") || text.includes("seedance") || text.includes("bytedance")) return "/assets/model-logos/bytedance-seed.ico";
+  if (text.includes("minimax")) return "/assets/model-logos/minimax.ico";
+  return "/assets/model-logos/agnes.png";
+}
 
 function stepFromSearch(searchParams) {
   const raw = searchParams.get("step");
@@ -43,6 +79,162 @@ function DramaDialog({ title, eyebrow, onClose, children }) {
 
         {children}
       </section>
+    </div>
+  );
+}
+
+function DramaSeriesSpecs({ seriesId, series, onError }) {
+  const queryClient = useQueryClient();
+  const barRef = useRef(null);
+  const [menu, setMenu] = useState(null);
+  const videoModelsQuery = useQuery({
+    queryKey: ["drama-video-models"],
+    queryFn: fetchDramaVideoModels,
+  });
+  const videoModels = videoModelsQuery.data || [];
+  const style = dramaStyleOf(series?.styleKey);
+  const videoModelId = series?.videoModelId ? String(series.videoModelId) : "";
+  const videoModelName = series?.videoModelName
+    || videoModels.find((item) => String(item.id) === videoModelId)?.name
+    || "请选择视频模型";
+  const aspectRatio = series?.aspectRatio || "16:9";
+
+  useEffect(() => {
+    if (!menu) return undefined;
+    const close = (event) => {
+      if (barRef.current && !barRef.current.contains(event.target)) setMenu(null);
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [menu]);
+
+  function refresh() {
+    queryClient.invalidateQueries({ queryKey: ["drama-series"] });
+    queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+  }
+
+  const saveSeries = useMutation({
+    mutationFn: (payload) => updateDramaSeries(seriesId, payload),
+    onSuccess: refresh,
+    onError: (error) => onError?.(error.message || "保存失败"),
+  });
+
+  const bindVideo = useMutation({
+    mutationFn: async (nextId) => {
+      await bindDramaVideoModel(seriesId, Number(nextId));
+      const options = resolutionOptionsFor(videoModels.find((item) => String(item.id) === String(nextId)));
+      if (series?.defaultResolution && !options.includes(series.defaultResolution)) {
+        await updateDramaSeries(seriesId, { defaultResolution: preferredResolution(options, series.defaultResolution) });
+      }
+    },
+    onSuccess: refresh,
+    onError: (error) => onError?.(error.message || "视频模型保存失败"),
+  });
+
+  const pending = saveSeries.isPending || bindVideo.isPending;
+
+  function toggleMenu(next) {
+    setMenu((current) => (current === next ? null : next));
+  }
+
+  return (
+    <div className="workspace-settings" ref={barRef}>
+      <div className="workspace-setting-wrap style-setting-wrap">
+        <button
+          className="workspace-setting-trigger style-trigger"
+          type="button"
+          aria-label="视觉风格"
+          aria-expanded={menu === "style"}
+          disabled={pending}
+          onClick={() => toggleMenu("style")}
+        >
+          <span className="workspace-style-thumb" style={{ backgroundImage: `url("${style.cover}")` }} />
+          <span>{style.name}</span>
+          <ChevronDown className="workspace-setting-chevron" size={15} />
+        </button>
+        {menu === "style" && (
+          <div className="drama-style-menu__panel">
+            <DramaStylePicker
+              value={series?.styleKey}
+              disabled={pending}
+              onChange={(next) => {
+                setMenu(null);
+                if (next && next !== series?.styleKey) saveSeries.mutate({ styleKey: next });
+              }}
+            />
+          </div>
+        )}
+      </div>
+      <span className="workspace-setting-divider" aria-hidden="true" />
+      <div className="workspace-setting-wrap">
+        <button
+          className="workspace-setting-trigger"
+          type="button"
+          aria-label="视频比例"
+          aria-expanded={menu === "ratio"}
+          disabled={pending}
+          onClick={() => toggleMenu("ratio")}
+        >
+          <RatioIcon ratio={aspectRatio} />
+          <span>{aspectRatio}</span>
+          <ChevronDown className="workspace-setting-chevron" size={15} />
+        </button>
+        {menu === "ratio" && (
+          <div className="workspace-setting-menu" role="listbox">
+            {RATIO_ORDER.map((value) => (
+              <button
+                key={value}
+                type="button"
+                role="option"
+                aria-selected={value === aspectRatio}
+                onClick={() => {
+                  setMenu(null);
+                  if (value !== aspectRatio) saveSeries.mutate({ aspectRatio: value });
+                }}
+              >
+                <RatioIcon ratio={value} />
+                <span>{value}{RATIO_NOTES[value] ? `（${RATIO_NOTES[value]}）` : ""}</span>
+                {value === aspectRatio && <span className="workspace-option-check">✓</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <span className="workspace-setting-divider" aria-hidden="true" />
+      <div className="workspace-setting-wrap model-setting-wrap">
+        <button
+          className="workspace-setting-trigger model-trigger"
+          type="button"
+          aria-label="视频模型"
+          aria-expanded={menu === "model"}
+          disabled={pending || videoModelsQuery.isLoading}
+          onClick={() => toggleMenu("model")}
+        >
+          <img className={`model-brand-logo${modelLogo(videoModelName).endsWith("agnes.png") ? " agnes-logo" : ""}`} src={modelLogo(videoModelName)} alt="" />
+          <span>{videoModelName}</span>
+          <ChevronDown className="workspace-setting-chevron" size={15} />
+        </button>
+        {menu === "model" && (
+          <div className="workspace-setting-menu model-menu" role="listbox">
+            {videoModels.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="option"
+                aria-selected={String(item.id) === videoModelId}
+                onClick={() => {
+                  setMenu(null);
+                  if (String(item.id) !== videoModelId) bindVideo.mutate(String(item.id));
+                }}
+              >
+                <img className="model-brand-logo" src={modelLogo(item.name)} alt="" />
+                <span>{item.name}</span>
+                {String(item.id) === videoModelId && <span className="workspace-option-check">✓</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -107,17 +299,16 @@ export function DramaWorkbench({ seriesId }) {
     }, { replace: true });
   }
   const [notice, setNotice] = useState("");
+  const [noticeError, setNoticeError] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   const goLibrary = () => navigate("/console/drama");
-  const style = dramaStyleOf(series?.styleKey);
-  const cover = series?.styleCover || style.cover;
-  const activeIndex = STEPS.findIndex((item) => item.id === step);
 
-  function showNotice(message) {
+  function showNotice(message, isError = false) {
+    setNoticeError(isError);
     setNotice(message);
     window.setTimeout(() => setNotice(""), 2400);
   }
@@ -145,15 +336,6 @@ export function DramaWorkbench({ seriesId }) {
     if (series?.name) setRenameDraft(series.name);
   }, [series?.name]);
 
-  function goNext() {
-    if (step === "film") {
-      setExportOpen(true);
-      return;
-    }
-    const index = STEPS.findIndex((item) => item.id === step);
-    setStep(STEPS[Math.min(STEPS.length - 1, index + 1)].id);
-  }
-
   if (seriesQuery.isError) {
     return (
       <section className="drama-workspace youxi-workspace">
@@ -173,8 +355,6 @@ export function DramaWorkbench({ seriesId }) {
     );
   }
 
-  const actionLabel = STEPS[activeIndex]?.action;
-
   return (
     <section className="drama-workspace youxi-workspace youxi-creative-workspace">
       <h1 className="visually-hidden">{series.name}短剧创作空间</h1>
@@ -184,15 +364,6 @@ export function DramaWorkbench({ seriesId }) {
             <ArrowLeft size={18} /> 返回
           </button>
           <div className="drama-project-title">
-            <img
-              src={cover}
-              alt=""
-              onError={(event) => {
-                if (event.currentTarget.dataset.fallback === "1") return;
-                event.currentTarget.dataset.fallback = "1";
-                event.currentTarget.src = style.fallback;
-              }}
-            />
             {renameOpen ? (
               <input
                 autoFocus
@@ -230,11 +401,7 @@ export function DramaWorkbench({ seriesId }) {
         </div>
 
         <div className="drama-workspace-actions">
-          {step !== "film" && (
-            <button className="button button--primary drama-next-button" type="button" onClick={goNext}>
-              {actionLabel} <ChevronRight size={17} />
-            </button>
-          )}
+          <DramaSeriesSpecs seriesId={id} series={series} onError={(message) => showNotice(message, true)} />
           {step === "film" && (
             <button className="button button--primary" type="button" onClick={() => setExportOpen(true)}>
               <Download size={16} /> 导出
@@ -266,7 +433,7 @@ export function DramaWorkbench({ seriesId }) {
           ))}
         </div>
       </nav>
-      {notice && <div className="drama-toast"><CircleCheck size={16} />{notice}</div>}
+      {notice && <div className={`drama-toast${noticeError ? " drama-toast--error" : ""}`}><CircleCheck size={16} />{notice}</div>}
       {episode?.analyzing && step !== "script" && (
         <p className="drama-script__hint">剧本正在分析，可回到「剧本」查看进度。</p>
       )}
@@ -282,12 +449,18 @@ export function DramaWorkbench({ seriesId }) {
             addingEpisode={addEpisodeMutation.isPending}
             onDeleteEpisode={(targetId) => deleteEpisodeMutation.mutate(targetId)}
             deletingEpisodeId={deleteEpisodeMutation.isPending ? deleteEpisodeMutation.variables : null}
+            onContinue={() => setStep("subjects")}
           />
         </div>
       )}
       {step === "subjects" && (
         <div className="drama-step drama-step--slot">
-          <DramaAssetBoard series={series} episode={episode} />
+          <DramaAssetBoard
+            series={series}
+            episode={episode}
+            onPrev={() => setStep("script")}
+            onNext={() => setStep("shots")}
+          />
         </div>
       )}
       {step === "shots" && (

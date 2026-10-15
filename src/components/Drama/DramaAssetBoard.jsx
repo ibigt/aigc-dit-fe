@@ -1,14 +1,15 @@
 import {
+  ArrowLeft,
+  ArrowRight,
+  AudioLines,
   CircleAlert,
   Clapperboard,
-  AudioLines,
   Check,
+  Expand,
   Folder,
   Image as ImageIcon,
-  Lock,
+  Pencil,
   Plus,
-  RefreshCw,
-  Save,
   Sparkles,
   Trash2,
   Upload,
@@ -21,31 +22,26 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchAssets } from "../../api/assets.js";
 import {
   bindDramaAssetImageFromLibrary,
-  bindDramaAssetVoiceReference,
   bindDramaImageModel,
   createDramaAsset,
   deleteDramaAsset,
   deleteDramaAssetGeneration,
   extractDramaAssets,
-  fetchDramaArkReviewAvailability,
   fetchDramaAssetGenerations,
   fetchDramaAssets,
   fetchDramaImageModels,
   generateDramaAssetImage,
   importDramaAssetGeneration,
-  lockDramaScript,
-  reviewDramaAsset,
   pollDramaAssetGenerate,
   selectDramaAssetGeneration,
   updateDramaAsset,
   uploadDramaAssetImage,
   uploadDramaAssetVoiceReference,
+  bindDramaAssetVoiceReference,
 } from "../../api/drama.js";
 import { MEDIA_THUMB_WIDTH, mediaUrl, retryMediaOnce } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
-import { AssetPickerDialog } from "../AssetPickerDialog.jsx";
-import { sameAsset } from "../../lib/assetPicker.js";
 import { GenerationHistoryPanel, SwitchFinalModal } from "./GenerationHistoryPanel.jsx";
 
 const TYPES = [
@@ -152,49 +148,77 @@ function ImageLibraryDialog({ assets, loading, busy, error, onClose, onConfirm }
   return createPortal(body, document.body);
 }
 
-function VoiceLibraryDialog({ targetName, assets, loading, busy, onClose, onSelect, onUpload }) {
-  return (
-    <div className="drama-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
-      <section className="drama-dialog drama-voice-library" role="dialog" aria-modal="true" aria-labelledby="voice-library-title">
+function VoiceLibraryDialog({ assets, loading, busy, error, onClose, onConfirm, onUpload }) {
+  const [selectedId, setSelectedId] = useState(null);
+  const selected = assets.find((item) => sameAssetId(item.id, selectedId)) || null;
+
+  const body = (
+    <div
+      className="drama-dialog-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onClose();
+      }}
+    >
+      <section className="creation-asset-dialog asset-voice-library" role="dialog" aria-modal="true" aria-labelledby="voice-library-title">
         <header>
-          <div><span>参考音频</span><h2 id="voice-library-title">为“{targetName}”选择音色</h2></div>
-        </header>
-        <div className="drama-voice-library__body">
-          <button className="drama-voice-library__upload" type="button" disabled={busy} onClick={onUpload}>
-            <Upload size={18} /><span><strong>自定义上传</strong><small>上传后自动同步到音频素材库</small></span>
-          </button>
-          <div className="drama-voice-library__list">
-            {loading && <p>正在加载音频素材…</p>}
-            {!loading && !assets.length && <p>音频库暂无素材，可先自定义上传。</p>}
-            {assets.map((item) => (
-              <article key={item.id}>
-                <AudioLines size={18} />
-                <span><strong>{item.title || item.name}</strong><audio controls preload="metadata" src={mediaUrl(item.src || item.url || item.storageKey)} /></span>
-                <button type="button" disabled={busy} onClick={() => onSelect(item)}>{busy ? "绑定中…" : "选择"}</button>
-              </article>
-            ))}
+          <div>
+            <small>素材库</small>
+            <h2 id="voice-library-title">绑定参考音频</h2>
           </div>
+          <div className="asset-voice-library-tools">
+            <button type="button" disabled={busy} onClick={onUpload}>
+              <Upload size={15} /> 上传本地音频
+            </button>
+            <button type="button" aria-label="关闭音频选择" disabled={busy} onClick={onClose}>
+              <X size={17} />
+            </button>
+          </div>
+        </header>
+        <div className="creation-asset-grid">
+          {loading && <p className="creation-asset-empty">正在加载音频素材…</p>}
+          {!loading && !assets.length && <p className="creation-asset-empty">暂无可用音频素材</p>}
+          {!loading && assets.map((asset) => {
+            const label = asset.title || asset.name || "未命名音频";
+            const isSelected = sameAssetId(asset.id, selectedId);
+            return (
+              <button
+                type="button"
+                className={isSelected ? "selected" : ""}
+                key={asset.id || asset.storageKey || label}
+                aria-pressed={isSelected}
+                disabled={busy}
+                onClick={() => setSelectedId(asset.id)}
+              >
+                <AudioLines size={16} />
+                <span>
+                  <strong>{label}</strong>
+                  <small>音频素材</small>
+                </span>
+                {isSelected && <Check size={14} />}
+              </button>
+            );
+          })}
         </div>
-        <footer><button type="button" disabled={busy} onClick={onClose}>取消</button></footer>
+        <footer>
+          <span>{error ? <em className="drama-form-error" style={{ fontStyle: "normal" }}>{error}</em> : (selected ? "已选择 1 项" : "请选择一段参考音频")}</span>
+          <div>
+            <button type="button" disabled={busy} onClick={onClose}>取消</button>
+            <button
+              type="button"
+              className="primary"
+              disabled={busy || !selected}
+              onClick={() => selected && onConfirm(selected)}
+            >
+              {busy ? "绑定中…" : "绑定"}
+            </button>
+          </div>
+        </footer>
       </section>
     </div>
   );
-}
 
-function promptOf(asset) {
-  return asset?.imagePrompt || asset?.description || "";
-}
-
-function statusLabel(status) {
-  if (status === "已锁定") return "已确认";
-  if (!status || status === "待确认" || status === "未开始") return "";
-  return status;
-}
-
-function stateLabel(tag) {
-  if (tag === "dream") return "入梦";
-  if (tag === "costume") return "换装";
-  return "";
+  return createPortal(body, document.body);
 }
 
 function isSkeletonIdentity(asset) {
@@ -245,11 +269,6 @@ function identityOf(asset) {
     return desc;
   }
   return "";
-}
-
-function cardMeta(asset) {
-  const tag = stateLabel(asset.stateTag);
-  return [tag, statusLabel(asset.status)].filter(Boolean).join(" · ");
 }
 
 function SubjectCreateDialog({ type, pending, error, onClose, onCreate }) {
@@ -317,7 +336,7 @@ function ImageModelSelect({
   onBindModel,
 }) {
   return (
-    <label className="youxi-shot-model">
+    <label className="asset-model-control">
       图像模型
       <select
         aria-label="全局图片生成模型"
@@ -339,256 +358,31 @@ function ImageModelSelect({
   );
 }
 
-function SubjectInspector({
-  asset,
-  type,
-  resolution,
-  prompt,
-  nameDraft,
-  summaryDraft,
-  generating,
-  busy,
-  summaryChanged,
-  summarySaving,
-  analyzing = false,
-  onNameChange,
-  onNameBlur,
-  onSummaryChange,
-  onSummaryBlur,
-  onSummarySave,
-  onResolution,
-  onCiteClick,
-  onUploadClick,
-  voiceLock,
-  voiceBusy,
-  onVoiceLockChange,
-  onVoiceSave,
-  onVoiceUploadClick,
-  voiceReferenceStatus,
-  generations = [],
-  generationsLoading = false,
-  historyBusy = false,
-  onSwitchFinal,
-  onPreviewGeneration,
-  onDeleteGeneration,
-  onImportGeneration,
-  reviewing = false,
-  onReview,
-  reviewEnabled = false,
-}) {
-  const voiceDescriptionChanged = (voiceLock || "").trim() !== (asset?.voiceLock || "").trim();
-  const currentGeneration = generations.find((item) => item.selected)
-    || generations.find((item) => item.storageKey && item.storageKey === asset?.imageStorageKey);
-  const reviewStatus = reviewing
-    ? "reviewing"
-    : currentGeneration?.arkReviewStatus === "Active"
-      ? "active"
-      : "idle";
-  const reviewError = reviewStatus === "idle" && currentGeneration?.arkReviewStatus === "Failed"
-    ? (currentGeneration.arkReviewError || "素材入库失败")
-    : "";
-  const characterReview = reviewEnabled && type === "角色" ? {
-    status: reviewStatus,
-    disabled: !asset?.imageStorageKey,
-    error: reviewError,
-    onClick: onReview,
-  } : null;
-  const effectiveVoiceReferenceStatus = asset?.voiceReferenceUrl && voiceReferenceStatus.state === "ready"
-    ? { ...voiceReferenceStatus, state: "success", label: "已绑定参考音频" }
-    : voiceReferenceStatus;
-  return (
-    <aside className="youxi-inspector youxi-subject-inspector">
-      <div className="youxi-inspector-tabs">
-        <button type="button" className="active">资产图</button>
-      </div>
-      <div className="youxi-inspector-scroll">
-        {asset ? (
-          <>
-            <label className="youxi-field">
-              <span>名称</span>
-              <input
-                value={nameDraft}
-                maxLength={128}
-                onChange={onNameChange}
-                onBlur={onNameBlur}
-                placeholder={`${type}名称`}
-              />
-            </label>
-
-            <div className="youxi-prompt-block">
-              <label className="youxi-field youxi-field--summary">
-                <span>{settingLabel(type)}</span>
-                <textarea
-                  rows={8}
-                  maxLength={512}
-                  value={summaryDraft}
-                  onChange={onSummaryChange}
-                  onBlur={onSummaryBlur}
-                  placeholder={type === "角色"
-                    ? "例：20岁，女，杏眼，黑色短发，白色圆领T恤，深蓝工装背心，深色长裤。须含性别、年龄、长相、衣着。"
-                    : type === "场景"
-                      ? "例：开放式办公区，玻璃隔断与工位，夕阳侧光，地面轻微反光。只写空间与陈设，不要人物外貌。"
-                      : "例：金属外壳磨损，侧面划痕，可手持。只写外形材质，不要人物外貌。"}
-                />
-              </label>
-              <div className="field-count">{(summaryDraft || "").length} / 512</div>
-              <p className="youxi-prompt-hint">
-                {!summaryDraft && analyzing
-                  ? "设定仍在生成中，请稍候；也可直接手写完善后保存。"
-                  : !summaryDraft && (isSkeletonIdentity(asset) || isCharacterIdentityMisapplied(asset))
-                    ? `系统未写出可用的${settingLabel(type)}，请手写完善后保存（不会再自动变）。`
-                    : type === "角色"
-                      ? "此处只编辑性别、年龄、长相、衣着等角色信息（主展示，不会折叠）。三视图构图与视觉风格由系统在生图时自动附加。"
-                      : type === "场景"
-                        ? "此处只编辑空间结构、陈设与光影氛围，不要填写外貌、发型、服装或年龄。构图与风格由系统在生图时自动附加。"
-                        : "此处只编辑外形、材质与标志性细节，不要填写人物外貌。构图与风格由系统在生图时自动附加。"}
-              </p>
-              <button
-                className={`button youxi-prompt-save ${summaryChanged ? "button--primary" : ""}`}
-                type="button"
-                disabled={!summaryChanged || generating || busy || summarySaving}
-                onClick={onSummarySave}
-              >
-                <Save size={14} /> {summarySaving ? "保存中…" : `保存${settingLabel(type)}`}
-              </button>
-            </div>
-
-            {type === "角色" && (
-              <section className="youxi-voice-block">
-                <label className="youxi-field">
-                  <span>
-                    音色
-                    <em data-state={effectiveVoiceReferenceStatus.state}>{effectiveVoiceReferenceStatus.label}</em>
-                  </span>
-                  <input
-                    value={voiceLock}
-                    onChange={onVoiceLockChange}
-                    placeholder="例：30岁低沉男声，普通话，克制冷静"
-                  />
-                </label>
-                {asset.voiceReferenceUrl && (
-                  <audio controls preload="metadata" src={mediaUrl(asset.voiceReferenceUrl) || asset.voiceReferenceUrl} />
-                )}
-                <div className="youxi-voice-block__actions">
-                  <button
-                    type="button"
-                    onClick={onVoiceUploadClick}
-                    disabled={voiceBusy}
-                  >
-                    <AudioLines size={13} /> {effectiveVoiceReferenceStatus.state === "loading" ? "检查中…" : asset.voiceReferenceUrl ? "更换参考音频" : "绑定参考音频"}
-                  </button>
-                  <button
-                    className="button button--primary"
-                    type="button"
-                    onClick={onVoiceSave}
-                    disabled={voiceBusy || !voiceDescriptionChanged}
-                  >
-                    <Save size={13} /> 保存
-                  </button>
-                </div>
-                <small>{effectiveVoiceReferenceStatus.help}</small>
-              </section>
-            )}
-
-            <details className="youxi-prompt-advanced">
-              <summary>完整生图提示词（系统自动拼装，只读）</summary>
-              <pre className="youxi-prompt-compiled">{prompt || "保存外形设定或生图后可在此预览完整提示词"}</pre>
-            </details>
-
-            <div className="youxi-field youxi-resolution-field">
-              <span>分辨率</span>
-              <div className="generation-chip-grid" style={{ gridTemplateColumns: `repeat(${RESOLUTIONS.length}, minmax(0, 1fr))` }}>
-                {RESOLUTIONS.map((item) => (
-                  <button
-                    type="button"
-                    className={resolution === item ? "active" : ""}
-                    key={item}
-                    onClick={() => onResolution(item)}
-                  >
-                    {item}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {asset.genErrorMessage && <p className="drama-form-error">{asset.genErrorMessage}</p>}
-
-            <section className="youxi-material-block" aria-label="参考图片">
-              <header>
-                <strong>参考图片</strong>
-                <span>支持多选</span>
-              </header>
-              <div>
-                <button
-                  type="button"
-                  className="youxi-upload-tile"
-                  disabled={busy || generating || historyBusy}
-                  onClick={onUploadClick}
-                >
-                  <Upload size={16} />
-                  本地上传
-                </button>
-                <button
-                  type="button"
-                  className="youxi-upload-tile"
-                  disabled={busy || generating || historyBusy}
-                  onClick={onCiteClick}
-                >
-                  <Folder size={16} />
-                  素材库
-                </button>
-              </div>
-            </section>
-
-            {!generationsLoading && (
-              <GenerationHistoryPanel
-                switchLabel="切换最终资产"
-                records={generations}
-                locked={false}
-                mediaKind="image"
-                showImport
-                compactActions
-                busy={historyBusy || generating || busy || reviewing}
-                onSwitchClick={onSwitchFinal}
-                onPreview={onPreviewGeneration}
-                onDelete={onDeleteGeneration}
-                onImport={onImportGeneration}
-                review={characterReview}
-              />
-            )}
-
-            <p className="youxi-inspector-hint">生成或上传后，当前选用的图会直接作为分镜参考。切换最终资产后，分镜会改用新图。</p>
-          </>
-        ) : (
-          <p className="youxi-story-side-empty">选中{type}后，可在此改提示词并生图。</p>
-        )}
-      </div>
-    </aside>
-  );
-}
-
-export function DramaAssetBoard({ series, episode }) {
+export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   const queryClient = useQueryClient();
   const episodeId = episode?.id;
   const seriesId = series?.id;
   const fileRef = useRef(null);
   const voiceFileRef = useRef(null);
+  const uploadTargetRef = useRef(null);
   const [type, setType] = useState("角色");
   const [selectedId, setSelectedId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [imageModelId, setImageModelId] = useState(series?.imageModelId || "");
   const [resolution, setResolution] = useState("1K");
   const [nameDraft, setNameDraft] = useState("");
-  const [summaryDraft, setSummaryDraft] = useState("");
-  const [promptDraft, setPromptDraft] = useState("");
-  const [voiceLockDraft, setVoiceLockDraft] = useState("");
+  const [editingNameId, setEditingNameId] = useState(null);
+  const [promptDrafts, setPromptDrafts] = useState({});
+  const [voiceDrafts, setVoiceDrafts] = useState({});
   const [voiceLibraryOpen, setVoiceLibraryOpen] = useState(false);
+  const [voiceLibraryError, setVoiceLibraryError] = useState("");
+  const [detailId, setDetailId] = useState(null);
   const [imageLibraryOpen, setImageLibraryOpen] = useState(false);
   const [imageLibraryError, setImageLibraryError] = useState("");
-  const [voiceTarget, setVoiceTarget] = useState(null);
-  const [voicePending, setVoicePending] = useState([]);
-  const [summaryDirty, setSummaryDirty] = useState(false);
+  const [batchSelectMode, setBatchSelectMode] = useState(false);
+  const [batchRunning, setBatchRunning] = useState(false);
   const [batchAssetIds, setBatchAssetIds] = useState(() => new Set());
+  const [deleteAssetTarget, setDeleteAssetTarget] = useState(null);
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
   const [preview, setPreview] = useState(null);
@@ -609,11 +403,6 @@ export function DramaAssetBoard({ series, episode }) {
     queryKey: ["drama-image-models"],
     queryFn: fetchDramaImageModels,
   });
-  const reviewAvailabilityQuery = useQuery({
-    queryKey: ["drama-ark-review"],
-    queryFn: fetchDramaArkReviewAvailability,
-  });
-  const reviewEnabled = reviewAvailabilityQuery.data?.configured === true;
   const assetsQuery = useQuery({
     queryKey: ["drama-assets", episodeId],
     queryFn: () => fetchDramaAssets(episodeId),
@@ -621,23 +410,18 @@ export function DramaAssetBoard({ series, episode }) {
     // 仅分析进行中才轮询；分析已结束后骨架空话不等于“还在补全”。
     refetchInterval: episode?.analyzing ? 2500 : false,
   });
-  const voiceLibraryQuery = useQuery({
-    queryKey: ["assets", "audio", ""],
-    queryFn: () => fetchAssets({ kind: "audio" }),
-    enabled: voiceLibraryOpen,
-  });
   const imageLibraryQuery = useQuery({
     queryKey: ["assets", "image", ""],
     queryFn: () => fetchAssets({ kind: "image" }),
     enabled: imageLibraryOpen,
   });
+  const voiceLibraryQuery = useQuery({
+    queryKey: ["assets", "audio", ""],
+    queryFn: () => fetchAssets({ kind: "audio" }),
+    enabled: voiceLibraryOpen,
+  });
 
   const imageModels = imageModelsQuery.data || [];
-  const voiceReferenceStatus = {
-    state: "ready",
-    label: "可绑定参考音频",
-    help: "可先为角色保存参考音频；到分镜阶段将按所选视频模型能力决定是否使用。",
-  };
   const assets = assetsQuery.data || [];
   const scriptLocked = episode?.status === "已锁定";
   const canUseTextModel = episode?.canGenerate !== false;
@@ -662,10 +446,11 @@ export function DramaAssetBoard({ series, episode }) {
   const checkedCount = filtered.filter((item) => batchAssetIds.has(String(item.id))).length;
   const allChecked = filtered.length > 0 && checkedCount === filtered.length;
 
+  const historyAssetId = detailId || selected?.id;
   const generationsQuery = useQuery({
-    queryKey: ["drama-asset-generations", selected?.id],
-    queryFn: () => fetchDramaAssetGenerations(selected.id),
-    enabled: Boolean(selected?.id),
+    queryKey: ["drama-asset-generations", historyAssetId],
+    queryFn: () => fetchDramaAssetGenerations(historyAssetId),
+    enabled: Boolean(historyAssetId),
   });
   const generations = generationsQuery.data || [];
 
@@ -675,27 +460,30 @@ export function DramaAssetBoard({ series, episode }) {
   }, [filtered, selected, selectedId]);
 
   useEffect(() => {
-    setSummaryDirty(false);
     setNameDraft(selected?.name || "");
-    setSummaryDraft(identityOf(selected));
-    setPromptDraft(promptOf(selected));
-    setVoiceLockDraft(selected?.voiceLock || "");
-  }, [selected?.id]);
+  }, [selected?.id, selected?.name]);
 
-  // 分析增强完成后同一资产 id 会补上详细设定；未手改时同步刷新展示。
-  useEffect(() => {
-    if (summaryDirty) return;
-    setSummaryDraft(identityOf(selected));
-  }, [selected?.id, selected?.identityInvariants, selected?.description, summaryDirty]);
+  function draftOf(asset) {
+    if (!asset) return "";
+    if (Object.prototype.hasOwnProperty.call(promptDrafts, asset.id)) return promptDrafts[asset.id];
+    return identityOf(asset);
+  }
 
-  useEffect(() => {
-    setPromptDraft(promptOf(selected));
-  }, [selected?.imagePrompt, selected?.description]);
+  function dirtyOf(asset) {
+    if (!asset || !Object.prototype.hasOwnProperty.call(promptDrafts, asset.id)) return false;
+    return promptDrafts[asset.id].trim() !== identityOf(asset);
+  }
 
-  useEffect(() => {
-    if (summaryDirty) return;
-    setSummaryDraft(identityOf(selected));
-  }, [selected?.id, selected?.identityInvariants, summaryDirty]);
+  function voiceDraftOf(asset) {
+    if (!asset) return "";
+    if (Object.prototype.hasOwnProperty.call(voiceDrafts, asset.id)) return voiceDrafts[asset.id];
+    return asset.voiceLock || "";
+  }
+
+  function voiceDirtyOf(asset) {
+    if (!asset) return false;
+    return voiceDraftOf(asset).trim() !== (asset.voiceLock || "").trim();
+  }
 
   const invalidate = () => Promise.all([
     queryClient.invalidateQueries({ queryKey: ["drama-assets", episodeId] }),
@@ -730,14 +518,9 @@ export function DramaAssetBoard({ series, episode }) {
   const extractMutation = useMutation({
     mutationFn: () => extractDramaAssets(episodeId),
     onSuccess: () => {
-      setSummaryDirty(false);
+      setPromptDrafts({});
       invalidate();
     },
-    onError: (err) => showToast(err.message),
-  });
-  const lockScriptMutation = useMutation({
-    mutationFn: () => lockDramaScript(episodeId),
-    onSuccess: invalidate,
     onError: (err) => showToast(err.message),
   });
   const createMutation = useMutation({
@@ -755,21 +538,118 @@ export function DramaAssetBoard({ series, episode }) {
   });
 
   async function saveFields(asset, extra = {}) {
-    const name = (extra.name ?? (asset.id === selected?.id ? nameDraft : asset.name)).trim();
-    const identity = (extra.identityInvariants ?? (asset.id === selected?.id ? summaryDraft : identityOf(asset))).trim();
-    await updateDramaAsset(asset.id, {
-      name,
-      identityInvariants: identity,
-    });
-    setSummaryDirty(false);
+    const payload = {};
+    if (extra.name != null) payload.name = extra.name.trim();
+    if (extra.identityInvariants != null) payload.identityInvariants = extra.identityInvariants.trim();
+    if (!Object.keys(payload).length) return;
+    await updateDramaAsset(asset.id, payload);
+    if (extra.identityInvariants != null) {
+      setPromptDrafts((current) => {
+        if (!Object.prototype.hasOwnProperty.call(current, asset.id)) return current;
+        const next = { ...current };
+        delete next[asset.id];
+        return next;
+      });
+    }
+  }
+
+  async function savePrompt(asset) {
+    if (!asset || !dirtyOf(asset)) return;
+    markBusy(asset.id, "summary", true);
+    try {
+      await saveFields(asset, { identityInvariants: draftOf(asset) });
+      await invalidate();
+    } finally {
+      markBusy(asset.id, "summary", false);
+    }
+  }
+
+  async function saveVoice(asset) {
+    if (!asset || !voiceDirtyOf(asset)) return;
+    markBusy(asset.id, "voice", true);
+    try {
+      const updated = await updateDramaAsset(asset.id, { voiceLock: voiceDraftOf(asset).trim() });
+      rememberAsset(updated);
+      setVoiceDrafts((current) => {
+        const next = { ...current };
+        delete next[asset.id];
+        return next;
+      });
+      await invalidate();
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      markBusy(asset.id, "voice", false);
+    }
+  }
+
+  async function onUploadVoice(file) {
+    const targetId = detailId || selected?.id;
+    if (!file || !targetId) return;
+    markBusy(targetId, "voice-file", true);
+    setVoiceLibraryError("");
+    try {
+      const updated = await uploadDramaAssetVoiceReference(targetId, file);
+      rememberAsset(updated);
+      setVoiceLibraryOpen(false);
+      await invalidate();
+      showToast("已绑定参考音频");
+    } catch (err) {
+      const message = err?.message || "绑定参考音频失败";
+      setVoiceLibraryError(message);
+      showToast(message);
+    } finally {
+      markBusy(targetId, "voice-file", false);
+    }
+  }
+
+  async function onBindVoiceFromLibrary(libraryAsset) {
+    const targetId = detailId || selected?.id;
+    if (!libraryAsset?.id || !targetId) return;
+    markBusy(targetId, "voice-file", true);
+    setVoiceLibraryError("");
+    try {
+      const updated = await bindDramaAssetVoiceReference(targetId, libraryAsset.id);
+      rememberAsset(updated);
+      setVoiceLibraryOpen(false);
+      await invalidate();
+      showToast("已绑定参考音频");
+    } catch (err) {
+      const message = err?.message || "绑定参考音频失败";
+      setVoiceLibraryError(message);
+      showToast(message);
+    } finally {
+      markBusy(targetId, "voice-file", false);
+    }
+  }
+
+  async function commitName(asset) {
+    const name = nameDraft.trim();
+    if (!name) {
+      showToast("请输入名称");
+      return;
+    }
+    setEditingNameId(null);
+    if (name === asset.name) return;
+    markBusy(asset.id, "save", true);
+    try {
+      await saveFields(asset, { name });
+      await invalidate();
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      markBusy(asset.id, "save", false);
+    }
   }
 
   async function generate(asset) {
+    if (!asset) return;
+    if (dirtyOf(asset) || !identityOf(asset)) {
+      showToast("请先填写并保存图片提示词");
+      return;
+    }
     markBusy(asset.id, "generate", true);
     try {
-      if (asset.id === selected?.id && summaryChanged) {
-        await saveFields(asset);
-      }
       const result = await generateDramaAssetImage(asset.id, { resolution });
       await pollDramaAssetGenerate(asset.id, result.task.id);
       invalidate();
@@ -784,10 +664,11 @@ export function DramaAssetBoard({ series, episode }) {
       showToast("请先勾选要生成的资产");
       return;
     }
-    // 方案 A：生图由后端按外形设定拼模板，不再要求库里已有整段 imagePrompt。
-    const queue = checkedAssets.filter((item) => !item.generating && !isBusy(item.id, "generate"));
+    const skipped = checkedAssets.filter((item) => dirtyOf(item) || !identityOf(item)).length;
+    const queue = checkedAssets.filter((item) => identityOf(item) && !dirtyOf(item) && !item.generating && !isBusy(item.id, "generate"));
+    const queuedCount = queue.length;
     if (!queue.length) {
-      showToast("勾选的资产正在生成中，请稍后再试");
+      showToast(skipped ? "所选资产暂无可用提示词，请先填写并保存" : "勾选的资产正在生成中，请稍后再试");
       return;
     }
     const limitRetries = new Map();
@@ -811,9 +692,18 @@ export function DramaAssetBoard({ series, episode }) {
         }
       }
     };
-    await Promise.all(Array.from({ length: Math.min(BATCH_CONCURRENCY, queue.length) }, () => runQueued()));
-    if (failures.length) {
-      showToast(`批量生图完成，${failures.length} 个失败：${failures.join("；")}`);
+    setBatchRunning(true);
+    try {
+      await Promise.all(Array.from({ length: Math.min(BATCH_CONCURRENCY, queue.length) }, () => runQueued()));
+      setBatchSelectMode(false);
+      setBatchAssetIds(new Set());
+      if (failures.length) {
+        showToast(`批量生图完成，${failures.length} 个失败：${failures.join("；")}`);
+      } else if (skipped) {
+        showToast(`批量生图完成：成功 ${queuedCount} 项，跳过 ${skipped} 项`);
+      }
+    } finally {
+      setBatchRunning(false);
     }
   }
 
@@ -861,7 +751,7 @@ export function DramaAssetBoard({ series, episode }) {
 
   async function onUploadFiles(files) {
     const list = Array.from(files || []).filter(Boolean);
-    const targetId = selected?.id;
+    const targetId = uploadTargetRef.current || selected?.id;
     if (!list.length || !targetId) return;
     markBusy(targetId, "upload", true);
     try {
@@ -870,7 +760,7 @@ export function DramaAssetBoard({ series, episode }) {
         updated = await uploadDramaAssetImage(targetId, file);
         rememberAsset(updated);
       }
-      invalidate();
+      await invalidateAssetHistory(targetId);
     } finally {
       markBusy(targetId, "upload", false);
     }
@@ -904,20 +794,6 @@ export function DramaAssetBoard({ series, episode }) {
       }
     } finally {
       markBusy(targetId, "upload", false);
-    }
-  }
-
-  async function reviewCharacter(asset) {
-    if (!asset?.id || !asset.imageStorageKey) return;
-    markBusy(asset.id, "review", true);
-    try {
-      await reviewDramaAsset(asset.id);
-      await invalidateAssetHistory(asset.id);
-    } catch (err) {
-      showToast(err.message);
-      await invalidateAssetHistory(asset.id);
-    } finally {
-      markBusy(asset.id, "review", false);
     }
   }
 
@@ -971,69 +847,20 @@ export function DramaAssetBoard({ series, episode }) {
     }
   }
 
-  async function saveVoice() {
-    if (!selected) return;
-    markBusy(selected.id, "voice", true);
-    try {
-      await updateDramaAsset(selected.id, { voiceLock: voiceLockDraft.trim() });
-      invalidate();
-    } finally {
-      markBusy(selected.id, "voice", false);
-    }
-  }
-
-  async function onVoiceUpload(file) {
-    const target = voiceTarget;
-    if (!file || !target?.id) return;
-    markBusy(target.id, "voice", true);
-    try {
-      const updated = await uploadDramaAssetVoiceReference(target.id, file);
-      queryClient.setQueryData(["drama-assets", episodeId], (current) => {
-        if (!Array.isArray(current)) return current;
-        return current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item));
-      });
-      setVoiceLibraryOpen(false);
-      setVoiceTarget(null);
-      queryClient.invalidateQueries({ queryKey: ["assets"] });
-      invalidate();
-    } finally {
-      markBusy(target.id, "voice", false);
-    }
-  }
-
-  async function onVoiceLibrarySelect(libraryAsset) {
-    const target = voiceTarget;
-    if (!libraryAsset?.id || !target?.id) return;
-    markBusy(target.id, "voice", true);
-    try {
-      const updated = await bindDramaAssetVoiceReference(target.id, libraryAsset.id);
-      queryClient.setQueryData(["drama-assets", episodeId], (current) => {
-        if (!Array.isArray(current)) return current;
-        return current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item));
-      });
-      setVoiceLibraryOpen(false);
-      setVoiceTarget(null);
-      invalidate();
-    } finally {
-      markBusy(target.id, "voice", false);
-    }
-  }
-
   const modelBound = Boolean(imageModelId);
   const selectedBusy = isBusy(selected?.id, "lock") || isBusy(selected?.id, "save") || isBusy(selected?.id, "upload");
   const selectedGenerating = Boolean(selected?.generating) || isBusy(selected?.id, "generate");
-  const summaryChanged = Boolean(selected) && summaryDraft.trim() !== identityOf(selected);
+  const detailAsset = assets.find((item) => item.id === detailId) || null;
 
-  async function saveSummary() {
-    if (!selected || !summaryChanged) return;
-    markBusy(selected.id, "summary", true);
-    try {
-      await saveFields(selected);
-      await invalidate();
-      setSummaryDirty(false);
-    } finally {
-      markBusy(selected.id, "summary", false);
-    }
+  function openDetail(asset) {
+    setSelectedId(asset.id);
+    setDetailId(asset.id);
+  }
+
+  function pickUpload(asset) {
+    uploadTargetRef.current = asset.id;
+    setSelectedId(asset.id);
+    fileRef.current?.click();
   }
 
   return (
@@ -1043,263 +870,481 @@ export function DramaAssetBoard({ series, episode }) {
           <CircleAlert size={16} />{actionError}
         </div>
       )}
-      <aside className="youxi-subject-nav">
-        <header>
-          <strong>资产分类</strong>
-          <span>共{assets.length}个</span>
+      <section className="asset-workbench">
+        <header className="asset-category-row">
+          <div className="asset-category-tabs" role="tablist" aria-label="资产分类">
+            {TYPES.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={type === item.id}
+                className={`asset-category-tab${type === item.id ? " is-active" : ""}`}
+                disabled={batchRunning}
+                onClick={() => {
+                  setType(item.id);
+                  setBatchSelectMode(false);
+                  setBatchAssetIds(new Set());
+                  setDetailId(null);
+                  const first = assets.find((asset) => asset.type === item.id);
+                  setSelectedId(first?.id || null);
+                }}
+              >
+                <item.Icon size={18} />
+                <span>{item.label}</span>
+                <strong>{counts[item.id] || 0}</strong>
+              </button>
+            ))}
+          </div>
+          <button
+            className={`asset-extract-button${extractMutation.isPending ? " is-loading" : ""}`}
+            type="button"
+            disabled={!scriptLocked || !episodeId || extractMutation.isPending || !canUseTextModel || batchRunning}
+            title={scriptLocked
+              ? (!canUseTextModel ? "请先在剧本页绑定可用文本模型" : "按当前剧本重新提取资产")
+              : "请先回剧本页完成一键分析"}
+            onClick={() => extractMutation.mutate()}
+          >
+            {extractMutation.isPending ? <span className="asset-spinner" /> : <Sparkles size={17} />}
+            <span>{extractMutation.isPending ? "正在重新提取中" : "从剧本提取"}</span>
+          </button>
         </header>
-        <div className="youxi-subject-tabs" role="tablist" aria-label="资产类型">
-          {TYPES.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              aria-selected={type === item.id}
-              className={type === item.id ? "active" : ""}
-              onClick={() => {
-                setType(item.id);
-                const first = assets.find((asset) => asset.type === item.id);
-                setSelectedId(first?.id || null);
-                setSummaryDirty(false);
-              }}
-            >
-              <item.Icon size={16} />
-              {item.label}
-              <span>{counts[item.id] || 0}</span>
-            </button>
-          ))}
-        </div>
-        <p>在三个标签页中管理全剧统一使用的角色、场景与道具。角色填外形，场景填空间陈设，道具填材质细节；构图与风格由系统在生图时自动附加。</p>
-      </aside>
-
-      <section className="youxi-subject-main">
-        <div className="youxi-subject-narration">
+        {!scriptLocked && <p className="drama-asset-analyze-hint">请先回到剧本页，完成一键分析后再提取。</p>}
+        <div className="asset-toolbar">
           <ImageModelSelect
             imageModels={imageModels}
             imageModelId={imageModelId}
             seriesImageModelId={series?.imageModelId}
             seriesImageModelName={series?.imageModelName}
-            disabled={bindMutation.isPending}
+            disabled={bindMutation.isPending || batchRunning}
             onBindModel={(value) => {
               setImageModelId(value);
               if (value) bindMutation.mutate(value);
             }}
           />
-          {scriptLocked ? (
+          <div className="asset-toolbar-actions">
+            {batchSelectMode && (
+              <>
+                <label className="asset-select-all">
+                  <input
+                    type="checkbox"
+                    checked={allChecked}
+                    disabled={!filtered.length || batchRunning}
+                    aria-label={`全选当前${type}`}
+                    ref={(node) => {
+                      if (node) node.indeterminate = checkedCount > 0 && !allChecked;
+                    }}
+                    onChange={toggleAllBatchAssets}
+                  />
+                  <span className="asset-checkbox" aria-hidden="true"><Check size={12} /></span>
+                  <span>一键全选</span>
+                </label>
+                <span className="asset-selected-count">已选 <strong>{checkedCount}</strong> 项</span>
+              </>
+            )}
             <button
+              className={`asset-secondary-button${batchRunning ? " is-loading" : ""}`}
               type="button"
-              disabled={!episodeId || extractMutation.isPending || !canUseTextModel}
-              title={!canUseTextModel ? "请先在剧本页绑定可用文本模型" : undefined}
-              onClick={() => extractMutation.mutate()}
+              disabled={!filtered.length || batchRunning || extractMutation.isPending || (batchSelectMode && (!checkedCount || !modelBound))}
+              title={!modelBound && batchSelectMode ? "先选择图像模型" : "先进入勾选，再生成已选项"}
+              onClick={() => {
+                if (!batchSelectMode) {
+                  setBatchSelectMode(true);
+                  setBatchAssetIds(new Set());
+                  return;
+                }
+                generateBatch().catch((err) => showToast(err.message));
+              }}
             >
-              <RefreshCw size={16} />
-              <span>从剧本提取</span>
-              <strong>{extractMutation.isPending ? "提取中" : `${assets.length}个`}</strong>
+              {batchRunning ? <span className="asset-spinner" /> : <Sparkles size={17} />}
+              <span>{batchRunning ? `正在生成 ${checkedCount} 项…` : batchSelectMode ? `批量生图（${checkedCount}）` : "批量生图"}</span>
             </button>
-          ) : (
-            <button
-              type="button"
-              disabled={lockScriptMutation.isPending || !(episode?.sourceText || (episode?.script && Object.keys(episode.script).length))}
-              onClick={() => lockScriptMutation.mutate()}
-            >
-              <Lock size={16} />
-              <span>锁定剧本后才能提取</span>
-              <strong>{lockScriptMutation.isPending ? "锁定中" : "未锁定"}</strong>
-            </button>
-          )}
-          <div>
-            <label className="youxi-batch-select">
-              <input
-                type="checkbox"
-                checked={allChecked}
-                disabled={!filtered.length}
-                aria-label={`全选当前${type}`}
-                onChange={toggleAllBatchAssets}
-              />
-              <span>全选{filtered.length ? `(${checkedCount}/${filtered.length})` : ""}</span>
-            </label>
-            <button
-              type="button"
-              className="youxi-batch-generate"
-              disabled={!modelBound || extractMutation.isPending || !checkedCount}
-              title={!modelBound ? "先选择顶部图像模型" : (checkedCount ? `生成已勾选的 ${checkedCount} 个${type}，并发生成、逐个完成` : "先勾选要生成的资产")}
-              onClick={() => generateBatch().catch((err) => showToast(err.message))}
-            >
-              <Sparkles size={15} /> 批量生图
-            </button>
-            <button type="button" onClick={() => setCreating(true)}>
-              <Plus size={15} /> 新增{type}
+            <button className="asset-primary-button" type="button" disabled={batchRunning} onClick={() => setCreating(true)}>
+              <Plus size={17} />
+              <span>新增{type}</span>
             </button>
           </div>
         </div>
 
-        <div className="youxi-subject-body">
-          {!scriptLocked && (
-            <div className="drama-asset-gate youxi-subject-gate">
-              <Lock size={16} />
-              <div>
-                <strong>请先锁定分场剧本</strong>
-                <p>锁定后可从剧本当中提取角色、场景、道具。已有选用图的资产会直接作为分镜参考。</p>
-              </div>
-            </div>
-          )}
-
+        <div className="asset-content">
           {filtered.length === 0 ? (
-            <div className="youxi-subject-grid">
-              <button className="youxi-add-subject" type="button" onClick={() => setCreating(true)}>
-                <Plus size={22} />
-                <strong>新增{type}</strong>
+            <section className="asset-empty-state">
+              <div className="asset-empty-icon">{type === "场景" ? <ImageIcon size={31} /> : type === "道具" ? <Clapperboard size={31} /> : <UsersRound size={31} />}</div>
+              <h3>暂无{type}资产</h3>
+              <p>可以从剧本中提取{type}，或手动新增{type}资产。</p>
+              <button className="asset-primary-button" type="button" onClick={() => setCreating(true)}>
+                <Plus size={17} />
+                <span>新增{type}</span>
               </button>
-            </div>
+            </section>
           ) : (
-            <div className="youxi-subject-grid">
+            <div className="asset-grid">
               {filtered.map((item) => {
                 const src = mediaUrl(item.imageStorageKey || item.imageUrl, { w: MEDIA_THUMB_WIDTH });
                 const generating = Boolean(item.generating) || isBusy(item.id, "generate");
-                const badge = generating ? "生成中" : statusLabel(item.status);
-                const meta = cardMeta(item);
+                const uploading = isBusy(item.id, "upload");
+                const busyCard = generating || uploading || batchRunning;
+                const selectedCard = batchAssetIds.has(String(item.id));
+                const promptDirty = dirtyOf(item);
+                const promptSaving = isBusy(item.id, "summary");
                 return (
-                  <article className={`youxi-subject-card ${selected?.id === item.id ? "active" : ""}`} key={item.id}>
-                    <header>
-                      <strong>{item.name}</strong>
-                      <div className="youxi-subject-card__actions">
+                  <article className={`asset-card${selectedCard ? " is-selected" : ""}`} key={item.id} data-asset-card={item.id}>
+                    <header className="asset-card-header">
+                      {editingNameId === item.id ? (
+                        <input
+                          className="asset-name-input"
+                          autoFocus
+                          maxLength={128}
+                          aria-label="修改资产名称"
+                          value={nameDraft}
+                          onChange={(event) => setNameDraft(event.target.value)}
+                          onBlur={() => commitName(item)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              commitName(item);
+                            } else if (event.key === "Escape") {
+                              setNameDraft(item.name);
+                              setEditingNameId(null);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <div className="asset-title-group">
+                          {batchSelectMode && (
+                            <label className="asset-card-select" title={`${selectedCard ? "取消选择" : "选择"} ${item.name}`}>
+                              <input
+                                type="checkbox"
+                                checked={selectedCard}
+                                disabled={batchRunning}
+                                aria-label={`选择 ${item.name}`}
+                                onChange={() => toggleBatchAsset(item.id)}
+                              />
+                              <span className="asset-checkbox" aria-hidden="true"><Check size={12} /></span>
+                            </label>
+                          )}
+                          <h3 title={item.name}>{item.name}</h3>
+                          <button
+                            className="asset-edit-name"
+                            type="button"
+                            aria-label={`修改 ${item.name} 的名称`}
+                            disabled={busyCard}
+                            onClick={() => {
+                              setSelectedId(item.id);
+                              setNameDraft(item.name);
+                              setEditingNameId(item.id);
+                            }}
+                          >
+                            <Pencil size={14} />
+                          </button>
+                        </div>
+                      )}
+                      <div className="asset-card-actions">
+                        <button className="danger" type="button" aria-label={`删除 ${item.name}`} title="删除" disabled={batchRunning || isBusy(item.id, "delete")} onClick={() => setDeleteAssetTarget(item)}>
+                          <Trash2 size={17} />
+                        </button>
+                        <button type="button" aria-label={`上传 ${item.name} 的图片`} title="上传图片" disabled={busyCard} onClick={() => pickUpload(item)}>
+                          <Upload size={17} />
+                        </button>
+                      </div>
+                    </header>
+                    <div className="asset-image-wrap">
+                      {src ? (
+                        <button className="asset-card-image-button" type="button" aria-label={`打开 ${item.name} 的图片生成弹窗`} disabled={busyCard} onClick={() => openDetail(item)}>
+                          <img key={src} src={src} alt={item.name} onError={retryMediaOnce} />
+                          <span className="asset-card-image-open" aria-hidden="true"><Expand size={15} /></span>
+                        </button>
+                      ) : (
+                        <div className="asset-placeholder">
+                          <ImageIcon size={32} />
+                          <button type="button" disabled={busyCard} onClick={() => pickUpload(item)}>上传图片</button>
+                          <span>或在下方生成资产图</span>
+                        </div>
+                      )}
+                      {(generating || uploading) && (
+                        <div className="asset-image-status" role="status">
+                          <span className="asset-spinner" />
+                          <strong>{uploading ? "正在上传…" : "正在生成…"}</strong>
+                        </div>
+                      )}
+                    </div>
+                    <div className="asset-prompt-field">
+                      <label htmlFor={`prompt-${item.id}`}>图片提示词</label>
+                      <textarea
+                        id={`prompt-${item.id}`}
+                        rows={4}
+                        maxLength={512}
+                        disabled={batchRunning}
+                        value={draftOf(item)}
+                        placeholder="输入图片提示词…"
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setPromptDrafts((current) => ({ ...current, [item.id]: value }));
+                        }}
+                      />
+                    </div>
+                    <footer className="asset-card-footer">
+                      <div className="asset-card-footer-actions">
                         <button
+                          className="asset-generate-button"
                           type="button"
-                          className="youxi-subject-card__gen"
-                          aria-label={generating ? "生成中" : item.imageStorageKey ? `重新生成${item.name}` : `生成${item.name}图片`}
-                          disabled={!modelBound || generating || isBusy(item.id, "delete")}
-                          title={!modelBound ? "先选择顶部图像模型" : (item.imageStorageKey ? "按当前外形设定重新生成设定图" : "按外形设定生成设定图")}
-                          onClick={(event) => {
-                            event.stopPropagation();
+                          disabled={!modelBound || busyCard}
+                          title={!modelBound ? "先选择图像模型" : "按已保存的设定生成"}
+                          onClick={() => {
                             setSelectedId(item.id);
                             generate(item).catch((err) => showToast(err.message));
                           }}
                         >
-                          <Sparkles size={13} />
-                          <span className="youxi-subject-card__label">{generating ? "生成中" : item.imageStorageKey ? "重新生成" : "图片生成"}</span>
+                          {generating ? <span className="asset-spinner small" /> : <Sparkles size={14} />}
+                          <span>{generating ? "生成中…" : "图片生成"}</span>
                         </button>
                         <button
+                          className={`asset-save-prompt${promptDirty ? " is-dirty" : ""}`}
                           type="button"
-                          className="youxi-subject-card__trash"
-                          aria-label={`删除${item.name}`}
-                          disabled={generating || isBusy(item.id, "delete")}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            remove(item).catch((err) => showToast(err.message));
-                          }}
+                          disabled={!promptDirty || promptSaving || batchRunning}
+                          onClick={() => savePrompt(item).catch((err) => showToast(err.message))}
                         >
-                          <Trash2 size={14} />
+                          {promptSaving ? "正在保存…" : "保存提示词"}
                         </button>
-                        <label className="youxi-subject-card__check">
-                          <input
-                            type="checkbox"
-                            checked={batchAssetIds.has(String(item.id))}
-                            disabled={generating}
-                            aria-label={`勾选${item.name}参与批量生图`}
-                            onClick={(event) => event.stopPropagation()}
-                            onChange={() => toggleBatchAsset(item.id)}
-                          />
-                        </label>
                       </div>
-                    </header>
-                    <button
-                      className="youxi-subject-card__select"
-                      type="button"
-                      onClick={() => {
-                        setSelectedId(item.id);
-                      }}
-                    >
-                      <div className={`${!src ? "is-empty" : ""} ${generating ? "is-generating" : ""}`}>
-                        {src ? (
-                          <>
-                            <img key={src} src={src} alt={item.name} onError={retryMediaOnce} />
-                            {badge ? <span>{badge}</span> : null}
-                          </>
-                        ) : (
-                          <div className="youxi-subject-empty">
-                            <ImageIcon size={31} />
-                            <b>{generating ? "生成中" : "上传图片"}</b>
-                            <small>也可在右侧生成资产图</small>
-                          </div>
-                        )}
-                      </div>
-                    </button>
-                    {meta ? <p className="youxi-subject-card__meta">{meta}</p> : null}
+                      <button className="asset-expand-button" type="button" aria-label={`查看 ${item.name} 详情`} title="查看详情" disabled={batchRunning} onClick={() => openDetail(item)}>
+                        <Expand size={17} />
+                      </button>
+                    </footer>
                   </article>
                 );
               })}
-              <button className="youxi-add-subject" type="button" onClick={() => setCreating(true)}>
-                <Plus size={22} />
+              <button className="asset-add-card" type="button" disabled={batchRunning} onClick={() => setCreating(true)}>
+                <Plus size={20} />
                 <strong>新增{type}</strong>
+                <span>创建一个空白{type}资产</span>
               </button>
             </div>
           )}
         </div>
+        <section className="drama-asset-guide asset-stage-guide" aria-label="资产设置流程引导">
+          <strong><Sparkles size={14} /> 角色和场景设定会应用到整部剧集中，建议调整完毕后再继续哦</strong>
+          <div className="asset-stage-guide-actions">
+            <button className="asset-stage-guide-previous" type="button" aria-label="上一步：返回剧本" onClick={() => onPrev?.()}>
+              <ArrowLeft size={17} />
+            </button>
+            <button className="script-complete-action" type="button" onClick={() => onNext?.()}>
+              <span>下一步</span>
+              <ArrowRight size={16} />
+            </button>
+          </div>
+        </section>
       </section>
 
-      <SubjectInspector
-        asset={selected}
-        type={type}
-        resolution={resolution}
-        prompt={promptDraft}
-        nameDraft={nameDraft}
-        summaryDraft={summaryDraft}
-        generating={selectedGenerating}
-        busy={selectedBusy}
-        summaryChanged={summaryChanged}
-        summarySaving={isBusy(selected?.id, "summary")}
-        analyzing={Boolean(episode?.analyzing)}
-        onNameChange={(event) => setNameDraft(event.target.value)}
-        onNameBlur={() => {
-          if (!selected || nameDraft.trim() === selected.name) return;
-          saveFields(selected, { name: nameDraft }).then(invalidate).catch((err) => showToast(err.message));
-        }}
-        onSummaryChange={(event) => {
-          setSummaryDirty(true);
-          setSummaryDraft(event.target.value);
-        }}
-        onSummaryBlur={() => {
-          if (!selected || summaryDraft.trim() === identityOf(selected)) {
-            setSummaryDirty(false);
-            return;
-          }
-          saveFields(selected)
-            .then(() => invalidate())
-            .then(() => setSummaryDirty(false))
-            .catch((err) => showToast(err.message));
-        }}
-        onSummarySave={() => saveSummary().catch((err) => showToast(err.message))}
-        onResolution={setResolution}
-        onCiteClick={() => {
-          setImageLibraryError("");
-          setImageLibraryOpen(true);
-        }}
-        onUploadClick={() => fileRef.current?.click()}
-        voiceLock={voiceLockDraft}
-        voiceBusy={isBusy(selected?.id, "voice")}
-        onVoiceLockChange={(event) => setVoiceLockDraft(event.target.value)}
-        onVoiceSave={() => saveVoice().catch((err) => showToast(err.message))}
-        onVoiceUploadClick={() => {
-          if (!selected) return;
-          setVoiceTarget({ id: selected.id, name: selected.name });
-          setVoicePending([]);
-          setVoiceLibraryOpen(true);
-        }}
-        voiceReferenceStatus={voiceReferenceStatus}
-        generations={generations}
-        generationsLoading={generationsQuery.isLoading}
-        historyBusy={isBusy(selected?.id, "history")}
-        reviewing={isBusy(selected?.id, "review")}
-        reviewEnabled={reviewEnabled}
-        onReview={() => reviewCharacter(selected)}
-        onSwitchFinal={() => setSwitchFinalOpen(true)}
-        onPreviewGeneration={(record) => setPreview({
-          src: mediaUrl(record.url || record.storageKey),
-          title: `${selected?.name || ""} · ${record.label}`,
-        })}
-        onDeleteGeneration={requestDeleteGeneration}
-        onImportGeneration={importGeneration}
-      />
+      {detailAsset && createPortal(
+        <div
+          className="drama-dialog-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !selectedGenerating) setDetailId(null);
+          }}
+        >
+          <section className={`asset-image-modal has-history${detailAsset.type === "角色" ? "" : " is-compact"}`} role="dialog" aria-modal="true" aria-labelledby="asset-image-modal-title">
+            <header className="asset-image-modal-header">
+              {editingNameId === detailAsset.id ? (
+                <input
+                  className="asset-name-input"
+                  autoFocus
+                  maxLength={128}
+                  aria-label="修改资产名称"
+                  value={nameDraft}
+                  onChange={(event) => setNameDraft(event.target.value)}
+                  onBlur={() => commitName(detailAsset)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      commitName(detailAsset);
+                    } else if (event.key === "Escape") {
+                      setNameDraft(detailAsset.name);
+                      setEditingNameId(null);
+                    }
+                  }}
+                />
+              ) : (
+                <div className="asset-modal-title">
+                  <h2 id="asset-image-modal-title">{detailAsset.name}</h2>
+                  <button
+                    type="button"
+                    aria-label={`修改 ${detailAsset.name} 的名称`}
+                    onClick={() => {
+                      setNameDraft(detailAsset.name);
+                      setEditingNameId(detailAsset.id);
+                    }}
+                  >
+                    <Pencil size={16} />
+                  </button>
+                </div>
+              )}
+              <button type="button" aria-label="关闭" onClick={() => setDetailId(null)}><X size={18} /></button>
+            </header>
+            <div className="asset-image-modal-body">
+              <div className="asset-modal-config">
+                <section className="asset-modal-section">
+                  <div className="asset-modal-parameter-grid">
+                    <ImageModelSelect
+                      imageModels={imageModels}
+                      imageModelId={imageModelId}
+                      seriesImageModelId={series?.imageModelId}
+                      seriesImageModelName={series?.imageModelName}
+                      disabled={bindMutation.isPending || selectedGenerating}
+                      onBindModel={(value) => {
+                        setImageModelId(value);
+                        if (value) bindMutation.mutate(value);
+                      }}
+                    />
+                    <div className="asset-modal-resolution">
+                      <span>分辨率</span>
+                      <div role="group" aria-label="分辨率">
+                        {RESOLUTIONS.map((item) => (
+                          <button
+                            key={item}
+                            type="button"
+                            className={resolution === item ? "is-active" : ""}
+                            onClick={() => setResolution(item)}
+                          >
+                            {item}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="asset-modal-prompt-head">
+                    <label htmlFor="asset-modal-prompt">图片提示词</label>
+                    <button
+                      type="button"
+                      disabled={!dirtyOf(detailAsset) || isBusy(detailAsset.id, "summary") || selectedGenerating}
+                      onClick={() => savePrompt(detailAsset).catch((err) => showToast(err.message))}
+                    >
+                      {isBusy(detailAsset.id, "summary") ? "正在保存…" : dirtyOf(detailAsset) ? "保存提示词" : "已保存"}
+                    </button>
+                  </div>
+                  <textarea
+                    id="asset-modal-prompt"
+                    className="asset-modal-prompt"
+                    maxLength={512}
+                    value={draftOf(detailAsset)}
+                    placeholder="输入图片提示词…"
+                    disabled={selectedGenerating}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setPromptDrafts((current) => ({ ...current, [detailAsset.id]: value }));
+                    }}
+                  />
+                </section>
+                {detailAsset.type === "角色" && (
+                  <section className="asset-modal-section asset-voice-section">
+                    <div className="asset-voice-head">
+                      <h3>音色</h3>
+                      <span>{detailAsset.voiceReferenceUrl ? "已绑定参考音频" : "可绑定参考音频"}</span>
+                    </div>
+                    <input
+                      className="asset-voice-input"
+                      maxLength={256}
+                      value={voiceDraftOf(detailAsset)}
+                      placeholder="例：30岁低沉男声，普通话，克制冷静"
+                      disabled={selectedGenerating || isBusy(detailAsset.id, "voice")}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setVoiceDrafts((current) => ({ ...current, [detailAsset.id]: value }));
+                      }}
+                    />
+                    <div className="asset-voice-actions">
+                      <button
+                        type="button"
+                        className="asset-voice-bind"
+                        disabled={selectedGenerating || isBusy(detailAsset.id, "voice-file")}
+                        onClick={() => {
+                          setSelectedId(detailAsset.id);
+                          setVoiceLibraryError("");
+                          setVoiceLibraryOpen(true);
+                        }}
+                      >
+                        <AudioLines size={15} /> {isBusy(detailAsset.id, "voice-file") ? "正在绑定…" : "绑定参考音频"}
+                      </button>
+                      <button
+                        type="button"
+                        className="asset-voice-save"
+                        disabled={!voiceDirtyOf(detailAsset) || isBusy(detailAsset.id, "voice") || selectedGenerating}
+                        onClick={() => saveVoice(detailAsset)}
+                      >
+                        <Check size={15} /> {isBusy(detailAsset.id, "voice") ? "保存中…" : "保存"}
+                      </button>
+                    </div>
+                    {detailAsset.voiceReferenceUrl && (
+                      <audio
+                        className="asset-voice-player"
+                        controls
+                        src={mediaUrl(detailAsset.voiceReferenceKey || detailAsset.voiceReferenceUrl)}
+                      />
+                    )}
+                    <p className="asset-voice-hint">可为角色保存参考音频；到分镜阶段将按所选视频模型能力决定是否使用。</p>
+                  </section>
+                )}
+                <section className="asset-modal-section asset-reference-section">
+                  <div className="asset-modal-section-head">
+                    <div>
+                      <h3>参考图片</h3>
+                      <p>可上传本地图片，或从当前项目的资产库中选择。选中后会替换当前资产图，并写入生成历史。</p>
+                    </div>
+                    <div className="asset-reference-actions">
+                      <button type="button" disabled={selectedBusy || selectedGenerating} onClick={() => pickUpload(detailAsset)}>
+                        <Upload size={15} /> 上传图片
+                      </button>
+                      <button
+                        type="button"
+                        disabled={selectedBusy || selectedGenerating}
+                        onClick={() => {
+                          setSelectedId(detailAsset.id);
+                          setImageLibraryError("");
+                          setImageLibraryOpen(true);
+                        }}
+                      >
+                        <Folder size={15} /> 资产库选择
+                      </button>
+                    </div>
+                  </div>
+                </section>
+                <div className="asset-generate-action">
+                  <button
+                    type="button"
+                    className="asset-modal-generate"
+                    disabled={!modelBound || selectedGenerating || selectedBusy}
+                    onClick={() => generate(detailAsset).catch((err) => showToast(err.message))}
+                  >
+                    {selectedGenerating ? "正在生成…" : <><Sparkles size={16} /> 开始生成</>}
+                  </button>
+                </div>
+              </div>
+              <aside className="asset-history-panel">
+                <GenerationHistoryPanel
+                  title="生成历史"
+                  countLabel={`${generations.length}`}
+                  hint="“当前选中”即页面资产卡片正在使用的图片。"
+                  switchLabel="切换当前资产"
+                  records={generations}
+                  locked={false}
+                  mediaKind="image"
+                  showImport
+                  compactActions
+                  busy={isBusy(detailAsset.id, "history") || generationsQuery.isLoading || selectedGenerating}
+                  onSwitchClick={() => setSwitchFinalOpen(true)}
+                  onPreview={(record) => setPreview({
+                    src: mediaUrl(record.url || record.storageKey),
+                    title: `${detailAsset.name || ""} · ${record.label}`,
+                  })}
+                  onDelete={requestDeleteGeneration}
+                  onImport={importGeneration}
+                />
+              </aside>
+            </div>
+          </section>
+        </div>,
+        document.body,
+      )}
 
       <SwitchFinalModal
         open={switchFinalOpen}
@@ -1310,6 +1355,27 @@ export function DramaAssetBoard({ series, episode }) {
         busy={isBusy(selected?.id, "history")}
         onClose={() => setSwitchFinalOpen(false)}
         onConfirm={selectGeneration}
+      />
+
+      <ConfirmDialog
+        open={Boolean(deleteAssetTarget)}
+        eyebrow="资产"
+        title="删除此资产？"
+        message={deleteAssetTarget ? `将删除「${deleteAssetTarget.name}」。此操作不可撤销。` : ""}
+        confirmLabel="删除"
+        busy={isBusy(deleteAssetTarget?.id, "delete")}
+        busyLabel="删除中…"
+        onClose={() => setDeleteAssetTarget(null)}
+        onConfirm={() => {
+          const target = deleteAssetTarget;
+          if (!target) return;
+          remove(target)
+            .then(() => {
+              setDeleteAssetTarget(null);
+              if (detailId === target.id) setDetailId(null);
+            })
+            .catch((err) => showToast(err.message));
+        }}
       />
 
       <ConfirmDialog
@@ -1326,6 +1392,23 @@ export function DramaAssetBoard({ series, episode }) {
         onConfirm={confirmDeleteGeneration}
       />
 
+      {voiceLibraryOpen && (
+        <VoiceLibraryDialog
+          assets={Array.isArray(voiceLibraryQuery.data) ? voiceLibraryQuery.data : []}
+          loading={voiceLibraryQuery.isLoading}
+          busy={isBusy(detailId || selected?.id, "voice-file")}
+          error={voiceLibraryError}
+          onUpload={() => voiceFileRef.current?.click()}
+          onClose={() => {
+            if (!isBusy(detailId || selected?.id, "voice-file")) {
+              setVoiceLibraryOpen(false);
+              setVoiceLibraryError("");
+            }
+          }}
+          onConfirm={(item) => onBindVoiceFromLibrary(item)}
+        />
+      )}
+
       <input
         ref={voiceFileRef}
         type="file"
@@ -1334,36 +1417,9 @@ export function DramaAssetBoard({ series, episode }) {
         onChange={(event) => {
           const file = event.target.files?.[0];
           event.target.value = "";
-          onVoiceUpload(file).catch((err) => showToast(err.message));
+          if (file) onUploadVoice(file);
         }}
       />
-
-      {voiceLibraryOpen && (
-        <AssetPickerDialog
-          title={`为“${voiceTarget?.name || "当前角色"}”选择参考音频`}
-          hint="角色音色参考"
-          emptyText="音频素材库暂无可用素材"
-          assets={voiceLibraryQuery.data || []}
-          selectedItems={voicePending}
-          loading={voiceLibraryQuery.isLoading}
-          error={voiceLibraryQuery.error?.message || ""}
-          maxSelection={1}
-          onToggle={(item) => setVoicePending((current) => current.some((selectedItem) => sameAsset(selectedItem, item)) ? [] : [item])}
-          onClose={() => {
-            setVoiceLibraryOpen(false);
-            setVoiceTarget(null);
-            setVoicePending([]);
-          }}
-          onConfirm={() => {
-            const item = voicePending[0];
-            if (!item) {
-              showToast("请选择一段参考音频");
-              return;
-            }
-            onVoiceLibrarySelect(item).catch((err) => showToast(err.message));
-          }}
-        />
-      )}
 
       {imageLibraryOpen && (
         <ImageLibraryDialog

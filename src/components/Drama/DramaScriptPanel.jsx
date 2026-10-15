@@ -1,55 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Lock, Plus, Save, Sparkles, Trash2 } from "lucide-react";
-import { analyzeDramaScript, bindDramaTextModel, fetchDramaTextModels, fetchDramaVideoModels, lockDramaScript, updateDramaSeries } from "../../api/drama.js";
-import { DramaStylePicker } from "./DramaStylePicker.jsx";
-import { DEFAULT_DRAMA_STYLE_KEY } from "./dramaStyles.js";
+import { ChevronRight, CircleCheck, Plus, Sparkles, Trash2 } from "lucide-react";
+import { analyzeDramaScript, bindDramaTextModel, fetchDramaTextModels } from "../../api/drama.js";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
-
-const ASPECT_RATIOS = [
-  { id: "21:9", label: "21:9" },
-  { id: "16:9", label: "16:9" },
-  { id: "4:3", label: "4:3" },
-  { id: "1:1", label: "1:1" },
-  { id: "3:4", label: "3:4" },
-  { id: "9:16", label: "9:16" },
-];
-
-const RESOLUTIONS = ["480P", "720P", "1080P", "2K"];
-
-function resolutionOptionsFor(model) {
-  const listed = Array.isArray(model?.resolutions)
-    ? model.resolutions.map((item) => String(item).toUpperCase()).filter((item) => RESOLUTIONS.includes(item))
-    : [];
-  return listed.length ? listed : RESOLUTIONS;
-}
-
-function settingsDraftFrom(series) {
-  return {
-    styleKey: series?.styleKey || DEFAULT_DRAMA_STYLE_KEY,
-    aspectRatio: series?.aspectRatio || "16:9",
-    defaultResolution: series?.defaultResolution || "720P",
-  };
-}
-
-function seriesPayload(draft) {
-  return {
-    styleKey: draft.styleKey,
-    aspectRatio: draft.aspectRatio,
-    defaultResolution: draft.defaultResolution,
-  };
-}
-
-function sameSettings(left, right) {
-  return left.styleKey === right.styleKey
-    && left.aspectRatio === right.aspectRatio
-    && left.defaultResolution === right.defaultResolution;
-}
 
 const ANALYSIS_STAGES = [
   { label: "读取剧本", detail: "正在识别人物、场景和剧情结构…", progress: 18 },
-  { label: "生成分场", detail: "正在把原文整理为可编辑的分场剧本…", progress: 42 },
-  { label: "生成资产设定", detail: "正在生成角色外形、场景与道具设定…", progress: 72 },
+  { label: "生成分场", detail: "正在把原文整理为分场剧本…", progress: 42 },
+  { label: "落库资产", detail: "正在写入角色、场景与道具设定…", progress: 72 },
   { label: "收尾", detail: "正在锁定结果并排队后台拆镜…", progress: 92 },
 ];
 
@@ -70,8 +28,8 @@ function chapterWordCount(episode) {
 }
 
 /**
- * 剧本步骤：左侧章节列表（可添加集数）、中间剧本原文 + 分析、右侧风格与比例设置。
- * 分场结果由后端 DramaTextService 产出，这里只渲染与触发，不组装字段。
+ * 剧本步骤：左侧章节列表、中间原文与分场。风格、比例、清晰度和视频模型在工作台顶栏修改。
+ * 原文只在点击「一键分析剧本」时随分析请求提交，页面不调用剧本保存接口。
  */
 export function DramaScriptPanel({
   episode,
@@ -83,15 +41,13 @@ export function DramaScriptPanel({
   addingEpisode,
   onDeleteEpisode,
   deletingEpisodeId,
+  onContinue,
 }) {
   const queryClient = useQueryClient();
   const [raw, setRaw] = useState("");
   const [analysis, setAnalysis] = useState(null);
   const [analysisStartedAt, setAnalysisStartedAt] = useState(null);
   const [analysisNow, setAnalysisNow] = useState(Date.now());
-  const [draft, setDraft] = useState(() => settingsDraftFrom(series));
-  const [savedDraft, setSavedDraft] = useState(() => settingsDraftFrom(series));
-  const [justSaved, setJustSaved] = useState(false);
   const [deleteEpisodeTarget, setDeleteEpisodeTarget] = useState(null);
   const wasAnalyzing = useRef(false);
 
@@ -102,12 +58,6 @@ export function DramaScriptPanel({
     }
   }, [episode?.id, episode?.sourceText]);
 
-  useEffect(() => {
-    const next = settingsDraftFrom(series);
-    setDraft(next);
-    setSavedDraft(next);
-  }, [series?.id]);
-
   function refreshSeries() {
     queryClient.invalidateQueries({ queryKey: ["drama-series"] });
     queryClient.invalidateQueries({ queryKey: ["drama-series", series?.id || episode?.seriesId] });
@@ -117,18 +67,9 @@ export function DramaScriptPanel({
     }
   }
 
-  function persistSettings(next = draft) {
-    if (!series?.id) throw new Error("请先打开短剧项目");
-    return updateDramaSeries(series.id, seriesPayload(next));
-  }
-
   const analyze = useMutation({
     mutationFn: async () => {
       if (!episode) throw new Error("请先创建剧集");
-      if (series?.id) {
-        await persistSettings(draft);
-        setSavedDraft(draft);
-      }
       return analyzeDramaScript(episode.id, {
         sourceText: raw,
       });
@@ -182,21 +123,6 @@ export function DramaScriptPanel({
     return () => window.clearInterval(timer);
   }, [analyzing]);
 
-  const settings = useMutation({
-    mutationFn: persistSettings,
-    onSuccess: (_, next) => {
-      setSavedDraft(next || draft);
-      setJustSaved(true);
-      window.setTimeout(() => setJustSaved(false), 2000);
-      refreshSeries();
-    },
-  });
-
-  const videoModelsQuery = useQuery({
-    queryKey: ["drama-video-models"],
-    queryFn: fetchDramaVideoModels,
-  });
-
   const textModelsQuery = useQuery({
     queryKey: ["drama-text-models"],
     queryFn: fetchDramaTextModels,
@@ -209,25 +135,8 @@ export function DramaScriptPanel({
     onSuccess: refreshSeries,
   });
 
-  const lockScript = useMutation({
-    mutationFn: () => lockDramaScript(episode.id),
-    onSuccess: refreshSeries,
-  });
-
   const scenes = episode?.script?.scenes || [];
-  const dirty = !sameSettings(draft, savedDraft);
-  const resolutionOptions = useMemo(
-    () => resolutionOptionsFor((videoModelsQuery.data || []).find((item) => String(item.id) === String(series?.videoModelId))),
-    [videoModelsQuery.data, series?.videoModelId]
-  );
-
-  useEffect(() => {
-    if (!series?.id || !resolutionOptions.length || resolutionOptions.includes(draft.defaultResolution)) return;
-    setDraft((current) => ({
-      ...current,
-      defaultResolution: resolutionOptions[resolutionOptions.length - 1],
-    }));
-  }, [series?.id, draft.defaultResolution, resolutionOptions]);
+  const textModelLocked = episode?.status === "已锁定" || scenes.length > 0;
   const elapsed = progressStartedAt ? Math.max(0, Math.floor((analysisNow - progressStartedAt) / 1000)) : 0;
   const currentStage = analysisStage(elapsed);
   const elapsedLabel = `${Math.floor(elapsed / 60)}分${String(elapsed % 60).padStart(2, "0")}秒`;
@@ -283,7 +192,8 @@ export function DramaScriptPanel({
               <select
                 aria-label="剧本分析文本模型"
                 value={textModelId}
-                disabled={!series?.id || analyzing || bindTextModel.isPending}
+                disabled={!series?.id || analyzing || textModelLocked || bindTextModel.isPending}
+                title={textModelLocked ? "分析完成后不能再更换文本模型" : undefined}
                 onChange={(event) => bindTextModel.mutate(event.target.value)}
               >
                 <option value="">{textModels.length ? "请选择文本模型" : "暂无已启用文本模型"}</option>
@@ -292,15 +202,7 @@ export function DramaScriptPanel({
                 ))}
               </select>
             </label>
-            <button
-              className={`drama-script__status${episode?.status === "已锁定" ? " is-locked" : ""}`}
-              type="button"
-              disabled={!episode?.id || analyzing || lockScript.isPending || episode?.status === "已锁定"}
-              title={episode?.status === "已锁定" ? "分场剧本已锁定，资产页可提取" : "锁定本集分场剧本，资产页才能提取"}
-              onClick={() => lockScript.mutate()}
-            >
-              <Lock size={14} /> {lockScript.isPending ? "锁定中…" : episode?.status || "未开始"}
-            </button>
+            {textModelLocked && <span className="drama-script__lock">已锁定</span>}
           </div>
           <div>
             <button
@@ -316,19 +218,22 @@ export function DramaScriptPanel({
         </div>
 
         <div className="drama-script__body">
-        <label className="drama-script__raw">
+        <div className="drama-script__raw">
           <span>剧本原文 / 一句话梗概</span>
-          <textarea
-            value={raw}
-            rows={10}
-            disabled={analyzing}
-            placeholder={"第一场 幻梦侦探社 日 内\n人物：洛白、夏安、局长\n道具：古铜怀表\n洛白：开始了。"}
-            onChange={(event) => setRaw(event.target.value)}
-          />
+          <div className="drama-script__editor">
+            <em className="drama-script__count">{raw.length}</em>
+            <textarea
+              value={raw}
+              rows={8}
+              disabled={analyzing}
+              placeholder={"第一场 幻梦侦探社 日 内\n人物：洛白、夏安、局长\n道具：古铜怀表\n洛白：开始了。"}
+              onChange={(event) => setRaw(event.target.value)}
+            />
+          </div>
           {raw.length > 5000 && (
             <p className="drama-script__hint">剧本文本较长，解析文本可能会被拆分，导致耗时较长</p>
           )}
-        </label>
+        </div>
 
         {episode?.canGenerate === false && episode?.textServiceAvailable && (
           <p className="drama-script__hint">
@@ -421,73 +326,15 @@ export function DramaScriptPanel({
           </p>
         )}
         </div>
+        {(scenes.length > 0 || analysis) && !analyzing && !analyze.isError && (
+          <section className="drama-script-done">
+            <strong><CircleCheck size={16} /> 你的剧本已拆分完成</strong>
+            <button type="button" onClick={() => onContinue?.()}>
+              继续 <ChevronRight size={16} />
+            </button>
+          </section>
+        )}
       </section>
-
-      <aside className="drama-script-settings">
-        <section className="settings-block">
-          <header>
-            <strong>视频比例与清晰度</strong>
-            <span>用于全部分镜和成片</span>
-          </header>
-          <p className="drama-spec-label">视频比例</p>
-          <div className="ratio-card-grid drama-ratio-grid">
-            {ASPECT_RATIOS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={draft.aspectRatio === item.id ? "active" : ""}
-                disabled={!series?.id || analyzing}
-                onClick={() => setDraft((current) => ({ ...current, aspectRatio: item.id }))}
-              >
-                <i data-ratio={item.id} aria-hidden="true" />
-                <span>{item.label}</span>
-              </button>
-            ))}
-          </div>
-          <p className="drama-spec-label">清晰度</p>
-          <div className="ratio-card-grid drama-ratio-grid drama-resolution-grid">
-            {resolutionOptions.map((item) => (
-              <button
-                key={item}
-                type="button"
-                className={draft.defaultResolution === item ? "active" : ""}
-                disabled={!series?.id || analyzing}
-                onClick={() => setDraft((current) => ({ ...current, defaultResolution: item }))}
-              >
-                <span>{item}</span>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="settings-block settings-style-block">
-          <header>
-            <strong>风格参考</strong>
-            <span>统一全局画面视觉</span>
-          </header>
-          <DramaStylePicker
-            value={draft.styleKey}
-            disabled={!series?.id || analyzing}
-            onChange={(next) => setDraft((current) => ({ ...current, styleKey: next }))}
-          />
-        </section>
-        <footer className="drama-script-settings__save">
-          <button
-            className="button button--primary"
-            type="button"
-            disabled={!series?.id || settings.isPending || analyzing}
-            onClick={() => settings.mutate(draft)}
-          >
-            <Save size={15} /> {settings.isPending ? "保存中…" : justSaved && !dirty ? "已保存" : "保存配置"}
-          </button>
-          <p className="drama-script__hint">
-            {dirty
-              ? "有未保存的分析配置、风格或比例，点保存后才会生效。"
-              : "分析配置、风格和比例需点保存。改风格或比例后，已编译分镜会标为已过期。"}
-          </p>
-          {settings.isError && <p className="drama-form-error">{settings.error.message}</p>}
-        </footer>
-      </aside>
       <ConfirmDialog
         open={Boolean(deleteEpisodeTarget)}
         eyebrow="剧本"

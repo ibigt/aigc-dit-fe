@@ -127,10 +127,6 @@ export function fetchDramaAssetGenerateTask(assetId, taskId) {
   return api.get(`/drama/assets/${assetId}/generate/tasks/${taskId}`);
 }
 
-export function lockDramaAsset(assetId) {
-  return api.post(`/drama/assets/${assetId}/lock`);
-}
-
 export function fetchDramaAssetGenerations(assetId) {
   return api.get(`/drama/assets/${assetId}/generations`);
 }

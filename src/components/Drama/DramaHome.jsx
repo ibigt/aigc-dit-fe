@@ -2,20 +2,38 @@ import { ChevronRight, MoreHorizontal, Pencil, Plus, Trash2, X } from "lucide-re
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { createDramaSeries, deleteDramaSeries, fetchDramaSeries, fetchDramaTextModels, updateDramaSeries } from "../../api/drama.js";
+import {
+  bindDramaImageModel,
+  bindDramaVideoModel,
+  createDramaSeries,
+  deleteDramaSeries,
+  fetchDramaImageModels,
+  fetchDramaSeries,
+  fetchDramaTextModels,
+  fetchDramaVideoModels,
+  updateDramaSeries,
+} from "../../api/drama.js";
 import { formatDateTime, mediaUrl } from "../../lib/media.js";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
+import { DramaStylePicker } from "./DramaStylePicker.jsx";
+import { DEFAULT_DRAMA_STYLE_KEY } from "./dramaStyles.js";
+import { DRAMA_ASPECT_RATIOS, preferredResolution, resolutionOptionsFor } from "./dramaSpecs.js";
 
 const emptyForm = {
   name: "",
-  summary: "",
+  synopsis: "",
   textModelId: "",
+  imageModelId: "",
+  videoModelId: "",
+  aspectRatio: "16:9",
+  defaultResolution: "720P",
+  styleKey: DEFAULT_DRAMA_STYLE_KEY,
 };
 
-function DramaDialog({ title, eyebrow, onClose, children }) {
+function DramaDialog({ title, eyebrow, wide, onClose, children }) {
   return (
     <div className="drama-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="drama-dialog" role="dialog" aria-modal="true" aria-labelledby="drama-dialog-title">
+      <section className={`drama-dialog${wide ? " drama-dialog--create" : ""}`} role="dialog" aria-modal="true" aria-labelledby="drama-dialog-title">
         <header>
           <div>
             {eyebrow && <span>{eyebrow}</span>}
@@ -47,13 +65,46 @@ export function DramaHome() {
     queryFn: fetchDramaTextModels,
     enabled: creating,
   });
+  const imageModelsQuery = useQuery({
+    queryKey: ["drama-image-models"],
+    queryFn: fetchDramaImageModels,
+    enabled: creating,
+  });
+  const videoModelsQuery = useQuery({
+    queryKey: ["drama-video-models"],
+    queryFn: fetchDramaVideoModels,
+    enabled: creating,
+  });
   const textModels = textModelsQuery.data || [];
+  const imageModels = imageModelsQuery.data || [];
+  const videoModels = videoModelsQuery.data || [];
   const series = listQuery.data || [];
+  const resolutionOptions = resolutionOptionsFor(
+    videoModels.find((item) => String(item.id) === String(form.videoModelId)),
+  );
 
   useEffect(() => {
-    if (!creating || !textModels.length) return;
-    setForm((current) => (current.textModelId ? current : { ...current, textModelId: String(textModels[0].id) }));
-  }, [creating, textModels]);
+    if (!creating) return;
+    setForm((current) => {
+      const textModelId = current.textModelId || (textModels[0] ? String(textModels[0].id) : "");
+      const imageModelId = current.imageModelId || (imageModels[0] ? String(imageModels[0].id) : "");
+      const videoModelId = current.videoModelId || (videoModels[0] ? String(videoModels[0].id) : "");
+      if (
+        textModelId === current.textModelId
+        && imageModelId === current.imageModelId
+        && videoModelId === current.videoModelId
+      ) return current;
+      return { ...current, textModelId, imageModelId, videoModelId };
+    });
+  }, [creating, textModels, imageModels, videoModels]);
+
+  useEffect(() => {
+    if (!creating) return;
+    setForm((current) => {
+      if (!resolutionOptions.length || resolutionOptions.includes(current.defaultResolution)) return current;
+      return { ...current, defaultResolution: preferredResolution(resolutionOptions, current.defaultResolution) };
+    });
+  }, [creating, form.videoModelId, resolutionOptions]);
 
   useEffect(() => {
     if (menu == null) return undefined;
@@ -68,11 +119,37 @@ export function DramaHome() {
     onError: (error) => window.alert(error.message || "删除失败"),
   });
   const createMutation = useMutation({
-    mutationFn: createDramaSeries,
-    onSuccess: (created) => {
+    mutationFn: async (payload) => {
+      const created = await createDramaSeries({
+        name: payload.name,
+        synopsis: payload.synopsis,
+        textModelId: payload.textModelId,
+        styleKey: payload.styleKey,
+        aspectRatio: payload.aspectRatio,
+        defaultResolution: payload.defaultResolution,
+      });
+      const warnings = [];
+      if (payload.imageModelId) {
+        try {
+          await bindDramaImageModel(created.id, Number(payload.imageModelId));
+        } catch (error) {
+          warnings.push(error.message || "图片模型绑定失败");
+        }
+      }
+      if (payload.videoModelId) {
+        try {
+          await bindDramaVideoModel(created.id, Number(payload.videoModelId));
+        } catch (error) {
+          warnings.push(error.message || "视频模型绑定失败");
+        }
+      }
+      return { created, warnings };
+    },
+    onSuccess: ({ created, warnings }) => {
       queryClient.invalidateQueries({ queryKey: ["drama-series"] });
       setCreating(false);
       setForm(emptyForm);
+      if (warnings.length) window.alert(warnings.join("\n"));
       navigate(`/console/drama/${created.id}`);
     },
   });
@@ -89,7 +166,13 @@ export function DramaHome() {
     event.preventDefault();
     createMutation.mutate({
       name: form.name.trim(),
+      synopsis: form.synopsis.trim(),
       textModelId: Number(form.textModelId),
+      imageModelId: form.imageModelId,
+      videoModelId: form.videoModelId,
+      styleKey: form.styleKey,
+      aspectRatio: form.aspectRatio,
+      defaultResolution: form.defaultResolution,
     });
   }
 
@@ -193,7 +276,7 @@ export function DramaHome() {
                     </button>
                   </div>
                 )}
-                <p>{item.textModelName ? `文本模型 · ${item.textModelName}` : (item.latestEpisode?.name || "新的短剧项目")}</p>
+                <p>{item.synopsis || (item.textModelName ? `文本模型 · ${item.textModelName}` : (item.latestEpisode?.name || "新的短剧项目"))}</p>
                 <footer><span>{formatDateTime(item.updatedAt)}</span></footer>
               </div>
               <button
@@ -207,8 +290,8 @@ export function DramaHome() {
         })}
       </div>
       {creating && (
-        <DramaDialog title="创建短剧" eyebrow="从一个故事开始" onClose={() => { if (!createMutation.isPending) { setCreating(false); setForm(emptyForm); } }}>
-          <form className="drama-create-form" onSubmit={onSubmit}>
+        <DramaDialog title="创建短剧" eyebrow="从一个故事开始" wide onClose={() => { if (!createMutation.isPending) { setCreating(false); setForm(emptyForm); } }}>
+          <form id="create-drama-form" className="drama-create-form" onSubmit={onSubmit}>
             <label>
               项目名称
               <input
@@ -223,41 +306,125 @@ export function DramaHome() {
             <label>
               故事简介
               <textarea
-                value={form.summary}
-                onChange={(event) => setForm({ ...form, summary: event.target.value })}
-                placeholder="用一两句话描述核心人物与冲突（可选，风格与画幅稍后在剧本步设定）"
+                maxLength={200}
+                value={form.synopsis}
+                onChange={(event) => setForm({ ...form, synopsis: event.target.value })}
+                placeholder="用一两句话描述核心人物与冲突（可选，最多 200 字）"
               />
+              <small className="drama-field-count">{form.synopsis.length} / 200</small>
             </label>
-            <label>
-              文本模型
-              <select
-                value={form.textModelId}
-                onChange={(event) => setForm({ ...form, textModelId: event.target.value })}
-                disabled={textModelsQuery.isLoading || textModelsQuery.isError}
-                required
-              >
-                {textModelsQuery.isLoading && <option value="">正在加载文本模型…</option>}
-                {textModelsQuery.isError && <option value="">文本模型加载失败</option>}
-                {!textModelsQuery.isLoading && !textModelsQuery.isError && textModels.length === 0 && (
-                  <option value="">暂无已启用文本模型</option>
-                )}
-                {textModels.map((item) => (
-                  <option key={item.id} value={item.id}>{item.name}{item.provider ? ` · ${item.provider}` : ""}</option>
-                ))}
-              </select>
-            </label>
+            <div>
+              <label>
+                文本模型
+                <select
+                  value={form.textModelId}
+                  onChange={(event) => setForm({ ...form, textModelId: event.target.value })}
+                  disabled={textModelsQuery.isLoading || textModelsQuery.isError}
+                  required
+                >
+                  {textModelsQuery.isLoading && <option value="">正在加载文本模型…</option>}
+                  {textModelsQuery.isError && <option value="">文本模型加载失败</option>}
+                  {!textModelsQuery.isLoading && !textModelsQuery.isError && textModels.length === 0 && (
+                    <option value="">暂无已启用文本模型</option>
+                  )}
+                  {textModels.map((item) => (
+                    <option key={item.id} value={item.id}>{item.name}{item.provider ? ` · ${item.provider}` : ""}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                图片模型
+                <select
+                  aria-label="图片模型"
+                  value={form.imageModelId}
+                  onChange={(event) => setForm({ ...form, imageModelId: event.target.value })}
+                  disabled={imageModelsQuery.isLoading || imageModelsQuery.isError}
+                  required={imageModels.length > 0}
+                >
+                  {imageModelsQuery.isLoading && <option value="">正在加载图片模型…</option>}
+                  {imageModelsQuery.isError && <option value="">图片模型加载失败</option>}
+                  {!imageModelsQuery.isLoading && !imageModelsQuery.isError && imageModels.length === 0 && (
+                    <option value="">暂无已启用图片模型</option>
+                  )}
+                  {imageModels.map((item) => (
+                    <option key={item.id} value={item.id}>{item.name}{item.provider ? ` · ${item.provider}` : ""}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="drama-create-form__full">
+              <label>
+                视频模型
+                <select
+                  aria-label="视频模型"
+                  value={form.videoModelId}
+                  onChange={(event) => setForm({ ...form, videoModelId: event.target.value })}
+                  disabled={videoModelsQuery.isLoading || videoModelsQuery.isError}
+                  required={videoModels.length > 0}
+                >
+                  {videoModelsQuery.isLoading && <option value="">正在加载视频模型…</option>}
+                  {videoModelsQuery.isError && <option value="">视频模型加载失败</option>}
+                  {!videoModelsQuery.isLoading && !videoModelsQuery.isError && videoModels.length === 0 && (
+                    <option value="">暂无已启用视频模型</option>
+                  )}
+                  {videoModels.map((item) => (
+                    <option key={item.id} value={item.id}>{item.name}{item.provider ? ` · ${item.provider}` : ""}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div>
+              <label>
+                视频比例
+                <select
+                  aria-label="视频比例"
+                  value={form.aspectRatio}
+                  onChange={(event) => setForm({ ...form, aspectRatio: event.target.value })}
+                >
+                  {DRAMA_ASPECT_RATIOS.map((item) => (
+                    <option key={item.id} value={item.id}>{item.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                视频清晰度
+                <select
+                  aria-label="视频清晰度"
+                  value={resolutionOptions.includes(form.defaultResolution) ? form.defaultResolution : resolutionOptions[resolutionOptions.length - 1]}
+                  onChange={(event) => setForm({ ...form, defaultResolution: event.target.value })}
+                >
+                  {resolutionOptions.map((item) => (
+                    <option key={item} value={item}>{item}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="drama-create-form__style">
+              <span>视觉风格</span>
+              <DramaStylePicker
+                value={form.styleKey}
+                onChange={(next) => setForm((current) => ({ ...current, styleKey: next }))}
+              />
+            </div>
             {createMutation.isError && <p className="drama-form-error">{createMutation.error.message}</p>}
-            <footer>
-              <button type="button" onClick={() => { setCreating(false); setForm(emptyForm); }}>取消</button>
-              <button
-                className="button button--primary"
-                type="submit"
-                disabled={createMutation.isPending || !form.name.trim() || !form.textModelId}
-              >
-                {createMutation.isPending ? "创建中…" : "创建并进入"} <ChevronRight size={16} />
-              </button>
-            </footer>
           </form>
+          <footer className="drama-create-footer">
+            <button type="button" onClick={() => { setCreating(false); setForm(emptyForm); }}>取消</button>
+            <button
+              className="button button--primary"
+              type="submit"
+              form="create-drama-form"
+              disabled={
+                createMutation.isPending
+                || !form.name.trim()
+                || !form.textModelId
+                || (imageModels.length > 0 && !form.imageModelId)
+                || (videoModels.length > 0 && !form.videoModelId)
+              }
+            >
+              {createMutation.isPending ? "创建中…" : "创建并进入"} <ChevronRight size={16} />
+            </button>
+          </footer>
         </DramaDialog>
       )}
       <ConfirmDialog

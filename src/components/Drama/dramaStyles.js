@@ -71,7 +71,7 @@ export const DRAMA_STYLES = [
   },
 ];
 
-export const DEFAULT_DRAMA_STYLE_KEY = DRAMA_STYLES[0].key;
+export const DEFAULT_DRAMA_STYLE_KEY = "live-realism";
 
 export function dramaStyleOf(key) {
   return DRAMA_STYLES.find((item) => item.key === key) || DRAMA_STYLES[0];
