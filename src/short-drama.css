@@ -3236,12 +3236,17 @@
 }
 .drama-script__raw textarea:focus { border-color: #8b7dff; box-shadow: 0 0 0 3px rgba(109,94,252,.18); }
 .drama-script__raw textarea:disabled { opacity: .72; }
-.drama-scenes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
-.drama-scene { padding: 0; border: 0; border-radius: 0; background: transparent; }
-.drama-scene > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
-.drama-scene > header strong { color: #f4f4f8; font-size: 14px; line-height: 1.45; }
-.drama-scene > header small { flex: 0 0 auto; color: #8e8e99; font-size: 12px; }
-.drama-scene__action { margin: 0 0 8px; color: #d5d5de; font-size: 13px; line-height: 1.65; }
+.drama-scenes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.drama-scene {
+  padding: 17px 18px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 12px;
+  background: #1a1a1d;
+}
+.drama-scene > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 0; flex-wrap: wrap; }
+.drama-scene > header strong { color: #f0f0f3; font-size: 14px; font-weight: 650; line-height: 1.45; }
+.drama-scene > header small { flex: 0 0 auto; color: #85858f; font-size: 11px; }
+.drama-scene__action { margin: 12px 0 10px; color: #d3d3d8; font-size: 13px; line-height: 1.7; }
 .drama-scene__tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .drama-tag { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 6px; color: #d7d7e0; background: #2a2a33; font-size: 12px; }
 .drama-tag--person { color: #d7d2ff; background: #2c2750; }
