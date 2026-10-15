@@ -1,12 +1,14 @@
 import { AudioLines, CalendarDays, Check, Copy, Download, Expand, FolderInput, Grid3X3, Image, List, Play, Search, SlidersHorizontal, Sparkles, Trash2, Video, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteCreation, fetchCreations, saveCreationToAsset } from "../api/creations.js";
 import { creationTitleForDisplay, promptForDisplay } from "../lib/createFlow.js";
+import { ImageLightbox } from "../lib/ImageLightbox.jsx";
 import { MediaCover } from "../lib/MediaCover.jsx";
 import { formatDateTime, MEDIA_THUMB_WIDTH, mediaUrl } from "../lib/media.js";
 import { zipStore } from "../lib/zipStore.js";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
+import { AudioPreview, WorkWaveform } from "./AudioPreview.jsx";
 
 const TIME_RANGES = [
   { id: "all", label: "全部时间" },
@@ -25,6 +27,26 @@ const TYPE_LABELS = { video: "视频", image: "图片", audio: "语音" };
 
 function typeLabel(type) {
   return TYPE_LABELS[type] || "作品";
+}
+
+function durationSecondsOf(item) {
+  const rawValue = item?.durationSec ?? item?.duration;
+  const parsedValue = Number(rawValue);
+  if (Number.isFinite(parsedValue) && parsedValue >= 0) return parsedValue;
+  const matchedValue = Number(String(rawValue || "").match(/[\d.]+/)?.[0]);
+  return Number.isFinite(matchedValue) && matchedValue >= 0 ? matchedValue : null;
+}
+
+function formatPlaybackDuration(seconds) {
+  const totalSeconds = Number(seconds);
+  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return "—";
+  const wholeSeconds = Math.floor(totalSeconds);
+  return `${Math.floor(wholeSeconds / 60)}:${String(wholeSeconds % 60).padStart(2, "0")}`;
+}
+
+function formatVideoDuration(item) {
+  const seconds = durationSecondsOf(item);
+  return seconds == null ? "—" : `${seconds}秒`;
 }
 
 function createdFrom(range) {
@@ -73,6 +95,11 @@ export function MyCreations({ onReuse }) {
   const [packing, setPacking] = useState(false);
   const [savedIds, setSavedIds] = useState([]);
   const [notice, setNotice] = useState(null);
+  const [lightbox, setLightbox] = useState(null);
+  const [promptOverflow, setPromptOverflow] = useState(false);
+  const [promptTooltip, setPromptTooltip] = useState(null);
+  const promptRef = useRef(null);
+  const promptTooltipTimerRef = useRef(null);
   const creationsQuery = useQuery({
     queryKey: ["creations", filter, query, timeRange, projectFilter],
     queryFn: () => fetchCreations({
@@ -81,6 +108,7 @@ export function MyCreations({ onReuse }) {
       project: projectFilter === "all" ? undefined : projectFilter,
       from: createdFrom(timeRange),
     }),
+    placeholderData: keepPreviousData,
     refetchInterval: 10000,
   });
   const deleteMutation = useMutation({
@@ -115,12 +143,49 @@ export function MyCreations({ onReuse }) {
   const visible = creations;
   const visibleIds = visible.map((item) => item.id);
   const allVisiblePicked = visibleIds.length > 0 && visibleIds.every((id) => picked.includes(id));
+  const selectedPrompt = promptForDisplay(selected?.prompt) || "—";
+
+  useEffect(() => {
+    const node = promptRef.current;
+    if (!node) {
+      setPromptOverflow(false);
+      return undefined;
+    }
+    const updateOverflow = () => setPromptOverflow(node.scrollWidth > node.clientWidth + 1);
+    updateOverflow();
+    const observer = new ResizeObserver(updateOverflow);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [selectedPrompt]);
 
   useEffect(() => {
     if (!notice) return undefined;
     const timer = window.setTimeout(() => setNotice(null), 2500);
     return () => window.clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    setPromptTooltip(null);
+    setLightbox(null);
+  }, [selected?.id]);
+
+  useEffect(() => () => window.clearTimeout(promptTooltipTimerRef.current), []);
+
+  function showPromptTooltip() {
+    window.clearTimeout(promptTooltipTimerRef.current);
+    const rect = promptRef.current?.getBoundingClientRect();
+    if (rect) setPromptTooltip({ left: rect.left, viewportTop: rect.top });
+  }
+
+  function schedulePromptTooltipClose() {
+    window.clearTimeout(promptTooltipTimerRef.current);
+    promptTooltipTimerRef.current = window.setTimeout(() => setPromptTooltip(null), 180);
+  }
+
+  function hidePromptTooltip() {
+    window.clearTimeout(promptTooltipTimerRef.current);
+    setPromptTooltip(null);
+  }
 
   function confirmDelete(item) {
     setDeleteTarget(item);
@@ -193,117 +258,230 @@ export function MyCreations({ onReuse }) {
   }
 
   return (
-    <div className="creations-page">
-      <header className="page-heading">
+    <section className="page standard-content-page works-page">
+      <header className="page-header works-header">
         <div><h1>我的创作</h1><p>查看、播放与下载你生成的全部作品。</p></div>
-        <div className="creation-stat"><strong>{visible.length}</strong><span>全部作品</span></div>
+        <div className="works-total"><strong>{visible.length}</strong><span>{filter === "all" ? "全部作品" : `找到 ${visible.length} 个作品`}</span></div>
       </header>
-      <section className="creation-toolbar">
-        <div className="filter-tabs">{[{ id: "all", label: "全部" }, { id: "video", label: "视频" }, { id: "image", label: "图片" }, { id: "audio", label: "语音" }].map((item) => (
-          <button key={item.id} type="button" className={filter === item.id ? "active" : ""} onClick={() => setFilter(item.id)}>
-            {item.id === "video" ? <Video size={15} /> : item.id === "image" ? <Image size={15} /> : item.id === "audio" ? <AudioLines size={15} /> : <SlidersHorizontal size={15} />}
-            {item.label}
-          </button>
-        ))}</div>
-        <div className="library-tools">
-          <select aria-label="时间范围" value={timeRange} onChange={(event) => setTimeRange(event.target.value)}>
-            {TIME_RANGES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-          </select>
-          <select aria-label="所属项目" value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}>
-            {PROJECT_FILTERS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-          </select>
-          <label><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索提示词或作品" /></label>
-          <button type="button" aria-label="网格视图" className={view === "grid" ? "active" : ""} onClick={() => setView("grid")}><Grid3X3 size={16} /></button>
-          <button type="button" aria-label="列表视图" className={view === "list" ? "active" : ""} onClick={() => setView("list")}><List size={16} /></button>
+
+      <div className="works-controls">
+        <div className="works-type-tabs" role="tablist" aria-label="作品类型">
+          {[["all", "全部", SlidersHorizontal], ["video", "视频", Video], ["image", "图片", Image], ["audio", "语音", AudioLines]].map(([value, label, Icon]) => (
+            <button key={value} type="button" role="tab" aria-selected={filter === value} className={`works-type-tab${filter === value ? " is-active" : ""}`} onClick={() => setFilter(value)}>
+              <Icon size={16} aria-hidden="true" />
+              <span>{label}</span>
+            </button>
+          ))}
         </div>
-      </section>
+        <div className="works-filter-group">
+          <label className="works-select">
+            <span className="visually-hidden">时间范围</span>
+            <select aria-label="时间范围" value={timeRange} onChange={(event) => setTimeRange(event.target.value)}>
+              {TIME_RANGES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+          </label>
+          <label className="works-select">
+            <span className="visually-hidden">所属项目</span>
+            <select aria-label="所属项目" value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}>
+              {PROJECT_FILTERS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+          </label>
+          <label className="works-search">
+            <Search size={17} aria-hidden="true" />
+            <span className="visually-hidden">搜索作品</span>
+            <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索提示词或作品" autoComplete="off" />
+            <kbd aria-hidden="true">/</kbd>
+          </label>
+          <div className="works-view-switch" aria-label="展示模式">
+            <button type="button" className={view === "grid" ? "is-active" : ""} onClick={() => setView("grid")} aria-label="卡片模式" aria-pressed={view === "grid"}><Grid3X3 size={17} /></button>
+            <button type="button" className={view === "list" ? "is-active" : ""} onClick={() => setView("list")} aria-label="列表模式" aria-pressed={view === "list"}><List size={17} /></button>
+          </div>
+        </div>
+      </div>
+
       {visible.length > 0 && (
-        <div className="creation-batch">
-          <span>已选 {visible.filter((item) => picked.includes(item.id)).length} 项</span>
-          <button className="button button--ghost" type="button" onClick={toggleVisible}>{allVisiblePicked ? "取消全选" : "全选当前"}</button>
-          <button className="button button--primary" type="button" disabled={packing || !picked.some((id) => visibleIds.includes(id))} onClick={downloadPicked}>
-            <Download size={14} /> {packing ? "打包中…" : "打包下载"}
-          </button>
-          {picked.length > 0 && <button className="button button--ghost" type="button" onClick={() => setPicked([])}>清除选择</button>}
+        <div className="works-batch-bar">
+          <div className="works-selected-count" aria-live="polite">
+            已选 <strong>{visible.filter((item) => picked.includes(item.id)).length}</strong> 项
+            {picked.length > 0 && visibleIds.length > 0 && (
+              <span> · 当前结果 {visible.filter((item) => picked.includes(item.id)).length} 项</span>
+            )}
+          </div>
+          <div className="works-batch-actions">
+            <button type="button" className="works-text-button" onClick={toggleVisible}>{allVisiblePicked ? "取消全选" : "全选当前"}</button>
+            <button type="button" className="works-download-button" disabled={packing || !picked.some((id) => visibleIds.includes(id))} onClick={downloadPicked}>
+              <Download size={16} aria-hidden="true" /> {packing ? "正在打包…" : "打包下载"}
+            </button>
+            {picked.length > 0 && <button type="button" className="works-clear-button" onClick={() => setPicked([])}>清除选择</button>}
+          </div>
         </div>
       )}
-      {notice && <p className={`creation-notice ${notice.tone === "error" ? "is-error" : ""}`}>{notice.text}</p>}
-      <section className={`creation-grid ${view === "list" ? "creation-grid--list" : ""}`}>
-        {visible.map((item) => {
-          const title = creationTitleForDisplay(item);
-          const promptText = promptForDisplay(item.prompt) || "—";
-          return (
-          <article className={`creation-card ${item.type === "audio" ? "creation-card--audio" : ""} ${picked.includes(item.id) ? "is-picked" : ""}`} key={item.id}>
-            <label className="creation-pick">
-              <input type="checkbox" checked={picked.includes(item.id)} onChange={() => togglePicked(item.id)} aria-label={`选择${title}`} />
-            </label>
-            <button className={`creation-card__preview ${item.type === "audio" ? "is-audio" : ""}`} type="button" onClick={() => setSelected(item)} aria-label={`查看作品：${title}`}>
-              <MediaCover item={item} />
-              <span className={`creation-type creation-type--${item.type}`}>{typeLabel(item.type)}</span>
-              <span className="creation-spec">{item.type === "audio" ? "音频" : <>{item.ratio} · {item.resolution}{item.type === "video" ? ` · ${item.duration}` : ""}</>}</span>
-              <span className="creation-play">{item.type === "video" ? <Play size={17} fill="currentColor" /> : item.type === "audio" ? <AudioLines size={17} /> : <Expand size={17} />}</span>
-            </button>
-            <div className="creation-card__body">
-              <div>
-                <strong title={title}>{title}</strong>
-                <small className="creation-card__model" title={item.model || undefined}>{item.model || "未记录模型"}</small>
-                <p title={promptText}>{promptText}</p>
-              </div>
-              <footer>
-                <span><CalendarDays size={12} /> {item.createdAtLabel} · {item.elapsed}</span>
-                <div className="creation-card__actions">
-                  <a href={item.src} download aria-label={`下载${title}`}><Download size={15} /></a>
-                  <button type="button" className="danger" aria-label={`删除${title}`} onClick={() => confirmDelete(item)}><Trash2 size={15} /></button>
+
+      {notice && <p className={`creation-notice ${notice.tone === "error" ? "is-error" : ""}`} role="status">{notice.text}</p>}
+
+      <div className="works-result-summary">
+        <span>{filter === "all" ? "全部作品" : `找到 ${visible.length} 个作品`}</span>
+        <span>按创建时间排序</span>
+      </div>
+
+      {visible.length === 0 ? (
+        <div className="works-empty">
+          <div className="works-empty-icon" aria-hidden="true"><Image size={28} /></div>
+          <h2>暂无作品</h2>
+          <p>完成一次图片、视频或语音创作后，作品会集中显示在这里。</p>
+        </div>
+      ) : (
+        <div className={view === "grid" ? "works-grid" : "works-list"}>
+          {visible.map((item) => {
+            const title = creationTitleForDisplay(item);
+            const promptText = promptForDisplay(item.prompt) || "—";
+            const isPicked = picked.includes(item.id);
+            const specText = item.type === "audio"
+              ? `${item.format || "音频"} · ${formatPlaybackDuration(durationSecondsOf(item))}`
+              : `${item.ratio || "—"} · ${item.resolution || "—"}${item.type === "video" ? ` · ${formatVideoDuration(item)}` : ""}`;
+            return view === "grid" ? (
+              <article key={item.id} className={`work-card${isPicked ? " is-selected" : ""}`} data-work-item={item.id}>
+                <div className={`work-thumb${item.type === "audio" ? " is-audio" : ""}`}>
+                  {item.type === "audio" ? <WorkWaveform /> : <MediaCover item={item} />}
+                  <label className="work-check">
+                    <input type="checkbox" checked={isPicked} onChange={() => togglePicked(item.id)} aria-label={`选择${title}`} />
+                    <span aria-hidden="true"><Check size={13} strokeWidth={2.4} /></span>
+                  </label>
+                  <span className="work-spec">{specText}</span>
+                  <span className="work-kind">{typeLabel(item.type)}</span>
+                  <button type="button" className="work-preview-button" onClick={() => setSelected(item)} aria-label={`预览${title}`}>
+                    {item.type === "image" ? <Expand size={18} /> : <Play size={18} fill="currentColor" />}
+                  </button>
                 </div>
-              </footer>
-            </div>
-          </article>
-          );
-        })}
-      </section>
+                <div className="work-card-body">
+                  <h3 title={title}>{title}</h3>
+                  <div className="work-model" title={item.model || undefined}>{item.model || "未记录模型"}</div>
+                  <p>{promptText}</p>
+                </div>
+                <footer className="work-card-footer">
+                  <span><CalendarDays size={12} /> {item.createdAtLabel} · {item.elapsed}</span>
+                  <div className="work-actions">
+                    <a href={item.src} download aria-label={`下载${title}`} title="下载"><Download size={16} /></a>
+                    <button type="button" className="is-danger" aria-label={`删除${title}`} title="删除" onClick={() => confirmDelete(item)}><Trash2 size={16} /></button>
+                  </div>
+                </footer>
+              </article>
+            ) : (
+              <article key={item.id} className={`work-list-item${isPicked ? " is-selected" : ""}`} data-work-item={item.id}>
+                <div className={`work-thumb${item.type === "audio" ? " is-audio" : ""}`}>
+                  {item.type === "audio" ? <WorkWaveform /> : <MediaCover item={item} />}
+                  <label className="work-check">
+                    <input type="checkbox" checked={isPicked} onChange={() => togglePicked(item.id)} aria-label={`选择${title}`} />
+                    <span aria-hidden="true"><Check size={13} strokeWidth={2.4} /></span>
+                  </label>
+                  <span className="work-kind">{typeLabel(item.type)}</span>
+                  <button type="button" className="work-preview-button" onClick={() => setSelected(item)} aria-label={`预览${title}`}>
+                    {item.type === "image" ? <Expand size={18} /> : <Play size={18} fill="currentColor" />}
+                  </button>
+                </div>
+                <div className="work-list-copy">
+                  <div className="work-list-heading">
+                    <div>
+                      <h3>{title}</h3>
+                      <span>{item.model || "未记录模型"}</span>
+                    </div>
+                    <div className="work-actions">
+                      <a href={item.src} download aria-label={`下载${title}`} title="下载"><Download size={16} /></a>
+                      <button type="button" className="is-danger" aria-label={`删除${title}`} title="删除" onClick={() => confirmDelete(item)}><Trash2 size={16} /></button>
+                    </div>
+                  </div>
+                  <p>{promptText}</p>
+                  <footer>
+                    <span>未归入项目</span>
+                    <span>{item.createdAtLabel} · 生成耗时 {item.elapsed}</span>
+                  </footer>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
       {selected && (
-        <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelected(null); }}>
-          <section className="creation-viewer" role="dialog" aria-modal="true">
+        <div className="work-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelected(null); }}>
+          <section className="work-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="workPreviewTitle" tabIndex={-1}>
             <header>
-              <div><span className="modal-kicker">CREATION PREVIEW</span><h2>{creationTitleForDisplay(selected)}</h2></div>
-              <button className="modal-close" type="button" aria-label="关闭作品预览" onClick={() => setSelected(null)}><X size={19} /></button>
+              <div><span>{typeLabel(selected.type)}预览</span><h2 id="workPreviewTitle">{creationTitleForDisplay(selected)}</h2></div>
+              <button className="modal-close" type="button" onClick={() => setSelected(null)} aria-label="关闭预览"><X size={19} /></button>
             </header>
-            <div className={`creation-viewer__media ${selected.type === "audio" ? "is-audio" : ""}`}>
+            <div className={`work-preview-stage${selected.type === "audio" ? " is-audio" : ""}`}>
               {selected.type === "video"
                 ? <video src={selected.src} poster={selected.poster} controls playsInline />
                 : selected.type === "audio"
-                  ? <div className="creation-audio-viewer"><span><AudioLines size={26} /></span><div><small>音频作品</small><strong>{creationTitleForDisplay(selected)}</strong></div><audio src={selected.src} controls preload="metadata" /></div>
-                  : <img src={selected.src} alt={creationTitleForDisplay(selected)} />}
+                  ? <AudioPreview
+                      src={selected.src}
+                      title={creationTitleForDisplay(selected)}
+                      format={selected.format}
+                      duration={durationSecondsOf(selected)}
+                    />
+                  : <figure className="work-preview-art">
+                      <img
+                        src={selected.src}
+                        alt={creationTitleForDisplay(selected)}
+                        onClick={() => setLightbox({ src: selected.src, title: creationTitleForDisplay(selected) })}
+                      />
+                      <button type="button" aria-label="查看大图" onClick={() => setLightbox({ src: selected.src, title: creationTitleForDisplay(selected) })}><Expand size={28} /></button>
+                    </figure>}
             </div>
-            <div className="creation-viewer__meta">
-              <div><span>生成提示</span><p>{promptForDisplay(selected.prompt) || "—"}</p></div>
-              <dl>
-                <div><dt>规格</dt><dd>{selected.type === "audio" ? "音频" : `${selected.ratio} · ${selected.resolution}${selected.type === "video" ? ` · ${selected.duration}` : ""}`}</dd></div>
-                <div><dt>模型</dt><dd>{selected.model || "未记录模型"}</dd></div>
-                <div><dt>耗时</dt><dd>{selected.elapsed || "—"}</dd></div>
-                <div><dt>项目</dt><dd>{selected.projectName || "未归入项目"}</dd></div>
-                <div><dt>消耗</dt><dd>{selected.cost} 积分</dd></div>
-              </dl>
-              <div className="creation-viewer__actions">
-                <a className="button button--primary" href={selected.src} download><Download size={16} /> 下载到本地</a>
-                <button className="button button--ghost" type="button" onClick={() => copyLink(selected)}><Copy size={16} /> 复制链接</button>
-                <button className="button button--ghost" type="button" disabled={saveMutation.isPending && saveMutation.variables === selected.id} onClick={() => saveMutation.mutate(selected.id)}>
+            <footer>
+              <div className="work-preview-dialog__meta">
+                <strong>{selected.model || "未记录模型"}</strong>
+                <div
+                  ref={promptRef}
+                  className={`work-preview-dialog__prompt${promptOverflow ? " is-overflow" : ""}`}
+                  aria-describedby={promptTooltip ? "workPromptTooltip" : undefined}
+                  tabIndex={0}
+                  onMouseEnter={showPromptTooltip}
+                  onMouseLeave={schedulePromptTooltipClose}
+                  onFocus={showPromptTooltip}
+                  onBlur={hidePromptTooltip}
+                >
+                  <p>{selectedPrompt}</p>
+                </div>
+              </div>
+              <div className="work-preview-dialog__actions">
+                <button type="button" className="works-text-button" onClick={() => copyLink(selected)}><Copy size={15} /> 复制链接</button>
+                <button type="button" className="works-download-button" disabled={saveMutation.isPending && saveMutation.variables === selected.id} onClick={() => saveMutation.mutate(selected.id)}>
                   {savedIds.includes(selected.id) ? <Check size={16} /> : <FolderInput size={16} />}
                   {savedIds.includes(selected.id) ? "已存入素材库" : "存入素材库"}
                 </button>
-                <button className="button button--ghost" type="button" onClick={() => reuse(selected)}><Sparkles size={16} /> 基于此生成</button>
-                <button className="button button--danger" type="button" onClick={() => confirmDelete(selected)}><Trash2 size={16} /> 删除</button>
+                <button type="button" className="works-download-button" onClick={() => reuse(selected)}><Sparkles size={16} /> 基于此生成</button>
+                <a className="works-download-button" href={selected.src} download><Download size={16} /> 下载作品</a>
+                <button type="button" className="works-download-button is-danger" onClick={() => confirmDelete(selected)} aria-label={`删除${creationTitleForDisplay(selected)}`} title="删除"><Trash2 size={16} /> 删除</button>
               </div>
-            </div>
+            </footer>
           </section>
+          {promptTooltip && (
+            <div
+              id="workPromptTooltip"
+              className="work-prompt-tooltip"
+              role="tooltip"
+              onMouseEnter={() => window.clearTimeout(promptTooltipTimerRef.current)}
+              onMouseLeave={hidePromptTooltip}
+              style={{ left: `${promptTooltip.left}px`, bottom: `calc(100dvh - ${promptTooltip.viewportTop}px + 8px)` }}
+            >
+              {selectedPrompt}
+            </div>
+          )}
         </div>
+      )}
+      {selected && lightbox && (
+        <ImageLightbox
+          preview={{ ...lightbox, title: lightbox.title || "作品预览" }}
+          onClose={() => setLightbox(null)}
+        />
       )}
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         eyebrow="我的创作"
         title="删除作品？"
         message={deleteTarget
-          ? `确定删除作品「${creationTitleForDisplay(deleteTarget)}」吗？删除后不可恢复。`
+          ? `“${creationTitleForDisplay(deleteTarget)}”删除后将无法恢复，请确认是否继续。`
           : ""}
         confirmLabel="删除"
         busy={deleteMutation.isPending}
@@ -316,6 +494,6 @@ export function MyCreations({ onReuse }) {
           });
         }}
       />
-    </div>
+    </section>
   );
 }

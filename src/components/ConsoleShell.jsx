@@ -1,130 +1,268 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Clapperboard, FileText, Film, Images, LogOut, Moon, ShieldCheck, Sparkles, Sun, UserRound, Zap } from "lucide-react";
+import { LogOut, ShieldCheck, UserRound, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useMatch, useNavigate } from "react-router-dom";
-import { rechargeCredits } from "../api/credits.js";
+import { useLocation, useNavigate } from "react-router-dom";
 import { fetchEnabledModels } from "../api/models.js";
-import { resolveConsoleTheme } from "../lib/theme.js";
 import { managedModelCatalog } from "../lib/modelCatalog.js";
-import { AssetLibrary } from "./AssetLibrary.jsx";
-import { Brand } from "./Brand.jsx";
+import { rechargeCredits } from "../api/credits.js";
 import { CreditsModal } from "./CreditsModal.jsx";
+import { ProfileModal } from "./ProfileModal.jsx";
+import { ChevronIcon, CollapseIcon, ExpandIcon, FilmIcon, GridIcon, ImageIcon, LogoMark, ScriptIcon, ShieldIcon, SparkIcon } from "./icons/sidebarIcons.jsx";
+import { FastCreate } from "./FastCreate.jsx";
+import { ScriptCreation } from "./ScriptCreation.jsx";
+import { MyCreations } from "./MyCreations.jsx";
+import { AssetLibrary } from "./AssetLibrary.jsx";
+import { AdminConsole } from "./AdminConsole.jsx";
 import { DramaHome } from "./Drama/DramaHome.jsx";
 import { DramaWorkbench } from "./Drama/DramaWorkbench.jsx";
-import { FastCreate } from "./FastCreate.jsx";
-import { MyCreations } from "./MyCreations.jsx";
-import { ProfileModal } from "./ProfileModal.jsx";
-import { ScriptCreation } from "./ScriptCreation.jsx";
-import { AdminConsole } from "./AdminConsole.jsx";
 
-const tabs = [
-  { id: "create", label: "快速创作", icon: Sparkles },
-  { id: "drama", label: "短剧创作", icon: Film },
-  { id: "script", label: "剧本创作", icon: FileText },
-  { id: "creations", label: "我的创作", icon: Clapperboard },
-  { id: "assets", label: "素材库", icon: Images },
+const SIDEBAR_KEY = "tongdao-sidebar";
+
+const navGroups = [
+  {
+    label: "创作",
+    items: [
+      { id: "create", to: "/console/create", label: "快速创作", Icon: SparkIcon },
+      { id: "drama", to: "/console/drama", label: "短剧创作", Icon: FilmIcon },
+      { id: "script", to: "/console/script", label: "剧本创作", Icon: ScriptIcon },
+    ],
+  },
+  {
+    label: "内容",
+    items: [
+      { id: "creations", to: "/console/creations", label: "我的创作", Icon: GridIcon },
+      { id: "assets", to: "/console/assets", label: "素材库", Icon: ImageIcon },
+    ],
+  },
 ];
+
+// 旧版侧栏基于 state 的 tab → URL 派生（保持与 React Router 协同）
+function deriveActiveId(pathname) {
+  if (pathname.startsWith("/console/drama")) return "drama";
+  if (pathname.startsWith("/console/script")) return "script";
+  if (pathname.startsWith("/console/creations")) return "creations";
+  if (pathname.startsWith("/console/assets")) return "assets";
+  if (pathname.startsWith("/console/admin")) return "admin";
+  return "create";
+}
+
+// 路由与具体侧栏项高亮规则一致；drama 含子路由
+function navItemMatch(id, pathname) {
+  if (id === "drama") return pathname === "/console/drama" || pathname.startsWith("/console/drama/");
+  if (id === "admin") return pathname.startsWith("/console/admin");
+  if (id === "create") return pathname === "/console" || pathname === "/console/" || pathname === "/console/create" || pathname.startsWith("/console/create/");
+  return pathname === `/console/${id}`;
+}
 
 export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const dramaMatch = useMatch("/console/drama/:id");
-  const dramaId = dramaMatch?.params?.id;
+  const dramaMatchParams = location.pathname.match(/^\/console\/drama\/([^/]+)/);
+  const dramaId = dramaMatchParams ? decodeURIComponent(dramaMatchParams[1]) : null;
+  const active = deriveActiveId(location.pathname);
+  const isAdmin = user.isAdmin === true;
+  const canSeeAdmin = isAdmin;
+
   const queryClient = useQueryClient();
-  const [active, setActive] = useState(() => (dramaId || location.state?.tab === "drama" ? "drama" : "create"));
-  const [theme, setTheme] = useState(() => resolveConsoleTheme(
-    window.localStorage.getItem("lightflow-console-theme"),
-    window.matchMedia?.("(prefers-color-scheme: dark)")?.matches,
-  ));
+  const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem(SIDEBAR_KEY) === "1");
   const [userMenu, setUserMenu] = useState(false);
   const [profileMode, setProfileMode] = useState(null);
   const [creditsOpen, setCreditsOpen] = useState(false);
   const [recentTransactions, setRecentTransactions] = useState([]);
   const [creationReuse, setCreationReuse] = useState(null);
+  const menuRef = useRef(null);
+
   const modelsQuery = useQuery({
     queryKey: ["public-models"],
     queryFn: fetchEnabledModels,
   });
   const models = managedModelCatalog(modelsQuery.data);
-  const menuRef = useRef(null);
-  const isAdmin = user.isAdmin === true;
-  const visibleTabs = isAdmin ? [...tabs, { id: "admin", label: "管理后台", icon: ShieldCheck }] : tabs;
 
   useEffect(() => {
-    const close = (event) => { if (!menuRef.current?.contains(event.target)) setUserMenu(false); };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    window.localStorage.setItem(SIDEBAR_KEY, collapsed ? "1" : "0");
+  }, [collapsed]);
+
+  useEffect(() => {
+    const onDocMouseDown = (event) => {
+      if (!menuRef.current?.contains(event.target)) setUserMenu(false);
+    };
+    const onKey = (event) => { if (event.key === "Escape") setUserMenu(false); };
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKey);
+    };
   }, []);
-  useEffect(() => {
-    window.localStorage.setItem("lightflow-console-theme", theme);
-    document.documentElement.style.colorScheme = theme;
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
-  useEffect(() => {
-    if (active === "admin" && !isAdmin) setActive("create");
-  }, [active, isAdmin]);
-  useEffect(() => {
-    if (dramaId) setActive("drama");
-    else if (location.state?.tab === "drama") setActive("drama");
-  }, [dramaId, location.state]);
+
+  function toggleSidebar() { setCollapsed((current) => !current); }
 
   function goTab(tabId) {
-    setActive(tabId);
-    if (location.pathname !== "/console") navigate("/console", { replace: true, state: tabId === "drama" ? { tab: "drama" } : {} });
+    const target = tabId === "drama" && dramaId
+      ? `/console/drama/${dramaId}`
+      : tabId === "drama"
+        ? "/console/drama"
+        : `/console/${tabId}`;
+    navigate(target);
   }
 
   function reuseCreation(seed) {
     setCreationReuse(seed);
-    goTab("create");
+    navigate("/console/create");
   }
 
+  const enrichedConfig = { ...(config ?? {}), models };
+
   return (
-    <div className="console-shell" data-theme={theme}>
-      <header className="console-header">
-        <Brand config={config} compact onClick={() => navigate("/")} />
-        <nav aria-label="控制台主导航">{visibleTabs.map((tab) => {
-          const Icon = tab.icon;
-          return <button key={tab.id} type="button" className={active === tab.id ? "active" : ""} onClick={() => goTab(tab.id)}><Icon size={16} />{tab.label}</button>;
-        })}</nav>
-        <div className="console-account">
-          <button className="theme-toggle" type="button" aria-label={`切换到${theme === "light" ? "夜间" : "日间"}模式`} title={`当前为${theme === "light" ? "日间" : "夜间"}模式`} onClick={() => setTheme((current) => current === "light" ? "dark" : "light")}>{theme === "light" ? <Sun size={14} /> : <Moon size={14} />}<span>{theme === "light" ? "日间" : "夜间"}</span></button>
-          <button className="credit-pill" type="button" onClick={() => setCreditsOpen(true)} aria-label={`积分余额 ${user.credits}，打开积分中心`}><Zap size={14} fill="currentColor" /> {user.credits}<span>积分</span></button>
+    <div className={`app-shell${collapsed ? " is-collapsed" : ""}`}>
+      <aside className="sidebar" aria-label="主导航">
+        <div className="brand-header">
+          <div className="brand-mark" aria-hidden="true"><LogoMark /></div>
+          <span className="brand-name">{config?.appName ?? "同道"}</span>
+          <button
+            className="collapse-button"
+            type="button"
+            onClick={toggleSidebar}
+            aria-label={collapsed ? "展开导航栏" : "折叠导航栏"}
+            data-tooltip={collapsed ? "展开导航栏" : "折叠导航栏"}
+          >
+            {collapsed ? <ExpandIcon /> : <CollapseIcon />}
+          </button>
+        </div>
+        <nav className="nav-scroll">
+          {navGroups.map((group) => (
+            <div key={group.label} className="nav-group">
+              <div className="nav-label">{group.label}</div>
+              {group.items.map(({ id, to, label, Icon }) => {
+                const active = navItemMatch(id, location.pathname);
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`nav-item${active ? " active" : ""}`}
+                    onClick={() => goTab(id)}
+                  >
+                    <Icon />
+                    <span className="nav-text">{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+          {canSeeAdmin && (
+            <div className="nav-group">
+              <div className="nav-label">系统</div>
+              <button
+                type="button"
+                className={`nav-item${navItemMatch("admin", location.pathname) ? " active" : ""}`}
+                onClick={() => navigate("/console/admin")}
+              >
+                <ShieldIcon />
+                <span className="nav-text">管理后台</span>
+              </button>
+            </div>
+          )}
+        </nav>
+      </aside>
+
+      <header className="topbar" role="banner">
+        <div className="account-area">
+          <button
+            className="credit-pill"
+            type="button"
+            onClick={() => setCreditsOpen(true)}
+            aria-label={`积分余额 ${user.credits ?? 0}，打开积分中心`}
+          >
+            <Zap className="credit-icon" size={14} fill="currentColor" />
+            <span className="credit-value">{(user.credits ?? 0).toLocaleString("zh-CN")}</span>
+            <span className="credit-unit">积分</span>
+          </button>
           <div className="account-menu-wrap" ref={menuRef}>
-            <button className="account-trigger" type="button" onClick={() => setUserMenu(!userMenu)}>
-              <span className="avatar">{user.name.slice(0, 1)}</span>
-              <span><strong>{user.name}</strong><small>{isAdmin ? "平台管理员" : "已登录"}</small></span>
-              <ChevronDown size={15} />
+            <button
+              className="user-button"
+              type="button"
+              onClick={() => setUserMenu((current) => !current)}
+              aria-haspopup="menu"
+              aria-expanded={userMenu}
+            >
+              <span className="avatar">{user.name?.slice(0, 1)?.toUpperCase() ?? "·"}</span>
+              <span className="user-name">{user.name}</span>
+              <ChevronIcon className="user-chevron" />
             </button>
-            {userMenu && <div className="account-dropdown">
-              <header><span className="avatar avatar--large">{user.name.slice(0, 1)}</span><div><strong>{user.name}</strong><small>{user.email}</small></div></header>
-              {isAdmin && <button type="button" onClick={() => { goTab("admin"); setUserMenu(false); }}><ShieldCheck size={16} /> 管理后台</button>}
-              <button type="button" onClick={() => { setProfileMode("profile"); setUserMenu(false); }}><UserRound size={16} /> 个人信息</button>
-              <div />
-              <button type="button" className="danger" onClick={() => { onLogout(); navigate("/"); }}><LogOut size={16} /> 退出登录</button>
-            </div>}
+            {userMenu && (
+              <div className="user-menu is-open" role="menu">
+                <div className="user-summary">
+                  <strong>{user.name}</strong>
+                  <span>{user.email || (isAdmin ? "平台管理员" : "已登录")}</span>
+                </div>
+                {isAdmin && (
+                  <button type="button" className="menu-action" onClick={() => { navigate("/console/admin"); setUserMenu(false); }}>
+                    <ShieldCheck size={16} /> 管理后台
+                  </button>
+                )}
+                <button type="button" className="menu-action" onClick={() => { setProfileMode("profile"); setUserMenu(false); }}>
+                  <UserRound size={16} /> 个人信息
+                </button>
+                <div className="menu-divider" />
+                <button
+                  type="button"
+                  className="menu-action danger"
+                  onClick={() => { onLogout(); setUserMenu(false); navigate("/"); }}
+                >
+                  <LogOut size={16} /> 退出登录
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>
-      <main className="console-content">
-        {active === "create" && <FastCreate config={{ ...config, models }} modelCatalogLoading={modelsQuery.isLoading} modelCatalogError={modelsQuery.error} theme={theme} reuse={creationReuse} onReuseApplied={() => setCreationReuse(null)} onOpenAssets={() => goTab("assets")} credits={user?.credits ?? null} onNeedRecharge={() => setCreditsOpen(true)} onConsumeCredits={(_points, details) => {
-          queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
-          queryClient.invalidateQueries({ queryKey: ["credits"] });
-          queryClient.invalidateQueries({ queryKey: ["creations"] });
-          if (details?.refresh === false) return;
-        }} />}
+
+      <main className="main-content" role="main">
+        {active === "create" && (
+          <FastCreate
+            config={enrichedConfig}
+            modelCatalogLoading={modelsQuery.isLoading}
+            modelCatalogError={modelsQuery.error}
+            theme="dark"
+            reuse={creationReuse}
+            onReuseApplied={() => setCreationReuse(null)}
+            onOpenAssets={() => navigate("/console/assets")}
+            credits={user?.credits ?? null}
+            onNeedRecharge={() => setCreditsOpen(true)}
+            onConsumeCredits={(_points, details) => {
+              queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+              queryClient.invalidateQueries({ queryKey: ["credits"] });
+              queryClient.invalidateQueries({ queryKey: ["creations"] });
+              if (details?.refresh === false) return;
+            }}
+          />
+        )}
         {active === "drama" && (dramaId ? <DramaWorkbench seriesId={dramaId} /> : <DramaHome />)}
         {active === "script" && <ScriptCreation />}
         {active === "creations" && <MyCreations onReuse={reuseCreation} />}
         {active === "assets" && <AssetLibrary />}
-        {active === "admin" && isAdmin && <AdminConsole />}
+        {active === "admin" && canSeeAdmin && <AdminConsole />}
       </main>
-      <ProfileModal open={Boolean(profileMode)} mode={profileMode} user={user} onClose={() => setProfileMode(null)} onSave={(next) => { onUserUpdate(next); setProfileMode(null); }} />
-      <CreditsModal open={creditsOpen} user={user} recentTransactions={recentTransactions} onClose={() => setCreditsOpen(false)} onRecharge={async (amountYuan, payment, requestId) => {
-        const profile = await rechargeCredits({ amountYuan, payment, requestId });
-        onUserUpdate(profile);
-        queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
-        queryClient.invalidateQueries({ queryKey: ["credits"] });
-      }} />
+
+      <ProfileModal
+        open={Boolean(profileMode)}
+        mode={profileMode}
+        user={user}
+        onClose={() => setProfileMode(null)}
+        onSave={(next) => { onUserUpdate(next); setProfileMode(null); }}
+      />
+      <CreditsModal
+        open={creditsOpen}
+        user={user}
+        recentTransactions={recentTransactions}
+        onClose={() => setCreditsOpen(false)}
+        onRecharge={async (amountYuan, payment, requestId) => {
+          const profile = await rechargeCredits({ amountYuan, payment, requestId });
+          onUserUpdate(profile);
+          queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+          queryClient.invalidateQueries({ queryKey: ["credits"] });
+        }}
+      />
     </div>
   );
 }

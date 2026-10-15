@@ -24,6 +24,10 @@ export function App() {
       <Route path="/login" element={user ? <Navigate to="/console" replace /> : <AuthPage config={config} mode="login" />} />
       <Route path="/register" element={user ? <Navigate to="/console" replace /> : <AuthPage config={config} mode="register" />} />
       <Route
+        path="/console"
+        element={user ? <Navigate to="/console/create" replace /> : <Navigate to="/login" replace />}
+      />
+      <Route
         path="/console/*"
         element={user
           ? <ConsoleShell config={config} user={user} onLogout={logout} onUserUpdate={updateUser} />

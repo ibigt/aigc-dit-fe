@@ -1,12 +1,13 @@
-import { AudioLines, Check, Clock3, Download, Filter, Grid3X3, Image, List, Plus, Search, Trash2, Upload, Video, X } from "lucide-react";
+import { AudioLines, Check, Download, Filter, Grid3X3, Image, List, Search, Trash2, Upload, Video, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteAsset, fetchAssets, uploadAsset } from "../api/assets.js";
 import { MediaCover } from "../lib/MediaCover.jsx";
 import { formatDateTime, MEDIA_THUMB_WIDTH, mediaUrl } from "../lib/media.js";
 import { validateAssetFile } from "../lib/assetUpload.js";
 import { formatMediaMeta, runBatchDelete } from "../lib/assetBatch.js";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
+import { AudioPreview } from "./AudioPreview.jsx";
 
 const AUTO_DISMISS_DELAY_MS = 3000;
 const ORDER_OPTIONS = [
@@ -31,8 +32,10 @@ export function AssetLibrary() {
   const [batchUploads, setBatchUploads] = useState([]);
   const [batchExpanded, setBatchExpanded] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const fileRef = useRef(null);
   const dropRef = useRef(null);
+  const filterButtonActive = filterMenuOpen;
   const audioFile = audioQueue[0] || null;
   const assetsQuery = useQuery({
     queryKey: ["assets", filter, query, orderBy],
@@ -41,6 +44,7 @@ export function AssetLibrary() {
       q: query || undefined,
       orderBy: orderBy === "time_desc" ? undefined : orderBy,
     }),
+    placeholderData: keepPreviousData,
   });
   const uploadMutation = useMutation({
     mutationFn: ({ file, name, onProgress }) => uploadAsset(file, { name, onProgress }),
@@ -264,49 +268,70 @@ export function AssetLibrary() {
   }
 
   return (
-    <div className="library-page">
-      <header className="page-heading">
+    <section className="page standard-content-page works-page asset-library-page">
+      <header className="page-header works-header">
         <div><h1>素材库</h1><p>集中管理你的图片、视频与音频资产，创作和角色音色配置均可直接引用。</p></div>
-        <button className="button button--primary" type="button" onClick={() => fileRef.current?.click()}><Upload size={17} /> 上传素材</button>
-        <input ref={fileRef} type="file" multiple accept="image/*,video/*,audio/*,.mp3,.wav,.m4a,.aac" hidden onChange={onUpload} />
+        <button type="button" className="page-primary-action" onClick={() => fileRef.current?.click()} aria-label="上传素材">
+          <Upload size={17} aria-hidden="true" />
+          <span>上传素材</span>
+        </button>
       </header>
-      <section className="library-toolbar">
-        <div className="filter-tabs">{[{ id: "all", label: "全部", icon: Grid3X3 }, { id: "image", label: "图片", icon: Image }, { id: "video", label: "视频", icon: Video }, { id: "audio", label: "音频", icon: AudioLines }].map((item) => {
-          const Icon = item.icon;
-          return <button className={filter === item.id ? "active" : ""} type="button" key={item.id} onClick={() => setFilter(item.id)}><Icon size={15} />{item.label}</button>;
-        })}</div>
-        <div className="library-toolbar__right">
+
+      <input ref={fileRef} type="file" multiple accept="image/*,video/*,audio/*,.mp3,.wav,.m4a,.aac" hidden onChange={onUpload} />
+
+      <div className="works-controls asset-library-controls">
+        <div className="works-type-tabs" role="tablist" aria-label="素材类型">
+          {[["all", "全部", Grid3X3], ["image", "图片", Image], ["video", "视频", Video], ["audio", "音频", AudioLines]].map(([value, label, Icon]) => (
+            <button key={value} type="button" role="tab" aria-selected={filter === value} className={`works-type-tab${filter === value ? " is-active" : ""}`} onClick={() => setFilter(value)}>
+              <Icon size={16} aria-hidden="true" />
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+        <div className="works-filter-group asset-library-tools">
           {pickedIds.size > 0 && (
-            <div className="asset-batch-bar" role="status">
+            <div className="asset-library-selection" aria-live="polite">
               <strong>已选 {pickedIds.size} 项</strong>
               <button type="button" onClick={clearPicked}>取消选择</button>
-              <button className="button button--danger" type="button" onClick={askBatchDelete}><Trash2 size={15} /> 删除所选</button>
+              <button type="button" className="is-danger" onClick={askBatchDelete}><Trash2 size={15} aria-hidden="true" /> 删除所选</button>
             </div>
           )}
           {batchToast && (
             <div className="asset-batch-toast" role="status">
               <span>已删除 {batchToast.succeeded.length} 个素材{batchToast.failed.length > 0 ? `，${batchToast.failed.length} 个失败` : ""}</span>
-              {batchToast.failed.length > 0 && (
-                <small>{batchToast.failed.map((entry) => entry.name).join("、")}</small>
-              )}
-              <button type="button" onClick={() => setBatchToast(null)}><X size={14} /></button>
+              {batchToast.failed.length > 0 && <small>{batchToast.failed.map((entry) => entry.name).join("、")}</small>}
+              <button type="button" onClick={() => setBatchToast(null)} aria-label="关闭"><X size={14} /></button>
             </div>
           )}
-          <div className="library-tools">
-
-            <div className="asset-order">
-              <select value={orderBy} onChange={(event) => setOrderBy(event.target.value)} aria-label="素材排序">
-                {ORDER_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-            </div>
-            <label><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索素材" /></label>
-            <button type="button" aria-label="筛选素材"><Filter size={16} /></button>
-            <span />
-            <button type="button" aria-label="网格视图" className={view === "grid" ? "active" : ""} onClick={() => setView("grid")}><Grid3X3 size={16} /></button>
-            <button type="button" aria-label="列表视图" className={view === "list" ? "active" : ""} onClick={() => setView("list")}><List size={16} /></button>
+          <label className="works-select">
+            <span className="visually-hidden">素材排序</span>
+            <select value={orderBy} onChange={(event) => setOrderBy(event.target.value)} aria-label="素材排序">
+              {ORDER_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          <label className="works-search">
+            <Search size={17} aria-hidden="true" />
+            <span className="visually-hidden">搜索素材</span>
+            <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索素材" autoComplete="off" />
+          </label>
+          <div className="asset-filter-wrap">
+            <button type="button" className={`asset-filter-button${filterButtonActive ? " is-active" : ""}`} onClick={() => setFilterMenuOpen((v) => !v)} aria-expanded={filterMenuOpen} aria-label="更多筛选">
+              <Filter size={16} aria-hidden="true" /><span>筛选</span>
+            </button>
+            {filterMenuOpen && (
+              <div className="asset-filter-popover" role="status">
+                <strong>更多筛选</strong>
+                <p>当前版本暂无额外筛选条件，可使用左侧类型分类快速筛选。</p>
+              </div>
+            )}
+          </div>
+          <div className="works-view-switch" aria-label="展示模式">
+            <button type="button" className={view === "grid" ? "is-active" : ""} onClick={() => setView("grid")} aria-label="卡片模式" aria-pressed={view === "grid"}><Grid3X3 size={17} /></button>
+            <button type="button" className={view === "list" ? "is-active" : ""} onClick={() => setView("list")} aria-label="列表模式" aria-pressed={view === "list"}><List size={17} /></button>
           </div>
         </div>
-      </section>
+      </div>
+
       {batchSummary && (
         <section className="asset-upload-batch" aria-live="polite">
           <header>
@@ -338,46 +363,80 @@ export function AssetLibrary() {
           )}
         </section>
       )}
-      <section className={`asset-grid ${view === "list" ? "asset-grid--list" : ""} ${isDragging ? "asset-grid--drag" : ""}`} ref={dropRef}>
-        <button className="upload-card" type="button" onClick={() => fileRef.current?.click()}><span><Plus size={22} /></span><strong>{isDragging ? "松开即可上传" : "上传新素材"}</strong><small>图片、视频或音频</small></button>
-        {isDragging && <div className="asset-grid__drop-mask" aria-hidden="true" />}
-        {assets.map((item) => {
+
+      <div className="works-result-summary">
+        <span>{filter === "all" ? `全部 ${assets.length} 项` : `找到 ${assets.length} 项素材`}</span>
+        <span>{orderBy === "time_desc" ? "按最新上传排序" : "按最早上传排序"}</span>
+      </div>
+
+      <div ref={dropRef} className={`${view === "grid" ? "asset-library-grid" : "asset-library-list"} ${isDragging ? "is-dragging" : ""}`}>
+        <button type="button" className={`asset-upload-entry${view === "list" ? " is-list" : ""}${isDragging ? " is-dragging" : ""}`} onClick={() => fileRef.current?.click()}>
+          <span className="asset-upload-plus" aria-hidden="true">+</span>
+          <span>
+            <strong>{isDragging ? "松开即可上传" : "上传新素材"}</strong>
+            <small>图片、视频或音频</small>
+          </span>
+        </button>
+        {(view === "grid" ? assets : assets).map((item) => {
           const isPicked = pickedIds.has(item.id);
           const meta = item.meta;
-          return (
-            <article className={`asset-card ${isPicked ? "asset-card--picked" : ""}`} key={item.id}>
-              <div className="asset-card__media">
-                <button className="asset-card__preview" type="button" onClick={() => setSelected(item)} aria-label={`查看素材：${item.title}`}>
-                  <MediaCover item={item} />
-                  <div className="asset-card__type">{item.type === "audio" ? <><AudioLines size={13} /> 音频</> : item.type === "video" ? <><Video size={13} /> 视频</> : <><Image size={13} /> 图片</>}</div>
-                </button>
-                <label className="asset-card__pick" onClick={(event) => event.stopPropagation()}>
-                  <input type="checkbox" checked={isPicked} onChange={() => togglePicked(item)} aria-label={`选择素材：${item.title}`} />
-                </label>
-                <button className="asset-menu" type="button" aria-label={`删除素材：${item.title}`} onClick={() => confirmDelete(item)}><Trash2 size={15} /></button>
-              </div>
-              <div className="asset-card__info">
+          const kindLabel = item.type === "audio" ? "音频" : item.type === "video" ? "视频" : "图片";
+          const typeIcon = item.type === "audio" ? AudioLines : item.type === "video" ? Video : Image;
+          const TypeIcon = typeIcon;
+          const metaParts = item.type === "audio"
+            ? [meta?.format, meta?.duration]
+            : item.type === "video"
+              ? [meta?.size, meta?.duration]
+              : [meta?.size];
+          const metaText = metaParts.filter(Boolean).join(" · ") || (item.createdAt ? `上传于 ${item.createdAt}` : "—");
+          const thumb = (
+            <div className={`work-thumb asset-library-thumb${item.type === "audio" ? " is-audio" : ""}`}>
+              <MediaCover item={item} />
+              <label className="work-check">
+                <input type="checkbox" checked={isPicked} onChange={() => togglePicked(item)} aria-label={`选择素材：${item.title}`} />
+                <span aria-hidden="true"><Check size={13} strokeWidth={2.4} /></span>
+              </label>
+              <button type="button" className="asset-item-delete" aria-label={`删除素材：${item.title}`} title="删除" onClick={(e) => { e.stopPropagation(); confirmDelete(item); }}><Trash2 size={15} /></button>
+              <span className="work-kind asset-kind"><TypeIcon size={13} aria-hidden="true" />{kindLabel}</span>
+              <button type="button" className="asset-preview-hit" onClick={() => setSelected(item)} aria-label={`预览素材：${item.title}`} />
+            </div>
+          );
+          return view === "grid" ? (
+            <article key={item.id} className={`work-card asset-library-card${isPicked ? " is-selected" : ""}`}>
+              {thumb}
+              <div className="asset-library-card-body">
                 <div>
-                  <strong>{item.title}</strong>
-                  {(meta.size || meta.duration) ? (
-                    <small>
-                      {meta.size ? <span>{meta.size}</span> : null}
-                      {meta.size && meta.duration ? <i aria-hidden="true">·</i> : null}
-                      {meta.duration ? <span>{meta.duration}</span> : null}
-                    </small>
-                  ) : (
-                    <small>{item.createdAt}</small>
-                  )}
+                  <h3 title={item.title}>{item.title}</h3>
+                  <p>{metaText}</p>
                 </div>
-                <span title="已入库"><Check size={13} /></span>
+                <span className="asset-ready-mark" title="素材可用" aria-label="素材可用"><Check size={14} /></span>
+              </div>
+            </article>
+          ) : (
+            <article key={item.id} className={`work-list-item asset-library-list-item${isPicked ? " is-selected" : ""}`}>
+              {thumb}
+              <div className="asset-library-list-copy">
+                <div>
+                  <h3 title={item.title}>{item.title}</h3>
+                  <p>{metaText}</p>
+                </div>
+                <span className="asset-ready-mark" title="素材可用" aria-label="素材可用"><Check size={14} /></span>
               </div>
             </article>
           );
         })}
-      </section>
-      <div className="library-summary"><Clock3 size={15} /> 共 {assets.length} 个素材<button type="button"><Download size={15} /> 导出清单</button></div>
+      </div>
+
+      {assets.length === 0 && (
+        <div className="asset-library-empty">
+          <h2>还没有素材</h2>
+          <p>上传图片、视频或音频后，素材会集中显示在这里。</p>
+          <button type="button" onClick={() => fileRef.current?.click()}>立即上传</button>
+        </div>
+      )}
+
       {audioFile && (
-        <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeAudioUpload(); }}>
+        <div className="work-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeAudioUpload(); }}>
           <section className="asset-upload-dialog" role="dialog" aria-modal="true" aria-labelledby="audio-upload-title">
             <header>
               <div><span className="modal-kicker">AUDIO ASSET</span><h2 id="audio-upload-title">上传音频素材</h2><p>确认素材名称后上传，文件将保存到音频库。</p></div>
@@ -393,30 +452,42 @@ export function AssetLibrary() {
           </section>
         </div>
       )}
+
       {selected && (
-        <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelected(null); }}>
-          <section className="creation-viewer" role="dialog" aria-modal="true">
+        <div className="work-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelected(null); }}>
+          <section className="work-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="assetLibraryPreviewTitle" tabIndex={-1}>
             <header>
-              <div><span className="modal-kicker">ASSET PREVIEW</span><h2>{selected.title}</h2></div>
-              <button className="modal-close" type="button" aria-label="关闭素材预览" onClick={() => setSelected(null)}><X size={19} /></button>
+              <div><span>{selected.type === "audio" ? "音频" : selected.type === "video" ? "视频" : "图片"}预览</span><h2 id="assetLibraryPreviewTitle">{selected.title}</h2></div>
+              <button className="modal-close" type="button" onClick={() => setSelected(null)} aria-label="关闭预览"><X size={19} /></button>
             </header>
-            <div className="creation-viewer__media">
-              {selected.type === "audio"
-                ? <div className="asset-audio-player"><AudioLines size={42} /><strong>{selected.title}</strong><audio src={selected.src} controls preload="metadata" /></div>
-                : selected.type === "video"
-                  ? <video src={selected.src} poster={selected.poster} controls playsInline />
-                  : <img src={selected.src} alt={selected.title} />}
+            <div className={`work-preview-stage${selected.type === "audio" ? " is-audio" : ""}`}>
+              {selected.type === "audio" ? (
+                <AudioPreview
+                  src={selected.src}
+                  title={selected.title}
+                  format={selected.meta?.format}
+                  duration={selected.meta?.durationMs != null ? selected.meta.durationMs / 1000 : undefined}
+                />
+              ) : selected.type === "video" ? (
+                <video src={selected.src} poster={selected.poster} controls autoPlay />
+              ) : (
+                <img src={selected.src} alt={selected.title} onError={(event) => { event.currentTarget.style.display = "none"; }} />
+              )}
             </div>
-            <div className="creation-viewer__meta">
-              <div><span>入库时间</span><p>{selected.createdAt}</p></div>
-              <div className="creation-viewer__actions">
-                <a className="button button--primary" href={selected.src} download><Download size={16} /> 下载素材</a>
-                <button className="button button--danger" type="button" onClick={() => confirmDelete(selected)}><Trash2 size={16} /> 删除</button>
+            <footer>
+              <div>
+                <strong>{selected.meta?.size || `${selected.type === "audio" ? "音频" : selected.type === "video" ? "视频" : "图片"}素材`}</strong>
+                <p>上传于 {selected.createdAt}</p>
               </div>
-            </div>
+              <div className="work-preview-dialog__actions">
+                <a className="works-download-button" href={selected.src} download><Download size={16} /> 下载素材</a>
+                <button type="button" className="works-download-button is-danger" onClick={() => confirmDelete(selected)}><Trash2 size={16} /> 删除</button>
+              </div>
+            </footer>
           </section>
         </div>
       )}
+
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         eyebrow="素材库"
@@ -448,6 +519,6 @@ export function AssetLibrary() {
         onClose={() => { if (!batchDelete?.busy) setBatchDelete(null); }}
         onConfirm={runBatchDeleteNow}
       />
-    </div>
+    </section>
   );
 }

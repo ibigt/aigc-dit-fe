@@ -37,13 +37,14 @@ export async function runBatchDelete(items, performDelete, { concurrency = 5 } =
 // 把素材元数据（宽高 / 时长）格式化为人类可读字符串。
 // 探测失败的字段返回 null，由 UI 自行决定是否回退隐藏。
 export function formatMediaMeta(asset) {
-  if (!asset) return { size: null, duration: null };
+  if (!asset) return { size: null, duration: null, durationMs: null, format: null };
   const size = (Number.isFinite(asset.width) && Number.isFinite(asset.height))
       ? `${asset.width} × ${asset.height}`
       : null;
   const ms = Number.isFinite(asset.durationMs) ? asset.durationMs : null;
   const duration = ms == null ? null : formatDurationLabel(ms);
-  return { size, duration };
+  const format = (typeof asset.format === "string" && asset.format.trim()) ? asset.format.trim().toUpperCase() : null;
+  return { size, duration, durationMs: ms, format };
 }
 
 function formatDurationLabel(ms) {
