@@ -93,24 +93,28 @@ export function DramaHome() {
     });
   }
 
-  function onRename(event) {
-    event.preventDefault();
+  function commitRename() {
     const name = renameDraft.trim();
-    if (!name || !renameTarget) return;
+    if (!name || !renameTarget) {
+      return;
+    }
     renameMutation.mutate({ id: renameTarget.id, name });
   }
 
   return (
-    <section className="drama-library">
-      <h1 className="visually-hidden">短剧创作</h1>
+    <section className="drama-library short-drama-page drama-project-list">
       <header className="drama-library__header">
-        <div className="drama-library__tabs">
-          <button type="button" className="active">我的项目 <span>({series.length})</span></button>
+        <div className="page-header">
+          <div>
+            <h1>短剧创作</h1>
+            <p>组织剧集、镜头和生成素材，完成连续内容创作</p>
+          </div>
         </div>
-        <button className="button button--primary drama-create-button" type="button" onClick={() => setCreating(true)}>
+        <button className="page-primary-action" type="button" onClick={() => setCreating(true)}>
           <Plus size={18} /> 创建项目
         </button>
       </header>
+      <div className="project-count">我的项目 · <span>{series.length}</span></div>
       {listQuery.isError && <p className="drama-form-error">{listQuery.error.message || "加载项目失败"}</p>}
       <div className="drama-project-grid">
         {listQuery.isLoading && <div className="drama-empty">正在加载项目…</div>}
@@ -126,17 +130,45 @@ export function DramaHome() {
                 ) : (
                   <div className="drama-project-card__placeholder" />
                 )}
-                <span>共{episodeCount}集</span>
-                <button
-                  type="button"
-                  aria-label={`打开${item.name}菜单`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setMenu(menu === item.id ? null : item.id);
-                  }}
-                >
-                  <MoreHorizontal size={19} />
-                </button>
+
+              </div>
+              <div className="drama-project-card__body">
+                <div className="project-title-row">
+                  {renameTarget?.id === item.id ? (
+                    <input
+                      autoFocus
+                      className={`project-name-input${renameDraft.trim() ? "" : " is-invalid"}`}
+                      aria-invalid={!renameDraft.trim()}
+                      aria-label="修改项目名称"
+                      maxLength={128}
+                      value={renameDraft}
+                      onChange={(event) => setRenameDraft(event.target.value)}
+                      onBlur={commitRename}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          commitRename();
+                        } else if (event.key === "Escape") {
+                          setRenameTarget(null);
+                          setRenameDraft("");
+                        }
+                      }}
+                    />
+                  ) : (
+                    <strong>{item.name}</strong>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={`打开${item.name}菜单`}
+                    aria-expanded={menu === item.id}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setMenu(menu === item.id ? null : item.id);
+                    }}
+                  >
+                    <MoreHorizontal size={19} />
+                  </button>
+                </div>
                 {menu === item.id && (
                   <div className="drama-project-menu" onClick={(event) => event.stopPropagation()}>
                     <button
@@ -161,9 +193,6 @@ export function DramaHome() {
                     </button>
                   </div>
                 )}
-              </div>
-              <div className="drama-project-card__body">
-                <strong>{item.name}</strong>
                 <p>{item.textModelName ? `文本模型 · ${item.textModelName}` : (item.latestEpisode?.name || "新的短剧项目")}</p>
                 <footer><span>{formatDateTime(item.updatedAt)}</span></footer>
               </div>
@@ -226,23 +255,6 @@ export function DramaHome() {
                 disabled={createMutation.isPending || !form.name.trim() || !form.textModelId}
               >
                 {createMutation.isPending ? "创建中…" : "创建并进入"} <ChevronRight size={16} />
-              </button>
-            </footer>
-          </form>
-        </DramaDialog>
-      )}
-      {renameTarget && (
-        <DramaDialog title="修改项目名称" eyebrow="项目基础信息" onClose={() => { if (!renameMutation.isPending) setRenameTarget(null); }}>
-          <form className="drama-create-form" onSubmit={onRename}>
-            <label>
-              项目名称
-              <input autoFocus required maxLength={128} value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} />
-            </label>
-            {renameMutation.isError && <p className="drama-form-error">{renameMutation.error.message}</p>}
-            <footer>
-              <button type="button" onClick={() => setRenameTarget(null)}>取消</button>
-              <button className="button button--primary" type="submit" disabled={renameMutation.isPending || !renameDraft.trim()}>
-                {renameMutation.isPending ? "保存中…" : "保存"}
               </button>
             </footer>
           </form>

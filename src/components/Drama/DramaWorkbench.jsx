@@ -1,5 +1,5 @@
 import { ArrowLeft, ChevronRight, CircleCheck, Download, Film, Pencil, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { fetchDramaFilm, fetchDramaSeriesDetail, createDramaEpisode, deleteDramaEpisode, updateDramaSeries } from "../../api/drama.js";
@@ -16,6 +16,13 @@ const STEPS = [
   { id: "film", label: "成片", action: "导出" },
 ];
 const STEP_IDS = STEPS.map((item) => item.id);
+const STAGE_ICONS = { script: "/assets/workflow-icons/script.png", subjects: "/assets/workflow-icons/assets.png", shots: "/assets/workflow-icons/storyboard.png", film: "/assets/workflow-icons/film.png" };
+const STAGE_DETAILS = {
+  script: { step: "STEP 01", description: "章节原文与分场管理" },
+  subjects: { step: "STEP 02", description: "角色场景与素材沉淀" },
+  shots: { step: "STEP 03", description: "镜头顺序与画面描述" },
+  film: { step: "STEP 04", description: "预览、拼接与导出" },
+};
 
 function stepFromSearch(searchParams) {
   const raw = searchParams.get("step");
@@ -33,6 +40,7 @@ function DramaDialog({ title, eyebrow, onClose, children }) {
           </div>
           <button type="button" aria-label="关闭" onClick={onClose}><X size={18} /></button>
         </header>
+
         {children}
       </section>
     </div>
@@ -104,7 +112,7 @@ export function DramaWorkbench({ seriesId }) {
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  const goLibrary = () => navigate("/console", { state: { tab: "drama" } });
+  const goLibrary = () => navigate("/console/drama");
   const style = dramaStyleOf(series?.styleKey);
   const cover = series?.styleCover || style.cover;
   const activeIndex = STEPS.findIndex((item) => item.id === step);
@@ -112,6 +120,15 @@ export function DramaWorkbench({ seriesId }) {
   function showNotice(message) {
     setNotice(message);
     window.setTimeout(() => setNotice(""), 2400);
+  }
+
+  function commitRename() {
+    const name = renameDraft.trim();
+    if (!name) {
+      showNotice("请输入项目名称");
+      return;
+    }
+    renameMutation.mutate(name);
   }
 
   const renameMutation = useMutation({
@@ -176,32 +193,42 @@ export function DramaWorkbench({ seriesId }) {
                 event.currentTarget.src = style.fallback;
               }}
             />
-            <strong>{series.name}</strong>
-            <button
-              className="drama-project-rename"
-              type="button"
-              aria-label="修改项目名称"
-              onClick={() => { setRenameDraft(series.name); setRenameOpen(true); }}
-            >
-              <Pencil size={13} />
-            </button>
+            {renameOpen ? (
+              <input
+                autoFocus
+                className={`workspace-name-input${renameDraft.trim() ? "" : " is-invalid"}`}
+                aria-invalid={!renameDraft.trim()}
+                aria-label="修改项目名称"
+                maxLength={128}
+                value={renameDraft}
+                onChange={(event) => setRenameDraft(event.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    commitRename();
+                  } else if (event.key === "Escape") {
+                    setRenameDraft(series.name);
+                    setRenameOpen(false);
+                  }
+                }}
+              />
+            ) : (
+              <>
+                <strong>{series.name}</strong>
+                <button
+                  className="drama-project-rename"
+                  type="button"
+                  aria-label="修改项目名称"
+                  onClick={() => { setRenameDraft(series.name); setRenameOpen(true); }}
+                >
+                  <Pencil size={13} />
+                </button>
+              </>
+            )}
           </div>
         </div>
-        <nav aria-label="短剧创作流程">
-          {STEPS.map((item, index) => (
-            <div className="drama-flow-item" key={item.id}>
-              <button
-                type="button"
-                className={`${step === item.id ? "active" : ""} ${activeIndex > index ? "done" : ""}`}
-                onClick={() => setStep(item.id)}
-              >
-                <i>{activeIndex > index ? <CircleCheck size={15} /> : index + 1}</i>
-                <span>{item.label}</span>
-              </button>
-              {index < STEPS.length - 1 && <ChevronRight className="drama-flow-arrow" size={18} aria-hidden="true" />}
-            </div>
-          ))}
-        </nav>
+
         <div className="drama-workspace-actions">
           {step !== "film" && (
             <button className="button button--primary drama-next-button" type="button" onClick={goNext}>
@@ -215,6 +242,30 @@ export function DramaWorkbench({ seriesId }) {
           )}
         </div>
       </header>
+      <nav className="workspace-stage-nav" aria-label="短剧创作步骤">
+        <div className="workspace-stage-list">
+          {STEPS.map((item, index) => (
+            <Fragment key={item.id}>
+              {index > 0 && <span className="stage-arrow" aria-hidden="true"><span /></span>}
+              <button
+                type="button"
+                className={`workspace-stage ${step === item.id ? "is-active" : ""}`}
+                aria-current={step === item.id ? "step" : undefined}
+                onClick={() => setStep(item.id)}
+              >
+                <span className="stage-orbit" aria-hidden="true">
+                  <img className="stage-icon" src={STAGE_ICONS[item.id]} alt="" width={50} height={50} />
+                </span>
+                <span className="stage-meta">
+                  <small>{STAGE_DETAILS[item.id].step}</small>
+                  <strong>{item.label}</strong>
+                </span>
+                <span className="stage-description">{STAGE_DETAILS[item.id].description}</span>
+              </button>
+            </Fragment>
+          ))}
+        </div>
+      </nav>
       {notice && <div className="drama-toast"><CircleCheck size={16} />{notice}</div>}
       {episode?.analyzing && step !== "script" && (
         <p className="drama-script__hint">剧本正在分析，可回到「剧本」查看进度。</p>
@@ -251,31 +302,6 @@ export function DramaWorkbench({ seriesId }) {
           episodes={episodes}
           onSelectEpisode={setEpisodeId}
         />
-      )}
-      {renameOpen && (
-        <DramaDialog title="修改项目名称" eyebrow="项目基础信息" onClose={() => { if (!renameMutation.isPending) setRenameOpen(false); }}>
-          <form
-            className="drama-create-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const name = renameDraft.trim();
-              if (!name) return;
-              renameMutation.mutate(name);
-            }}
-          >
-            <label>
-              项目名称
-              <input autoFocus required maxLength={128} value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} />
-            </label>
-            {renameMutation.isError && <p className="drama-form-error">{renameMutation.error.message}</p>}
-            <footer>
-              <button type="button" onClick={() => setRenameOpen(false)}>取消</button>
-              <button className="button button--primary" type="submit" disabled={renameMutation.isPending || !renameDraft.trim()}>
-                {renameMutation.isPending ? "保存中…" : "保存"}
-              </button>
-            </footer>
-          </form>
-        </DramaDialog>
       )}
       {exportOpen && (
         <DramaDialog title="导出成片" eyebrow={episode?.name || series.name} onClose={() => setExportOpen(false)}>

@@ -69,7 +69,7 @@
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; background: var(--bg-page); }
-body { margin: 0; min-width: 320px; min-height: 100vh; font-size: 14px; line-height: var(--line-normal); color: var(--text-body); background: var(--bg-page); -webkit-font-smoothing: antialiased; }
+body { margin: 0; min-width: 320px; min-height: 100vh; line-height: var(--line-normal); color: var(--text-body); background: var(--bg-page); -webkit-font-smoothing: antialiased; }
 button, input, textarea, select { font: inherit; }
 button { color: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
@@ -421,8 +421,8 @@ a { color: inherit; text-decoration: none; }
 
 /* 规格 + 类型 徽章 */
 .work-spec,
-.work-kind { position: absolute; z-index: 2; top: 11px; min-height: 25px; display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid rgba(255,255,255,.11); border-radius: 7px; color: #eeeef2; background: rgba(16,16,19,.68); backdrop-filter: blur(8px); font-size: 11px; }
-.work-spec { left: 46px; }
+.work-kind { position: absolute; z-index: 2; top: 11px; min-height: 25px; display: flex; align-items: center; padding: 0 8px; border: 1px solid rgba(255,255,255,.11); border-radius: 7px; color: #eeeef2; background: rgba(16,16,19,.68); backdrop-filter: blur(8px); font-size: 10px; }
+.work-spec { left: 43px; }
 .work-kind { right: 10px; }
 
 /* 预览按钮（右下） */
@@ -1066,7 +1066,7 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 760px) {
   .confirm-backdrop { padding: 16px; }
   .confirm-modal { width: 100%; padding: 22px 22px 24px; border-radius: 14px; }
-  .confirm-modal > p { margin: 10px 0 18px; font-size: 13px; }
+  .confirm-modal > p { margin: 10px 0 18px; font-size: 14px; }
   .modal-secondary, .modal-primary, .danger-button { min-width: 0; flex: 1 1 auto; height: 38px; }
 }
 
@@ -1230,7 +1230,7 @@ a { color: inherit; text-decoration: none; }
 }
 .admin-card > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
 .admin-card > header h2,
-.admin-card > header strong { margin: 0; color: var(--text-primary); font-size: 15px; font-weight: 650; }
+.admin-card > header strong { margin-right: 10px; color: var(--text-primary); font-size: 15px; font-weight: 650; }
 .admin-card > header svg,
 .admin-card > header span,
 .admin-card > header small { color: var(--text-tertiary); font-size: 12px; }
