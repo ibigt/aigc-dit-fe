@@ -1,18 +1,12 @@
 /**
- * 分镜视频提示词 chip 解析与序列化（纯函数）。
+ * 分镜核心正文的 @ 引用解析。
  *
- * 存储约定：chip 以字面文本形式保存在 promptOverride 中。
- *   - 已绑定资产: `[Image #1] 资产名`（N = pictureIndex）
- *   - 未绑定资产: `[未绑定] 资产名`
- *
- * 解析正则 `/\[(Image #\d+|未绑定)\] (.+?)(?=\s\[|$)/g` 全局匹配；
- * 资产按 name 严格匹配 lockedAssets 还原缩略图与 binding 状态。
+ * 存储约定：叙述里的资产写成 `@名字`。台词段保持普通名字，不解析成芯片。
+ * 缩略图只在编辑器里显示，不写回正文。
  */
 
-// chip 名不允许含 `[`；look-ahead 要求下一字符是「文本词」（空格+非`[`）、
-// 下一 chip（可选空格+`[`）或字符串末尾，从而把 `[Image #1] 澹白 中的淡化 [未绑定] 夜灯`
-// 正确切成两个独立 chip。
-export const CHIP_RE = /\[(Image #\d+|未绑定)\] ([^\[]+?)(?=\s+\S|\s*\[|$)/g;
+const LABEL_RE = /(站位|镜头\d+|景别|动作|接续|台词|场景|运镜|环境声)\s*[:：]/g;
+const SAY_RE = /说\s*[:：]|旁白\s*[:：]|（画外音）\s*[:：]/g;
 
 let _tokenId = 0;
 export function nextTokenId() {
@@ -20,68 +14,198 @@ export function nextTokenId() {
   return `t${_tokenId}`;
 }
 
-export function parsePromptToTokens(value, { lockedAssets = [], refsByAssetId = new Map() } = {}) {
+function isDelimiter(char) {
+  return /[\s，。；、：:（）()@<>！？,.!?;\n\r]/.test(char);
+}
+
+function knownNames(lockedAssets) {
+  const names = [];
+  const seen = new Set();
+  for (const asset of lockedAssets || []) {
+    const name = String(asset?.name || "").trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    names.push(name);
+  }
+  names.sort((left, right) => right.length - left.length);
+  return names;
+}
+
+function labelSpans(source) {
+  const labels = [];
+  const re = new RegExp(LABEL_RE.source, "g");
+  let match;
+  while ((match = re.exec(source)) !== null) {
+    labels.push({ start: match.index, end: match.index + match[0].length, name: match[1] });
+  }
+  if (!labels.length) return [{ dialogue: false, start: 0, end: source.length }];
+  const spans = [];
+  let cursor = 0;
+  for (let i = 0; i < labels.length; i += 1) {
+    const label = labels[i];
+    if (label.start > cursor) spans.push({ dialogue: false, start: cursor, end: label.start });
+    const contentEnd = i + 1 < labels.length ? labels[i + 1].start : source.length;
+    spans.push({ dialogue: label.name === "台词", start: label.start, end: contentEnd });
+    cursor = contentEnd;
+  }
+  if (cursor < source.length) spans.push({ dialogue: false, start: cursor, end: source.length });
+  return spans;
+}
+
+function splitSay(source, start, end) {
+  const body = source.slice(start, end);
+  const re = new RegExp(SAY_RE.source, "g");
+  const spans = [];
+  let cursor = 0;
+  let match;
+  while ((match = re.exec(body)) !== null) {
+    const speechStart = match.index + match[0].length;
+    let speechEnd = body.indexOf("\n", speechStart);
+    if (speechEnd < 0) speechEnd = body.length;
+    if (speechStart > cursor) spans.push({ dialogue: false, start: start + cursor, end: start + speechStart });
+    if (speechEnd > speechStart) spans.push({ dialogue: true, start: start + speechStart, end: start + speechEnd });
+    cursor = speechEnd;
+    re.lastIndex = speechEnd;
+  }
+  if (!spans.length) return [{ dialogue: false, start, end }];
+  if (cursor < body.length) spans.push({ dialogue: false, start: start + cursor, end });
+  return spans;
+}
+
+function spansOf(text) {
+  const source = text == null ? "" : String(text);
+  const spans = [];
+  for (const span of labelSpans(source)) {
+    if (span.dialogue) spans.push(span);
+    else spans.push(...splitSay(source, span.start, span.end));
+  }
+  return spans.length ? spans : [{ dialogue: false, start: 0, end: source.length }];
+}
+
+export function caretInDialogue(text, offset) {
+  const at = Math.max(0, offset || 0);
+  return spansOf(text).some((span) => span.dialogue && at >= span.start && at <= span.end);
+}
+
+function readMention(text, index, names) {
+  if (text.charAt(index) !== "@") return null;
+  const rest = text.slice(index + 1);
+  for (const name of names) {
+    if (rest.startsWith(name)) return { name, length: name.length + 1 };
+  }
+  let end = 0;
+  while (end < rest.length && !isDelimiter(rest.charAt(end))) end += 1;
+  if (!end) return null;
+  return { name: rest.slice(0, end), length: end + 1 };
+}
+
+function takeAsset(name, assets, idQueue, assigned) {
+  const matches = (assets || []).filter((asset) => asset && asset.name === name);
+  if (!matches.length) return null;
+  while (idQueue.length) {
+    const id = idQueue[0];
+    const hit = matches.find((asset) => asset.id === id);
+    if (hit) {
+      idQueue.shift();
+      assigned.set(name, hit);
+      return hit;
+    }
+    const other = (assets || []).find((asset) => asset && asset.id === id);
+    if (other && other.name !== name) break;
+    idQueue.shift();
+  }
+  if (assigned.has(name)) return assigned.get(name);
+  const first = matches[0];
+  assigned.set(name, first);
+  return first;
+}
+
+export function parsePromptToTokens(value, { lockedAssets = [], referenceAssetIds = [] } = {}) {
   const text = value == null ? "" : String(value);
-  if (!text) {
-    return [{ kind: "text", id: nextTokenId(), value: "" }];
-  }
-  const assetByName = new Map(
-    (lockedAssets || [])
-      .map((a) => [a && a.name, a])
-      .filter(([n, a]) => n && a),
-  );
+  if (!text) return [{ kind: "text", id: nextTokenId(), value: "" }];
+  const names = knownNames(lockedAssets);
+  const idQueue = [...(referenceAssetIds || [])];
+  const assigned = new Map();
   const tokens = [];
-  let lastIndex = 0;
-  // 必须用局部副本避免 RegExp 共享 lastIndex 的坑
-  const re = new RegExp(CHIP_RE.source, "g");
-  let m;
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > lastIndex) {
-      tokens.push({ kind: "text", id: nextTokenId(), value: text.slice(lastIndex, m.index) });
+  const pushText = (chunk) => {
+    if (!chunk) return;
+    const last = tokens[tokens.length - 1];
+    if (last && last.kind === "text") last.value += chunk;
+    else tokens.push({ kind: "text", id: nextTokenId(), value: chunk });
+  };
+  for (const span of spansOf(text)) {
+    const body = text.slice(span.start, span.end);
+    if (span.dialogue) {
+      pushText(body);
+      continue;
     }
-    const label = m[1];
-    const name = m[2];
-    const asset = assetByName.get(name) || null;
-    let pictureIndex = null;
-    if (asset && refsByAssetId.has(asset.id)) {
-      pictureIndex = refsByAssetId.get(asset.id).pictureIndex;
-    } else if (label.startsWith("Image #")) {
-      const n = Number(label.slice(7));
-      if (Number.isFinite(n) && n > 0) pictureIndex = n;
+    let index = 0;
+    while (index < body.length) {
+      if (body.charAt(index) !== "@") {
+        const nextAt = body.indexOf("@", index);
+        const end = nextAt < 0 ? body.length : nextAt;
+        pushText(body.slice(index, end));
+        index = end;
+        continue;
+      }
+      const mention = readMention(body, index, names);
+      if (!mention) {
+        pushText("@");
+        index += 1;
+        continue;
+      }
+      const asset = takeAsset(mention.name, lockedAssets, idQueue, assigned);
+      tokens.push({
+        kind: "chip",
+        id: nextTokenId(),
+        name: mention.name,
+        assetId: asset?.id ?? null,
+        asset: asset || null,
+      });
+      index += mention.length;
     }
-    tokens.push({
-      kind: "chip",
-      id: nextTokenId(),
-      label,
-      name,
-      asset,
-      pictureIndex,
-    });
-    lastIndex = m.index + m[0].length;
   }
-  if (lastIndex < text.length) {
-    tokens.push({ kind: "text", id: nextTokenId(), value: text.slice(lastIndex) });
-  }
-  if (!tokens.length) {
-    tokens.push({ kind: "text", id: nextTokenId(), value: "" });
-  }
+  if (!tokens.length) tokens.push({ kind: "text", id: nextTokenId(), value: "" });
   return tokens;
 }
 
 export function serializeTokensToPrompt(tokens) {
   if (!tokens) return "";
   return tokens
-    .map((t) => {
-      if (t.kind === "text") return t.value || "";
-      return `[${t.label}] ${t.name}`;
-    })
+    .map((token) => (token.kind === "text" ? token.value || "" : `@${token.name || ""}`))
     .join("");
+}
+
+export function referenceIdsOf(tokens) {
+  const ids = [];
+  const seen = new Set();
+  for (const token of tokens || []) {
+    if (token.kind !== "chip" || token.assetId == null || seen.has(token.assetId)) continue;
+    seen.add(token.assetId);
+    ids.push(token.assetId);
+  }
+  return ids;
+}
+
+export function narrativeMentionCount(text, lockedAssets = []) {
+  const tokens = parsePromptToTokens(text, { lockedAssets });
+  const seen = new Set();
+  let count = 0;
+  for (const token of tokens) {
+    if (token.kind !== "chip") continue;
+    const key = token.assetId != null ? `id:${token.assetId}` : `name:${token.name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    count += 1;
+  }
+  return count;
 }
 
 export function plainTextLength(tokens) {
   if (!tokens) return 0;
-  return tokens.reduce(
-    (sum, t) => sum + (t.kind === "text" ? (t.value || "").length : 0),
-    0,
-  );
+  return tokens.reduce((sum, token) => sum + (token.kind === "text" ? (token.value || "").length : 0), 0);
+}
+
+export function stripMentionMarks(text) {
+  return String(text == null ? "" : text).replace(/@(?=\S)/g, "");
 }

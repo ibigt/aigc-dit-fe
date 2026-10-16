@@ -11,6 +11,7 @@ import {
 import { createPortal } from "react-dom";
 import { mediaUrl, MEDIA_THUMB_WIDTH } from "../../lib/media.js";
 import {
+  caretInDialogue,
   nextTokenId,
   parsePromptToTokens,
   serializeTokensToPrompt,
@@ -19,12 +20,8 @@ import {
 /**
  * 分镜视频提示词富文本编辑器。
  *
- * 存储约定：chip 在 promptOverride 里以字面文本保存：
- *   - 已绑定资产: `[Image #1] 资产名`（N = pictureIndex）
- *   - 未绑定资产: `[未绑定] 资产名`
- *
- * 解析时按正则 `/\[(Image #\d+|未绑定)\] (.+?)(?=\s\[|$)/g` 全局匹配；
- * 资产按 name 严格匹配 lockedAssets 还原缩略图与 binding 状态。
+ * 存储约定：叙述里的资产是 `@名字`。台词段不生成芯片，`@` 按普通字符保留。
+ * 芯片显示为小缩略图加 `@资产名`，缩略图不写回正文。
  *
  * DOM ↔ token 模型约定：
  *   - text token 渲染成 `<span data-token-id data-kind="text">`
@@ -41,21 +38,14 @@ import {
 // ---------- 主组件 ----------
 
 export const PromptChipEditor = forwardRef(function PromptChipEditor(
-  { value, lockedAssets, refs, disabled, onChange },
+  { value, lockedAssets, referenceAssetIds, disabled, onChange, onZoom, inline = false },
   ref,
 ) {
   const safeLockedAssets = lockedAssets || [];
-  const safeRefs = refs || [];
-  const refsByAssetId = useMemo(() => {
-    const m = new Map();
-    for (const r of safeRefs) {
-      if (r && r.assetId != null) m.set(r.assetId, r);
-    }
-    return m;
-  }, [safeRefs]);
+  const safeReferenceIds = useMemo(() => referenceAssetIds || [], [referenceAssetIds]);
 
   const [tokens, setTokens] = useState(() =>
-    parsePromptToTokens(value, { lockedAssets: safeLockedAssets, refsByAssetId }),
+    parsePromptToTokens(value, { lockedAssets: safeLockedAssets, referenceAssetIds: safeReferenceIds }),
   );
   const editorRef = useRef(null);
   const pendingCaretRef = useRef(null);
@@ -66,6 +56,7 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
   const [mention, setMention] = useState({
     open: false,
     query: "",
+    category: "角色",
     anchorTokenId: null,
     atIdx: null,
     rect: null,
@@ -76,12 +67,13 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
   useEffect(() => {
     if (value === lastIncomingValueRef.current) return;
     lastIncomingValueRef.current = value;
-    // 如果我们刚把同样的字符串写回过 onChange，不要再解析（避免 ids 全部翻新）
-    if (value === lastSerializedRef.current) return;
+    // 如果我们刚把同样的字符串写回过 onChange，不要再解析（避免 ids 全部翻新）。
+    // 放大编辑时小窗只读，lastSerialized 停在打开前的正文；外部值绕回去时仍要跟上。
+    if (!disabled && value === lastSerializedRef.current) return;
     setTokens(
-      parsePromptToTokens(value, { lockedAssets: safeLockedAssets, refsByAssetId }),
+      parsePromptToTokens(value, { lockedAssets: safeLockedAssets, referenceAssetIds: safeReferenceIds }),
     );
-  }, [value, safeLockedAssets, refsByAssetId]);
+  }, [value, disabled, safeLockedAssets, safeReferenceIds]);
 
   // ---------- 同步：tokens 变化 → 写回父组件 ----------
   useEffect(() => {
@@ -105,7 +97,9 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
     const currentIds = Array.from(el.children).map((c) => c.dataset.tokenId);
     const nextIds = rendered.map((t) => t.id);
     const sameStructure =
-      currentIds.length === nextIds.length && currentIds.every((id, i) => id === nextIds[i]);
+      currentIds.length === nextIds.length &&
+      currentIds.every((id, i) => id === nextIds[i]) &&
+      !el.querySelector(".drama-prompt-chip__thumb")?.matches("button");
 
     if (!sameStructure) {
       // 重建：用 firstChild 循环清空，保留 scrollTop
@@ -138,25 +132,21 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
             syncSpanDom(child, t.value || "");
           }
         } else {
-          // 增量更新 chip 的可视属性
-          if (child.dataset.label !== t.label) child.dataset.label = t.label;
-          if (child.dataset.name !== t.name) child.dataset.name = t.name;
-          const newState = t.asset ? "ok" : "broken";
-          if (child.dataset.state !== newState) {
-            child.dataset.state = newState;
-            child.setAttribute("data-token-state", newState);
+          const state = chipState(t);
+          if (child.dataset.state !== state) {
+            child.dataset.state = state;
+            child.setAttribute("data-token-state", state);
           }
-          const labelEl = child.querySelector(".drama-prompt-chip__label");
-          if (labelEl && labelEl.textContent !== t.label) labelEl.textContent = t.label;
           const nameEl = child.querySelector(".drama-prompt-chip__name");
-          if (nameEl && nameEl.textContent !== t.name) nameEl.textContent = t.name;
+          const wantName = `@${t.name || ""}`;
+          if (nameEl && nameEl.textContent !== wantName) nameEl.textContent = wantName;
           const thumbEl = child.querySelector(".drama-prompt-chip__thumb");
           if (thumbEl) {
+            const src = chipImage(t);
+            thumbEl.dataset.zoom = src ? "1" : "";
             const imgEl = thumbEl.querySelector("img");
-            const wantSrc = t.asset
-              ? mediaUrl(t.asset.imageStorageKey || t.asset.imageUrl, { w: MEDIA_THUMB_WIDTH })
-              : "";
-            if (t.asset) {
+            if (src) {
+              const wantSrc = mediaUrl(src, { w: MEDIA_THUMB_WIDTH });
               if (!imgEl) {
                 const img = document.createElement("img");
                 img.src = wantSrc;
@@ -171,6 +161,11 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
           }
         }
       }
+    }
+
+    // 芯片是后插入的兄弟节点。重建时伪 br 还看不到后面的芯片，这里再收一次，避免芯片前多一行空行。
+    for (const child of el.children) {
+      if (child.dataset?.kind === "text") syncSpanDom(child, readSpanValue(child));
     }
 
     // 恢复 caret（如有）
@@ -214,11 +209,19 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
         return rect ? { ...m, rect } : m;
       });
     };
+    const onPointerDown = (event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".drama-mention-dropdown")) return;
+      if (editorRef.current?.contains(target)) return;
+      setMention((current) => (current.open ? { ...current, open: false } : current));
+    };
     window.addEventListener("scroll", update, true);
     window.addEventListener("resize", update);
+    document.addEventListener("mousedown", onPointerDown);
     return () => {
       window.removeEventListener("scroll", update, true);
       window.removeEventListener("resize", update);
+      document.removeEventListener("mousedown", onPointerDown);
     };
   }, [mention.open]);
 
@@ -226,18 +229,23 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
   const filteredAssets = useMemo(() => {
     if (!mention.open) return [];
     const q = (mention.query || "").toLowerCase();
-    const list = safeLockedAssets.filter((a) => {
+    const category = mention.category || "角色";
+    const list = safeLockedAssets.filter((asset) => {
+      if ((asset.type || "角色") !== category) return false;
       if (!q) return true;
-      return (a.name || "").toLowerCase().includes(q);
+      return (asset.name || "").toLowerCase().includes(q);
     });
-    list.sort((a, b) => {
-      const aB = refsByAssetId.has(a.id) ? 0 : 1;
-      const bB = refsByAssetId.has(b.id) ? 0 : 1;
-      if (aB !== bB) return aB - bB;
-      return (a.name || "").localeCompare(b.name || "", "zh-Hans-CN");
-    });
+    list.sort((left, right) => (left.name || "").localeCompare(right.name || "", "zh-Hans-CN"));
     return list;
-  }, [mention, safeLockedAssets, refsByAssetId]);
+  }, [mention, safeLockedAssets]);
+
+  const usedAssetIds = useMemo(() => {
+    const ids = new Set();
+    for (const token of tokens) {
+      if (token.kind === "chip" && token.assetId != null) ids.add(token.assetId);
+    }
+    return ids;
+  }, [tokens]);
 
   // ---------- 暴露给父组件的 imperative API ----------
   useImperativeHandle(
@@ -275,17 +283,20 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
 
     // @ 触发检测：光标前文本以 @xxx 结尾即可（不要求 @ 前是空格，中文没有空格）
     if (caret && caret.token.kind === "text") {
+      const beforeCaret = textUntil(domTokens, caret.token.id, caret.offset);
+      const inDialogue = caretInDialogue(beforeCaret, beforeCaret.length);
       const before = (caret.token.value || "").slice(0, caret.offset);
-      const match = /@([^\s@\[\]]*)$/.exec(before);
-      if (match) {
+      const match = /@([^\s@]*)$/.exec(before);
+      if (match && !inDialogue) {
         const rect = computeCaretRect();
-        setMention({
+        setMention((current) => ({
           open: true,
           query: match[1] || "",
+          category: current.open ? current.category || "角色" : "角色",
           anchorTokenId: caret.token.id,
           atIdx: match.index,
           rect,
-        });
+        }));
         setActiveIndex(0);
         return;
       }
@@ -350,9 +361,6 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
         if (atIdx < 0 || text.slice(atIdx, atIdx + 1 + query.length) !== `@${query}`) return prev;
         const before = text.slice(0, atIdx);
         const after = text.slice(atIdx + 1 + query.length);
-        const pictureIndex = refsByAssetId.has(asset.id)
-          ? refsByAssetId.get(asset.id).pictureIndex
-          : null;
         const chipId = nextTokenId();
         pendingCaretRef.current = { tokenId: chipId, offset: 0, afterChip: true };
         const newTokens = [];
@@ -360,17 +368,16 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
         newTokens.push({
           kind: "chip",
           id: chipId,
-          label: pictureIndex == null ? "未绑定" : `Image #${pictureIndex}`,
           name: asset.name,
+          assetId: asset.id,
           asset,
-          pictureIndex,
         });
         if (after) newTokens.push({ kind: "text", id: nextTokenId(), value: after });
         return [...prev.slice(0, idx), ...newTokens, ...prev.slice(idx + 1)];
       });
-      setMention({ open: false, query: "", anchorTokenId: null, atIdx: null, rect: null });
+      setMention({ open: false, query: "", category: "角色", anchorTokenId: null, atIdx: null, rect: null });
     },
-    [mention, refsByAssetId],
+    [mention],
   );
 
   // 在光标处插入换行（直接改 token 状态；execCommand 的 \n 行为各浏览器不一致，
@@ -412,6 +419,17 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
           );
           return;
         }
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+          e.preventDefault();
+          const order = ["角色", "场景", "道具"];
+          const current = order.indexOf(mention.category || "角色");
+          const next = e.key === "ArrowLeft"
+            ? (current <= 0 ? order.length - 1 : current - 1)
+            : (current + 1) % order.length;
+          setMention((m) => ({ ...m, category: order[next] }));
+          setActiveIndex(0);
+          return;
+        }
         if (e.key === "Enter" || e.key === "Tab") {
           e.preventDefault();
           const asset = filteredAssets[activeIndex];
@@ -433,26 +451,20 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
         if (tryRemoveAdjacentChip(e)) return;
       }
     },
-    [mention.open, filteredAssets, activeIndex, disabled, pickAsset, tryRemoveAdjacentChip, insertNewline],
+    [mention.open, mention.category, filteredAssets, activeIndex, disabled, pickAsset, tryRemoveAdjacentChip, insertNewline],
   );
 
   const handleClick = useCallback((e) => {
-    const close = e.target.closest(".drama-prompt-chip__close");
-    if (close) {
-      const chip = close.closest("[data-token-id]");
-      if (chip) {
-        e.preventDefault();
-        e.stopPropagation();
-        setTokens((prev) => prev.filter((t) => t.id !== chip.dataset.tokenId));
-        return;
-      }
-    }
     const thumb = e.target.closest(".drama-prompt-chip__thumb");
-    if (thumb) {
-      // 缩略图点击目前不弹大图（避免干扰编辑器焦点），仅 preventDefault
-      e.preventDefault();
-    }
-  }, []);
+    if (!thumb) return;
+    e.preventDefault();
+    if (thumb.dataset.zoom !== "1") return;
+    const chip = thumb.closest("[data-token-id]");
+    const token = tokens.find((item) => item.id === chip?.dataset.tokenId);
+    const src = chipImage(token);
+    if (!src || !token) return;
+    onZoom?.({ src: mediaUrl(src), title: token.name });
+  }, [onZoom, tokens]);
 
   const handlePaste = useCallback((e) => {
     e.preventDefault();
@@ -465,13 +477,13 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
   }, []);
 
   // ---------- 渲染 ----------
-  const placeholder = "输入本镜完整视频提示词，输入 @ 引用资产";
+  const placeholder = "输入镜头说明。叙述里输入 @ 引用资产；台词段里的 @ 按普通字符保留";
 
   return (
     <>
       <div
         ref={editorRef}
-        className="drama-prompt-editor__surface"
+        className={`drama-prompt-editor__surface${inline ? " drama-prompt-editor__surface--inline" : ""}`}
         contentEditable={disabled ? false : true}
         suppressContentEditableWarning
         spellCheck={false}
@@ -492,13 +504,19 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
       />
       {mention.open && mention.rect
         ? createPortal(
-            <MentionDropdown
+              <MentionDropdown
               items={filteredAssets}
               activeIndex={activeIndex}
-              refsByAssetId={refsByAssetId}
               rect={mention.rect}
+              category={mention.category || "角色"}
+              usedAssetIds={usedAssetIds}
               onPick={pickAsset}
               onActiveChange={setActiveIndex}
+              onCategory={(category) => {
+                setMention((current) => ({ ...current, category }));
+                setActiveIndex(0);
+              }}
+              onClose={() => setMention((current) => ({ ...current, open: false }))}
             />,
             document.body,
           )
@@ -509,7 +527,19 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
 
 // ---------- 内部：下拉子组件 ----------
 
-function MentionDropdown({ items, activeIndex, refsByAssetId, rect, onPick, onActiveChange }) {
+const MENTION_TABS = ["角色", "场景", "道具"];
+
+function MentionDropdown({
+  items,
+  activeIndex,
+  rect,
+  category,
+  usedAssetIds,
+  onPick,
+  onActiveChange,
+  onCategory,
+  onClose,
+}) {
   const listRef = useRef(null);
   useEffect(() => {
     if (!listRef.current) return;
@@ -517,75 +547,73 @@ function MentionDropdown({ items, activeIndex, refsByAssetId, rect, onPick, onAc
     if (el && typeof el.scrollIntoView === "function") {
       el.scrollIntoView({ block: "nearest" });
     }
-  }, [activeIndex]);
+  }, [activeIndex, category]);
 
   if (typeof window === "undefined") return null;
-  const left = Math.max(8, Math.min(window.innerWidth - 340, rect.left));
-  const top = Math.max(8, Math.min(window.innerHeight - 320, rect.bottom + 6));
-  const style = { left, top };
+  const width = 310;
+  const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.left));
+  const estimated = 360;
+  let top = rect.bottom + 6;
+  if (top + estimated > window.innerHeight) top = Math.max(8, rect.top - estimated - 6);
+  const style = { left, top, width };
 
   return (
     <div
-      ref={listRef}
       className="drama-mention-dropdown"
       style={style}
-      role="listbox"
-      aria-label="选择资产"
+      role="dialog"
+      aria-label="引用资产"
       onMouseDown={(e) => {
-        // 阻止下拉被点击时编辑器失焦
         e.preventDefault();
       }}
     >
-      {items.length === 0 ? (
-        <div className="drama-mention-dropdown__empty">没有匹配资产</div>
-      ) : (
-        items.map((a, i) => {
-          const ref = refsByAssetId.get(a.id);
-          const bound = !!ref;
-          const src = mediaUrl(a.imageStorageKey || a.imageUrl, { w: MEDIA_THUMB_WIDTH });
-          return (
-            <div
-              key={a.id}
-              className={`drama-mention-dropdown__item ${i === activeIndex ? "is-active" : ""}`}
-              role="option"
-              aria-selected={i === activeIndex}
-              onMouseEnter={() => onActiveChange(i)}
-              onClick={() => onPick(a)}
-            >
-              {src ? (
-                <img src={src} alt="" />
-              ) : (
-                <div
-                  style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 5,
-                    background: "#e8ebf0",
-                    flex: "0 0 28px",
-                  }}
-                />
-              )}
-              <span className="drama-mention-dropdown__item-name">{a.name || "(未命名)"}</span>
-              {bound ? (
-                <span className="drama-mention-dropdown__item-bound">Image #{ref.pictureIndex}</span>
-              ) : (
-                <span className="drama-mention-dropdown__item-type">{a.type || "未绑定"}</span>
-              )}
-            </div>
-          );
-        })
-      )}
-      <div className="drama-mention-dropdown__hint">
-        <span>
-          <kbd>↑</kbd>
-          <kbd>↓</kbd> 选择
-        </span>
-        <span>
-          <kbd>Enter</kbd> 插入
-        </span>
-        <span>
-          <kbd>Esc</kbd> 关闭
-        </span>
+      <div className="drama-mention-dropdown__header">
+        <span>引用资产</span>
+        <button type="button" aria-label="关闭" onClick={onClose}>
+          ×
+        </button>
+      </div>
+      <div className="drama-mention-dropdown__tabs" role="tablist">
+        {MENTION_TABS.map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            aria-selected={tab === category}
+            className={tab === category ? "is-active" : ""}
+            onClick={() => onCategory(tab)}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+      <div ref={listRef} className="drama-mention-dropdown__list" role="listbox">
+        {items.length === 0 ? (
+          <div className="drama-mention-dropdown__empty">暂无可用资产</div>
+        ) : (
+          items.map((asset, index) => {
+            const src = mediaUrl(asset.imageStorageKey || asset.imageUrl, { w: MEDIA_THUMB_WIDTH });
+            const used = usedAssetIds?.has(asset.id);
+            return (
+              <div
+                key={asset.id}
+                className={`drama-mention-dropdown__item ${index === activeIndex ? "is-active" : ""}`}
+                role="option"
+                aria-selected={index === activeIndex}
+                onMouseEnter={() => onActiveChange(index)}
+                onClick={() => onPick(asset)}
+              >
+                {src ? (
+                  <img src={src} alt="" />
+                ) : (
+                  <span className="drama-mention-dropdown__thumb" />
+                )}
+                <span className="drama-mention-dropdown__item-name">{asset.name || "(未命名)"}</span>
+                {used ? <span className="drama-mention-dropdown__item-bound">已引用</span> : null}
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );
@@ -612,21 +640,30 @@ function readSpanValue(span) {
 }
 
 /**
- * 尾随换行的双 br 约定：值以 "\n" 结尾时，真实 br 后面再补一个 data-bogus 的伪 br。
- * Chrome 把「单个尾随 br 之后」当作非法插入点（输入会被规范化回上一行），
- * 伪 br 给换行后的空行提供一个真实的光标落点；读写/折算偏移时一律跳过它。
- * 值不再以 "\n" 结尾（用户在空行输入了内容）时由 syncSpanDom 移除。
+ * 尾随换行的双 br 约定：值以 "\n" 结尾、且这段文字后面没有芯片或其他内容时，
+ * 真实 br 后面再补一个 data-bogus 的伪 br。
+ * Chrome 把「编辑器末尾的单个 br 之后」当作非法插入点（输入会被规范化回上一行），
+ * 伪 br 只给文末空行一个光标落点；读写时跳过它，不计入正文。
+ * 换行后面已经有芯片或下一段文字时，再补伪 br 会在芯片前多出一行空行。
  */
 function syncSpanDom(span, value) {
   const last = span.lastChild;
   const hasBogus = !!(last && last.tagName === "BR" && last.dataset && last.dataset.bogus);
-  const wantBogus = String(value == null ? "" : value).endsWith("\n");
+  const wantBogus = String(value == null ? "" : value).endsWith("\n") && !hasFollowingContent(span);
   if (hasBogus && !wantBogus) last.remove();
   else if (!hasBogus && wantBogus) {
     const b = document.createElement("br");
     b.dataset.bogus = "1";
     span.appendChild(b);
   }
+}
+
+function hasFollowingContent(span) {
+  let next = span.nextSibling;
+  while (next && next.nodeType === Node.TEXT_NODE && !(next.textContent || "").trim()) {
+    next = next.nextSibling;
+  }
+  return !!next;
 }
 
 /** 按 value 重建 span 的子节点（文本段 + <br>，尾随换行补伪 br）。 */
@@ -760,60 +797,58 @@ function caretToToken(el, domTokens) {
   return null;
 }
 
+function chipImage(token) {
+  return token?.asset?.imageUrl || token?.asset?.imageStorageKey || "";
+}
+
+function chipState(token) {
+  if (!token?.asset) return "broken";
+  return chipImage(token) ? "ok" : "placeholder";
+}
+
+function textUntil(tokens, tokenId, offset) {
+  let out = "";
+  for (const token of tokens) {
+    const piece = token.kind === "chip" ? `@${token.name || ""}` : (token.value || "");
+    if (token.id === tokenId) return out + piece.slice(0, offset);
+    out += piece;
+  }
+  return out;
+}
+
 function buildChipElement(token) {
   const span = document.createElement("span");
   span.dataset.tokenId = token.id;
   span.dataset.kind = "asset";
-  span.dataset.label = token.label;
-  span.dataset.name = token.name;
-  const state = token.asset ? "ok" : "broken";
+  span.dataset.name = token.name || "";
+  const state = chipState(token);
   span.dataset.state = state;
   span.setAttribute("data-token-state", state);
   span.className = "drama-prompt-chip";
   span.contentEditable = "false";
 
-  // 缩略图（contentEditable=false 的 button，浏览器不会把 caret 放进去）
-  const thumb = document.createElement("button");
-  thumb.type = "button";
+  // 不用 button：contentEditable 里的按钮会抢走正文点击，导致点文字也触发放大。
+  const thumb = document.createElement("span");
   thumb.className = "drama-prompt-chip__thumb";
-  thumb.tabIndex = -1;
-  thumb.setAttribute("aria-hidden", "true");
-  if (token.asset) {
+  const src = chipImage(token);
+  thumb.dataset.zoom = src ? "1" : "";
+  thumb.setAttribute("aria-label", src ? `放大 ${token.name}` : `${token.name || "资产"}没有参考图`);
+  if (src) {
     const img = document.createElement("img");
-    img.src = mediaUrl(token.asset.imageStorageKey || token.asset.imageUrl, {
-      w: MEDIA_THUMB_WIDTH,
-    });
+    img.src = mediaUrl(src, { w: MEDIA_THUMB_WIDTH });
     img.alt = "";
     thumb.appendChild(img);
   }
-  // 阻止 thumb 上的 mousedown 让 caret 跳进 chip
   thumb.addEventListener("mousedown", (e) => e.preventDefault());
   span.appendChild(thumb);
 
-  // label
-  const label = document.createElement("span");
-  label.className = "drama-prompt-chip__label";
-  label.textContent = token.label;
-  span.appendChild(label);
-
-  // name
   const name = document.createElement("span");
   name.className = "drama-prompt-chip__name";
-  name.textContent = token.name;
+  name.textContent = `@${token.name || ""}`;
   span.appendChild(name);
 
-  // close
-  const close = document.createElement("button");
-  close.type = "button";
-  close.className = "drama-prompt-chip__close";
-  close.setAttribute("aria-label", `移除 ${token.name}`);
-  close.textContent = "×";
-  close.addEventListener("mousedown", (e) => e.preventDefault());
-  span.appendChild(close);
-
-  // 阻止整个 chip 的 mousedown 让 caret 跳进去
   span.addEventListener("mousedown", (e) => {
-    if (e.target === close || e.target === thumb) return; // close / thumb 自己处理
+    if (e.target === thumb || thumb.contains(e.target)) return;
     e.preventDefault();
   });
 
