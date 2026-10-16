@@ -20,6 +20,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchAssets } from "../../api/assets.js";
+import { DemoSelect } from "../DemoSelect.jsx";
 import {
   bindDramaAssetImageFromLibrary,
   bindDramaImageModel,
@@ -327,6 +328,10 @@ function SubjectCreateDialog({ type, pending, error, onClose, onCreate }) {
   );
 }
 
+function imageModelLabel(item) {
+  return `${item.name}${item.provider ? ` · ${item.provider}` : ""}`;
+}
+
 function ImageModelSelect({
   imageModels,
   imageModelId,
@@ -335,26 +340,33 @@ function ImageModelSelect({
   disabled,
   onBindModel,
 }) {
+  const options = [];
+  if (!imageModels.length) {
+    options.push({ value: "", label: "暂无已启用图像模型", disabled: true });
+  }
+  if (seriesImageModelId && !imageModels.some((item) => String(item.id) === String(seriesImageModelId))) {
+    options.push({
+      value: String(seriesImageModelId),
+      label: seriesImageModelName || "已绑定（当前已停用）",
+    });
+  }
+  imageModels.forEach((item) => {
+    options.push({ value: String(item.id), label: imageModelLabel(item) });
+  });
+
   return (
-    <label className="asset-model-control">
-      图像模型
-      <select
-        aria-label="全局图片生成模型"
-        value={imageModelId}
+    <div className="asset-model-control">
+      <label>图像模型</label>
+      <DemoSelect
+        className="asset-model-select"
+        ariaLabel="全局图片生成模型"
+        placeholder={imageModels.length ? "请选择图像模型" : "暂无已启用图像模型"}
+        value={imageModelId ? String(imageModelId) : ""}
         disabled={disabled}
-        onChange={(event) => onBindModel(event.target.value)}
-      >
-        <option value="">{imageModels.length ? "请选择图像模型" : "暂无已启用图像模型"}</option>
-        {seriesImageModelId && !imageModels.some((item) => String(item.id) === String(seriesImageModelId)) && (
-          <option value={seriesImageModelId}>{seriesImageModelName || "已绑定（当前已停用）"}</option>
-        )}
-        {imageModels.map((item) => (
-          <option key={item.id} value={item.id}>
-            {item.name}{item.provider ? ` · ${item.provider}` : ""}
-          </option>
-        ))}
-      </select>
-    </label>
+        options={options}
+        onChange={onBindModel}
+      />
+    </div>
   );
 }
 

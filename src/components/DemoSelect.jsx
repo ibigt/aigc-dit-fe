@@ -9,6 +9,7 @@ export function DemoSelect({
   className = "",
   menuClassName = "",
   ariaLabel,
+  placeholder = "请选择",
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
@@ -43,7 +44,7 @@ export function DemoSelect({
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="select-value">{selected?.label || "请选择"}</span>
+        <span className="select-value">{selected?.label || placeholder}</span>
         <ChevronDown size={18} />
       </button>
       {open && (

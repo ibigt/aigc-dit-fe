@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, CircleCheck, Plus, Sparkles, Trash2 } from "lucide-react";
 import { analyzeDramaScript, bindDramaTextModel, fetchDramaTextModels } from "../../api/drama.js";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
+import { DemoSelect } from "../DemoSelect.jsx";
 
 const ANALYSIS_STAGES = [
   { label: "读取剧本", detail: "正在识别人物、场景和剧情结构…", progress: 18 },
@@ -136,7 +137,6 @@ export function DramaScriptPanel({
   });
 
   const scenes = episode?.script?.scenes || [];
-  const textModelLocked = episode?.status === "已锁定" || scenes.length > 0;
   const elapsed = progressStartedAt ? Math.max(0, Math.floor((analysisNow - progressStartedAt) / 1000)) : 0;
   const currentStage = analysisStage(elapsed);
   const elapsedLabel = `${Math.floor(elapsed / 60)}分${String(elapsed % 60).padStart(2, "0")}秒`;
@@ -186,23 +186,24 @@ export function DramaScriptPanel({
 
       <section className="drama-script">
         <div className="drama-script__toolbar">
-          <div>
-            <label className="youxi-shot-model">
-              文本模型
-              <select
-                aria-label="剧本分析文本模型"
-                value={textModelId}
-                disabled={!series?.id || analyzing || textModelLocked || bindTextModel.isPending}
-                title={textModelLocked ? "分析完成后不能再更换文本模型" : undefined}
-                onChange={(event) => bindTextModel.mutate(event.target.value)}
-              >
-                <option value="">{textModels.length ? "请选择文本模型" : "暂无已启用文本模型"}</option>
-                {textModels.map((item) => (
-                  <option key={item.id} value={item.id}>{item.name}{item.provider ? ` · ${item.provider}` : ""}</option>
-                ))}
-              </select>
-            </label>
-            {textModelLocked && <span className="drama-script__lock">已锁定</span>}
+          <div className="script-model-control" title={analyzing ? "正在分析剧本，暂时不能更换文本模型" : undefined}>
+            <label>文本模型</label>
+            <DemoSelect
+              className="chapter-model-select"
+              ariaLabel="剧本分析文本模型"
+              placeholder={textModels.length ? "请选择文本模型" : "暂无已启用文本模型"}
+              value={textModelId}
+              disabled={!series?.id || analyzing || bindTextModel.isPending}
+              options={textModels.length
+                ? textModels.map((item) => ({
+                  value: String(item.id),
+                  label: `${item.name}${item.provider ? ` · ${item.provider}` : ""}`,
+                }))
+                : [{ value: "", label: "暂无已启用文本模型", disabled: true }]}
+              onChange={(value) => {
+                if (value) bindTextModel.mutate(value);
+              }}
+            />
           </div>
           <div>
             <button

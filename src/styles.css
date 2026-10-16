@@ -1114,6 +1114,7 @@ a { color: inherit; text-decoration: none; }
   line-height: 20px;
 }
 .demo-select .select-option > span { min-width: 0; flex: 1; }
+.demo-select .select-option svg { width: 17px; height: 17px; flex: 0 0 auto; color: #a99bff; }
 .demo-select .select-option:hover,
 .demo-select .select-option:focus-visible { color: #fff; background: rgba(255, 255, 255, .07); }
 .demo-select .select-option:disabled { color: #85858e; background: transparent; cursor: not-allowed; }
