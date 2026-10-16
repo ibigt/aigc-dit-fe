@@ -6,18 +6,27 @@ import { ConfirmDialog } from "../ConfirmDialog.jsx";
 import { DemoSelect } from "../DemoSelect.jsx";
 
 const ANALYSIS_STAGES = [
-  { label: "读取剧本", detail: "正在识别人物、场景和剧情结构…", progress: 18 },
-  { label: "生成分场", detail: "正在把原文整理为分场剧本…", progress: 42 },
-  { label: "落库资产", detail: "正在写入角色、场景与道具设定…", progress: 72 },
-  { label: "收尾", detail: "正在锁定结果并排队后台拆镜…", progress: 92 },
+  { label: "读取剧本", detail: "正在读取和理解剧本原文…" },
+  { label: "生成分场", detail: "正在识别人物、场景和剧情结构…" },
+  { label: "落库资产", detail: "正在整理人物、场景和道具信息…" },
+  { label: "收尾", detail: "正在校验并保存分场结果…" },
 ];
 
-function analysisStage(elapsed) {
-  // 同步路径含分场 LLM + 资产设定增强；假进度覆盖更长等待。
-  if (elapsed < 8) return ANALYSIS_STAGES[0];
-  if (elapsed < 35) return ANALYSIS_STAGES[1];
-  if (elapsed < 90) return ANALYSIS_STAGES[2];
-  return ANALYSIS_STAGES[3];
+function analysisProgress(elapsed) {
+  // 接口只返回 analyzing / analyzingAt，百分比按已等待时长估算，并在完成前停在 95%。
+  const seconds = Math.max(0, elapsed);
+  let progress;
+  if (seconds < 8) progress = Math.floor((seconds / 8) * 23);
+  else if (seconds < 35) progress = 24 + Math.floor(((seconds - 8) / 27) * 33);
+  else if (seconds < 90) progress = 58 + Math.floor(((seconds - 35) / 55) * 27);
+  else progress = Math.min(95, 86 + Math.floor((seconds - 90) / 12));
+  const index = progress < 24 ? 0 : progress < 58 ? 1 : progress < 86 ? 2 : 3;
+  return { progress, index, stage: ANALYSIS_STAGES[index] };
+}
+
+function formatElapsed(elapsed) {
+  const seconds = Math.max(0, elapsed);
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 function sceneTitle(scene, index) {
@@ -138,8 +147,7 @@ export function DramaScriptPanel({
 
   const scenes = episode?.script?.scenes || [];
   const elapsed = progressStartedAt ? Math.max(0, Math.floor((analysisNow - progressStartedAt) / 1000)) : 0;
-  const currentStage = analysisStage(elapsed);
-  const elapsedLabel = `${Math.floor(elapsed / 60)}分${String(elapsed % 60).padStart(2, "0")}秒`;
+  const currentStage = analysisProgress(elapsed);
 
   return (
       <div className="drama-script-layout">
@@ -245,25 +253,23 @@ export function DramaScriptPanel({
             )}
 
             {analyzing && (
-                <section className="drama-analysis-progress" aria-live="polite">
-                  <div className="drama-analysis-progress__topline">
+                <section className="analysis-progress-panel" aria-live="polite">
+                  <div className="analysis-progress-heading">
                     <div>
-                      <strong>{currentStage.label}</strong>
-                      <span>{currentStage.detail}</span>
+                      <span>当前阶段</span>
+                      <h3>{currentStage.stage.label}</h3>
+                      <p>{currentStage.stage.detail}</p>
                     </div>
-                    <b>{elapsedLabel}</b>
+                    <strong>{formatElapsed(elapsed)}</strong>
                   </div>
-                  <div className="drama-progress-track"><i style={{ width: `${currentStage.progress}%` }} /></div>
-                  <div className="drama-analysis-progress__steps">
-                    {ANALYSIS_STAGES.map((stage) => (
-                        <span key={stage.label} className={currentStage.progress >= stage.progress ? "done" : ""}>{stage.label}</span>
+                  <div className="analysis-progress-track"><span style={{ width: `${currentStage.progress}%` }} /></div>
+                  <div className="analysis-progress-meta"><span>{currentStage.progress}%</span></div>
+                  <div className="analysis-stage-list">
+                    {ANALYSIS_STAGES.map((stage, index) => (
+                        <span key={stage.label} className={index < currentStage.index ? "done" : index === currentStage.index ? "active" : ""}>{stage.label}</span>
                     ))}
                   </div>
-                  <p>
-                    {elapsed >= 90
-                        ? "模型响应较慢，请耐心等待。离开页面不会取消分析，回来后仍会显示进度。"
-                        : "离开页面不会取消分析。分场完成后会在后台自动拆镜，可到「分镜」页查看进度。"}
-                  </p>
+                  <p className="analysis-background-note">离开页面不会取消分析。分场完成后会在后台自动拆镜，可到「分镜」页查看进度。</p>
                 </section>
             )}
 
