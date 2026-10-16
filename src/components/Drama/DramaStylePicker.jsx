@@ -24,14 +24,14 @@ export function DramaStylePicker({ value, onChange, disabled }) {
 
   return (
     <div className="style-card-tabs">
-      <div className="style-card-tabbar" role="tablist">
+      <div className="style-category-tabs style-card-tabbar" role="tablist">
         {TABS.map((item) => (
           <button
             key={item.key}
             type="button"
             role="tab"
             aria-selected={tab === item.key}
-            className={tab === item.key ? "active" : ""}
+            className={`style-category-tab ${tab === item.key ? "selected active" : ""}`}
             onClick={() => setTab(item.key)}
           >
             {item.label}
