@@ -33,17 +33,17 @@ function chapterWordCount(episode) {
  * 原文只在点击「一键分析剧本」时随分析请求提交，页面不调用剧本保存接口。
  */
 export function DramaScriptPanel({
-  episode,
-  series,
-  episodes = [],
-  activeEpisodeId,
-  onSelectEpisode,
-  onAddEpisode,
-  addingEpisode,
-  onDeleteEpisode,
-  deletingEpisodeId,
-  onContinue,
-}) {
+                                   episode,
+                                   series,
+                                   episodes = [],
+                                   activeEpisodeId,
+                                   onSelectEpisode,
+                                   onAddEpisode,
+                                   addingEpisode,
+                                   onDeleteEpisode,
+                                   deletingEpisodeId,
+                                   onContinue,
+                                 }) {
   const queryClient = useQueryClient();
   const [raw, setRaw] = useState("");
   const [analysis, setAnalysis] = useState(null);
@@ -142,233 +142,218 @@ export function DramaScriptPanel({
   const elapsedLabel = `${Math.floor(elapsed / 60)}分${String(elapsed % 60).padStart(2, "0")}秒`;
 
   return (
-    <div className="drama-script-layout">
-      <aside className="drama-chapters">
-        <header className="drama-chapters__head">
-          <strong>章节列表</strong>
-          <button
-            type="button"
-            className="drama-chapters__add"
-            aria-label="添加集数"
-            title="添加集数"
-            disabled={!series?.id || addingEpisode}
-            onClick={() => onAddEpisode?.()}
-          >
-            <Plus size={15} />
-          </button>
-        </header>
-        <div className="drama-chapters__list" role="list">
-          {episodes.map((item) => {
-            const active = item.id === activeEpisodeId;
-            const label = `第${item.episodeNumber ?? 1}章`;
-            return (
-              <div key={item.id} className={`drama-chapter${active ? " active" : ""}`} role="listitem">
-                <button type="button" className="drama-chapter__main" onClick={() => onSelectEpisode?.(item.id)}>
-                  <span className="drama-chapter__no">{label}</span>
-                  <span className="drama-chapter__count">{chapterWordCount(item)} 字</span>
-                </button>
-                <button
-                  type="button"
-                  className="drama-chapter__del"
-                  aria-label={`删除${label}`}
-                  title={episodes.length <= 1 ? "至少保留一集，无法删除" : "删除章节"}
-                  disabled={episodes.length <= 1 || deletingEpisodeId === item.id}
-                  onClick={() => setDeleteEpisodeTarget(item)}
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            );
-          })}
-          {!episodes.length && <p className="drama-chapters__empty">还没有章节</p>}
-        </div>
-      </aside>
-
-      <section className="drama-script">
-        <div className="drama-script__toolbar">
-          <div
-            className="script-model-control"
-            title={
-              analyzing
-                ? "正在分析剧本，暂时不能更换文本模型"
-                : textModelLocked
-                  ? "分析完成后不能再更换文本模型"
-                  : undefined
-            }
-          >
-            <label>文本模型</label>
-            <DemoSelect
-              className="chapter-model-select"
-              ariaLabel="剧本分析文本模型"
-              placeholder={textModels.length ? "请选择文本模型" : "暂无已启用文本模型"}
-              value={textModelId}
-              disabled={!series?.id || analyzing || textModelLocked || bindTextModel.isPending}
-              options={[
-                ...(textModelsQuery.isLoading ? [{ value: "", label: "正在加载文本模型…", disabled: true }] : []),
-                ...(textModelsQuery.isError ? [{ value: "", label: "文本模型加载失败", disabled: true }] : []),
-                ...(!textModelsQuery.isLoading && !textModelsQuery.isError && textModels.length === 0
-                  ? [{ value: "", label: "暂无已启用文本模型", disabled: true }]
-                  : []),
-                ...textModels.map((item) => ({
-                  value: String(item.id),
-                  label: `${item.name}${item.provider ? ` · ${item.provider}` : ""}`,
-                })),
-              ]}
-              onChange={(value) => {
-                if (value) bindTextModel.mutate(value);
-              }}
-            />
-            {textModelLocked && <span className="drama-script__lock">已锁定</span>}
-          </div>
-          <div>
+      <div className="drama-script-layout">
+        <aside className="drama-chapters">
+          <header className="drama-chapters__head">
+            <strong>章节列表</strong>
             <button
-              className="button button--primary drama-analyze-btn"
-              type="button"
-              disabled={!raw.trim() || analyzing || episode?.canGenerate === false}
-              title={episode?.canGenerate === false ? "请先绑定可用文本模型" : undefined}
-              onClick={() => { setAnalysis(null); setAnalysisStartedAt(Date.now()); setAnalysisNow(Date.now()); analyze.mutate(); }}
+                type="button"
+                className="drama-chapters__add"
+                aria-label="添加集数"
+                title="添加集数"
+                disabled={!series?.id || addingEpisode}
+                onClick={() => onAddEpisode?.()}
             >
-              <Sparkles size={15} /> {analyzing ? "分析中…" : "一键分析剧本"}
+              <Plus size={15} />
             </button>
-          </div>
-        </div>
-
-        <div className="drama-script__body">
-        <div className="drama-script__raw">
-          <span>剧本原文 / 一句话梗概</span>
-          <div className="drama-script__editor">
-            <em className="drama-script__count">{raw.length}</em>
-            <textarea
-              value={raw}
-              rows={8}
-              disabled={analyzing}
-              placeholder={"第一场 幻梦侦探社 日 内\n人物：洛白、夏安、局长\n道具：古铜怀表\n洛白：开始了。"}
-              onChange={(event) => setRaw(event.target.value)}
-            />
-          </div>
-          {raw.length > 5000 && (
-            <p className="drama-script__hint">剧本文本较长，解析文本可能会被拆分，导致耗时较长</p>
-          )}
-        </div>
-
-        {episode?.canGenerate === false && episode?.textServiceAvailable && (
-          <p className="drama-script__hint">
-            {series?.textModelId
-              ? "已绑定文本模型，但通道不可用（请到管理端检查 Base URL / 适配协议）。绑定可用后才能分析剧本。"
-              : "该项目未绑定可用文本模型。请先选择文本模型，再点「一键分析剧本」。"}
-          </p>
-        )}
-
-        {analyzing && (
-          <section className="drama-analysis-progress" aria-live="polite">
-            <div className="drama-analysis-progress__topline">
-              <div>
-                <strong>{currentStage.label}</strong>
-                <span>{currentStage.detail}</span>
-              </div>
-              <b>{elapsedLabel}</b>
-            </div>
-            <div className="drama-progress-track"><i style={{ width: `${currentStage.progress}%` }} /></div>
-            <div className="drama-analysis-progress__steps">
-              {ANALYSIS_STAGES.map((stage) => (
-                <span key={stage.label} className={currentStage.progress >= stage.progress ? "done" : ""}>{stage.label}</span>
-              ))}
-            </div>
-            <p>
-              {elapsed >= 90
-                ? "模型响应较慢，请耐心等待。离开页面不会取消分析，回来后仍会显示进度。"
-                : "离开页面不会取消分析。分场完成后会在后台自动拆镜，可到「分镜」页查看进度。"}
-            </p>
-          </section>
-        )}
-
-        {analyze.isError && !analyzing && <p className="drama-form-error">{analyze.error.message || "剧本分析失败"}</p>}
-        {!analyzing && !analyze.isError && episode?.scriptAnalyzeError && (
-          <p className="drama-form-error">{episode.scriptAnalyzeError}</p>
-        )}
-        {analysis && (
-          <section className="drama-analysis-summary">
-            <header><strong>分析结果</strong><span>文本模型</span></header>
-            <div className="drama-analysis-stats">
-              <span><b>{analysis.actualSceneCount ?? 0}</b> 场景</span>
-              <span><b>{analysis.storyboard?.drafting ? "…" : (analysis.actualShotCount ?? 0)}</b>{analysis.storyboard?.drafting ? "拆镜中" : "分镜"}</span>
-              <span><b>{analysis.assets?.length ?? 0}</b> 个资产</span>
-            </div>
-            {(analysis.warnings || []).map((warning) => <p key={warning} className="drama-script__hint">提示：{warning}</p>)}
-          </section>
-        )}
-
-        {scenes.length > 0 ? (
-          <ol className="drama-scenes">
-            {scenes.map((scene, index) => {
-              const id = scene.index ?? index;
+          </header>
+          <div className="drama-chapters__list" role="list">
+            {episodes.map((item) => {
+              const active = item.id === activeEpisodeId;
+              const label = `第${item.episodeNumber ?? 1}章`;
               return (
-                <li className="drama-scene" key={id}>
-                  <header>
-                    <strong>{id}. {sceneTitle(scene, index)}</strong>
-                    <small>
-                      {[scene.location, scene.time, scene.interior == null ? null : scene.interior ? "内" : "外"]
-                        .filter(Boolean).join(" · ")}
-                    </small>
-                  </header>
-                  {scene.action && <p className="drama-scene__action">{scene.action}</p>}
-                  <div className="drama-scene__tags">
-                    {(scene.characters || []).map((name) => <span key={`c-${name}`} className="drama-tag drama-tag--person">{name}</span>)}
-                    {(scene.props || []).map((name) => <span key={`p-${name}`} className="drama-tag">{name}</span>)}
+                  <div key={item.id} className={`drama-chapter${active ? " active" : ""}`} role="listitem">
+                    <button type="button" className="drama-chapter__main" onClick={() => onSelectEpisode?.(item.id)}>
+                      <span className="drama-chapter__no">{label}</span>
+                      <span className="drama-chapter__count">{chapterWordCount(item)} 字</span>
+                    </button>
+                    <button
+                        type="button"
+                        className="drama-chapter__del"
+                        aria-label={`删除${label}`}
+                        title={episodes.length <= 1 ? "至少保留一集，无法删除" : "删除章节"}
+                        disabled={episodes.length <= 1 || deletingEpisodeId === item.id}
+                        onClick={() => setDeleteEpisodeTarget(item)}
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
-                  {(scene.dialogue || []).length > 0 && (
-                    <ul className="drama-scene__dialogue">
-                      {scene.dialogue.map((line, i) => (
-                        <li key={`${id}-d-${i}`}>
-                          <b>{line.speaker}</b>
-                          {line.emotion ? <span className="drama-tag drama-tag--emotion">{line.emotion}</span> : null}
-                          <span>{line.line}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {scene.sound && <p className="drama-scene__sound">声音：{scene.sound}</p>}
-                </li>
               );
             })}
-          </ol>
-        ) : (
-          <p className="drama-script__empty">
-            {analyzing
-              ? "正在分析，分场结果出来后会显示在这里。"
-              : (analyze.isError || episode?.scriptAnalyzeError)
-                ? "分场未完成，请检查文本模型后重试。"
-                : "还没有分场结果。粘贴原文后点「一键分析剧本」。"}
-          </p>
-        )}
-        </div>
-        {(scenes.length > 0 || analysis) && !analyzing && !analyze.isError && (
-          <section className="drama-script-done">
-            <strong><CircleCheck size={16} /> 你的剧本已拆分完成</strong>
-            <button type="button" onClick={() => onContinue?.()}>
-              继续 <ChevronRight size={16} />
-            </button>
-          </section>
-        )}
-      </section>
-      <ConfirmDialog
-        open={Boolean(deleteEpisodeTarget)}
-        eyebrow="剧本"
-        title="删除章节？"
-        message={deleteEpisodeTarget
-          ? `删除第${deleteEpisodeTarget.episodeNumber ?? 1}章？该集的资产、分镜与成片会一并删除，且不可恢复。`
-          : ""}
-        confirmLabel="删除"
-        busy={Boolean(deleteEpisodeTarget && deletingEpisodeId === deleteEpisodeTarget.id)}
-        busyLabel="删除中…"
-        onClose={() => setDeleteEpisodeTarget(null)}
-        onConfirm={() => {
-          if (!deleteEpisodeTarget) return;
-          const id = deleteEpisodeTarget.id;
-          setDeleteEpisodeTarget(null);
-          onDeleteEpisode?.(id);
-        }}
-      />
-    </div>
+            {!episodes.length && <p className="drama-chapters__empty">还没有章节</p>}
+          </div>
+        </aside>
+
+        <section className="drama-script">
+          <div className="drama-script__toolbar">
+            <div className="script-model-control" title={analyzing ? "正在分析剧本，暂时不能更换文本模型" : undefined}>
+              <label>文本模型</label>
+              <DemoSelect
+                  className="chapter-model-select"
+                  ariaLabel="剧本分析文本模型"
+                  placeholder={textModels.length ? "请选择文本模型" : "暂无已启用文本模型"}
+                  value={textModelId}
+                  disabled={!series?.id || analyzing || bindTextModel.isPending}
+                  options={textModels.length
+                      ? textModels.map((item) => ({
+                        value: String(item.id),
+                        label: `${item.name}${item.provider ? ` · ${item.provider}` : ""}`,
+                      }))
+                      : [{ value: "", label: "暂无已启用文本模型", disabled: true }]}
+                  onChange={(value) => {
+                    if (value) bindTextModel.mutate(value);
+                  }}
+              />
+            </div>
+            <div>
+              <button
+                  className="button button--primary drama-analyze-btn"
+                  type="button"
+                  disabled={!raw.trim() || analyzing || episode?.canGenerate === false}
+                  title={episode?.canGenerate === false ? "请先绑定可用文本模型" : undefined}
+                  onClick={() => { setAnalysis(null); setAnalysisStartedAt(Date.now()); setAnalysisNow(Date.now()); analyze.mutate(); }}
+              >
+                <Sparkles size={15} /> {analyzing ? "分析中…" : "一键分析剧本"}
+              </button>
+            </div>
+          </div>
+
+          <div className="drama-script__body">
+            <div className="drama-script__raw">
+              <span>剧本原文 / 一句话梗概</span>
+              <div className="drama-script__editor">
+                <em className="drama-script__count">{raw.length}</em>
+                <textarea
+                    value={raw}
+                    rows={8}
+                    disabled={analyzing}
+                    placeholder={"第一场 幻梦侦探社 日 内\n人物：洛白、夏安、局长\n道具：古铜怀表\n洛白：开始了。"}
+                    onChange={(event) => setRaw(event.target.value)}
+                />
+              </div>
+              {raw.length > 5000 && (
+                  <p className="drama-script__hint">剧本文本较长，解析文本可能会被拆分，导致耗时较长</p>
+              )}
+            </div>
+
+            {episode?.canGenerate === false && episode?.textServiceAvailable && (
+                <p className="drama-script__hint">
+                  {series?.textModelId
+                      ? "已绑定文本模型，但通道不可用（请到管理端检查 Base URL / 适配协议）。绑定可用后才能分析剧本。"
+                      : "该项目未绑定可用文本模型。请先选择文本模型，再点「一键分析剧本」。"}
+                </p>
+            )}
+
+            {analyzing && (
+                <section className="drama-analysis-progress" aria-live="polite">
+                  <div className="drama-analysis-progress__topline">
+                    <div>
+                      <strong>{currentStage.label}</strong>
+                      <span>{currentStage.detail}</span>
+                    </div>
+                    <b>{elapsedLabel}</b>
+                  </div>
+                  <div className="drama-progress-track"><i style={{ width: `${currentStage.progress}%` }} /></div>
+                  <div className="drama-analysis-progress__steps">
+                    {ANALYSIS_STAGES.map((stage) => (
+                        <span key={stage.label} className={currentStage.progress >= stage.progress ? "done" : ""}>{stage.label}</span>
+                    ))}
+                  </div>
+                  <p>
+                    {elapsed >= 90
+                        ? "模型响应较慢，请耐心等待。离开页面不会取消分析，回来后仍会显示进度。"
+                        : "离开页面不会取消分析。分场完成后会在后台自动拆镜，可到「分镜」页查看进度。"}
+                  </p>
+                </section>
+            )}
+
+            {analyze.isError && !analyzing && <p className="drama-form-error">{analyze.error.message || "剧本分析失败"}</p>}
+            {!analyzing && !analyze.isError && episode?.scriptAnalyzeError && (
+                <p className="drama-form-error">{episode.scriptAnalyzeError}</p>
+            )}
+            {analysis && (
+                <section className="drama-analysis-summary">
+                  <header><strong>分析结果</strong><span>文本模型</span></header>
+                  <div className="drama-analysis-stats">
+                    <span><b>{analysis.actualSceneCount ?? 0}</b> 场景</span>
+                    <span><b>{analysis.storyboard?.drafting ? "…" : (analysis.actualShotCount ?? 0)}</b>{analysis.storyboard?.drafting ? "拆镜中" : "分镜"}</span>
+                    <span><b>{analysis.assets?.length ?? 0}</b> 个资产</span>
+                  </div>
+                  {(analysis.warnings || []).map((warning) => <p key={warning} className="drama-script__hint">提示：{warning}</p>)}
+                </section>
+            )}
+
+            {scenes.length > 0 ? (
+                <ol className="drama-scenes">
+                  {scenes.map((scene, index) => {
+                    const id = scene.index ?? index;
+                    return (
+                        <li className="drama-scene" key={id}>
+                          <header>
+                            <strong>{id}. {sceneTitle(scene, index)}</strong>
+                            <small>
+                              {[scene.location, scene.time, scene.interior == null ? null : scene.interior ? "内" : "外"]
+                                  .filter(Boolean).join(" · ")}
+                            </small>
+                          </header>
+                          {scene.action && <p className="drama-scene__action">{scene.action}</p>}
+                          <div className="drama-scene__tags">
+                            {(scene.characters || []).map((name) => <span key={`c-${name}`} className="drama-tag drama-tag--person">{name}</span>)}
+                            {(scene.props || []).map((name) => <span key={`p-${name}`} className="drama-tag">{name}</span>)}
+                          </div>
+                          {(scene.dialogue || []).length > 0 && (
+                              <ul className="drama-scene__dialogue">
+                                {scene.dialogue.map((line, i) => (
+                                    <li key={`${id}-d-${i}`}>
+                                      <b>{line.speaker}</b>
+                                      {line.emotion ? <span className="drama-tag drama-tag--emotion">{line.emotion}</span> : null}
+                                      <span>{line.line}</span>
+                                    </li>
+                                ))}
+                              </ul>
+                          )}
+                          {scene.sound && <p className="drama-scene__sound">声音：{scene.sound}</p>}
+                        </li>
+                    );
+                  })}
+                </ol>
+            ) : (
+                <p className="drama-script__empty">
+                  {analyzing
+                      ? "正在分析，分场结果出来后会显示在这里。"
+                      : (analyze.isError || episode?.scriptAnalyzeError)
+                          ? "分场未完成，请检查文本模型后重试。"
+                          : "还没有分场结果。粘贴原文后点「一键分析剧本」。"}
+                </p>
+            )}
+          </div>
+          {(scenes.length > 0 || analysis) && !analyzing && !analyze.isError && (
+              <section className="drama-script-done">
+                <strong><CircleCheck size={16} /> 你的剧本已拆分完成</strong>
+                <button type="button" onClick={() => onContinue?.()}>
+                  继续 <ChevronRight size={16} />
+                </button>
+              </section>
+          )}
+        </section>
+        <ConfirmDialog
+            open={Boolean(deleteEpisodeTarget)}
+            eyebrow="剧本"
+            title="删除章节？"
+            message={deleteEpisodeTarget
+                ? `删除第${deleteEpisodeTarget.episodeNumber ?? 1}章？该集的资产、分镜与成片会一并删除，且不可恢复。`
+                : ""}
+            confirmLabel="删除"
+            busy={Boolean(deleteEpisodeTarget && deletingEpisodeId === deleteEpisodeTarget.id)}
+            busyLabel="删除中…"
+            onClose={() => setDeleteEpisodeTarget(null)}
+            onConfirm={() => {
+              if (!deleteEpisodeTarget) return;
+              const id = deleteEpisodeTarget.id;
+              setDeleteEpisodeTarget(null);
+              onDeleteEpisode?.(id);
+            }}
+        />
+      </div>
   );
 }
