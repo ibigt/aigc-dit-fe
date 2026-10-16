@@ -83,7 +83,7 @@ function DramaDialog({ title, eyebrow, onClose, children }) {
   );
 }
 
-function DramaSeriesSpecs({ seriesId, series, onError }) {
+function DramaSeriesSpecs({ seriesId, series, onError, styleOnly = false }) {
   const queryClient = useQueryClient();
   const barRef = useRef(null);
   const [menu, setMenu] = useState(null);
@@ -165,6 +165,8 @@ function DramaSeriesSpecs({ seriesId, series, onError }) {
           </div>
         )}
       </div>
+      {!styleOnly && (
+      <>
       <span className="workspace-setting-divider" aria-hidden="true" />
       <div className="workspace-setting-wrap">
         <button
@@ -235,6 +237,8 @@ function DramaSeriesSpecs({ seriesId, series, onError }) {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }
@@ -401,7 +405,12 @@ export function DramaWorkbench({ seriesId }) {
         </div>
 
         <div className="drama-workspace-actions">
-          <DramaSeriesSpecs seriesId={id} series={series} onError={(message) => showNotice(message, true)} />
+          <DramaSeriesSpecs
+            seriesId={id}
+            series={series}
+            styleOnly={step === "shots"}
+            onError={(message) => showNotice(message, true)}
+          />
           {step === "film" && (
             <button className="button button--primary" type="button" onClick={() => setExportOpen(true)}>
               <Download size={16} /> 导出

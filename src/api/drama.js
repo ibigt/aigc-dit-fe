@@ -257,6 +257,28 @@ export function clearDramaShotFirstFrame(shotId) {
   return api.delete(`/drama/shots/${shotId}/first-frame`);
 }
 
+export function useDramaShotAssetFirstFrame(shotId, assetId) {
+  return api.post(`/drama/shots/${shotId}/first-frame/from-asset`, { assetId });
+}
+
+export function copyDramaShotPrevEndFrame(shotId) {
+  return api.post(`/drama/shots/${shotId}/first-frame/from-prev-end`);
+}
+
+export function uploadDramaShotEndFrame(shotId, file) {
+  const data = new FormData();
+  data.append("file", file);
+  return api.post(`/drama/shots/${shotId}/end-frame`, data);
+}
+
+export function useDramaShotAssetEndFrame(shotId, assetId) {
+  return api.post(`/drama/shots/${shotId}/end-frame/from-asset`, { assetId });
+}
+
+export function clearDramaShotEndFrame(shotId) {
+  return api.delete(`/drama/shots/${shotId}/end-frame`);
+}
+
 export function attachDramaShotPrevTail(shotId) {
   return api.post(`/drama/shots/${shotId}/first-frame/from-prev`);
 }

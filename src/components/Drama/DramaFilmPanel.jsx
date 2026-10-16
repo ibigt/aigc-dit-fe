@@ -1,5 +1,5 @@
-import { Film, Scissors } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Check, ChevronDown, Film, Scissors } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { assembleDramaFilm, fetchDramaFilm } from "../../api/drama.js";
 import { authenticatedApiUrl, mediaUrl } from "../../lib/media.js";
@@ -133,6 +133,26 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
   const incomplete = Boolean(film?.missingShotIndexes?.length);
   const error = filmQuery.error?.message || assembleMutation.error?.message;
   const episodeList = episodes.length ? episodes : (episode ? [episode] : []);
+  const [chapterOpen, setChapterOpen] = useState(false);
+  const chapterRef = useRef(null);
+  const currentEpisode = episodeList.find((item) => item.id === episodeId) || episodeList[0];
+
+  useEffect(() => {
+    if (!chapterOpen) return undefined;
+    const close = (event) => {
+      if (chapterRef.current && !chapterRef.current.contains(event.target)) setChapterOpen(false);
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [chapterOpen]);
+
+  const assembleLabel = assembleMutation.isPending
+    ? "正在拼接"
+    : !filmSrc
+      ? "生成成片"
+      : (film?.stale || selectionDiffersFromFilm)
+        ? "按勾选重新拼接"
+        : "重新拼接成片";
 
   function toggleShot(shotId, ready) {
     const id = asShotId(shotId);
@@ -156,29 +176,47 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
   return (
     <div className="drama-step youxi-film-layout">
       <aside className="youxi-chapters youxi-film-side" aria-label="成片选集">
-        <div className="youxi-film-episode-picker">
-          <label className="youxi-shot-model">
-            <span className="youxi-shot-model-label">章节</span>
-            <select
-              aria-label="选择章节"
-              value={episodeId ?? ""}
-              disabled={!episodeList.length}
-              onChange={(event) => {
-                const next = Number(event.target.value);
-                if (Number.isFinite(next)) onSelectEpisode?.(next);
-              }}
-            >
-              {!episodeList.length && <option value="">暂无剧集</option>}
-              {episodeList.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name || `第 ${item.episodeNumber} 集`}
-                </option>
-              ))}
-            </select>
-          </label>
+        <header className="youxi-film-side-title">
+          <h2>章节列表</h2>
+        </header>
+        <div className={`youxi-film-episode-picker${chapterOpen ? " is-open" : ""}`} ref={chapterRef}>
+          <span className="youxi-film-chapter-label">章节</span>
+          <button
+            type="button"
+            className="youxi-film-chapter-trigger"
+            aria-label="选择章节"
+            aria-expanded={chapterOpen}
+            disabled={!episodeList.length}
+            onClick={() => setChapterOpen((open) => !open)}
+          >
+            <span>{currentEpisode?.name || (currentEpisode ? `第 ${currentEpisode.episodeNumber} 集` : "暂无剧集")}</span>
+            <ChevronDown size={15} />
+          </button>
+          {chapterOpen && episodeList.length > 0 && (
+            <div className="youxi-film-chapter-menu" role="listbox" aria-label="章节列表">
+              {episodeList.map((item) => {
+                const active = item.id === (currentEpisode?.id);
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    onClick={() => {
+                      setChapterOpen(false);
+                      if (item.id !== episodeId) onSelectEpisode?.(item.id);
+                    }}
+                  >
+                    <span>{item.name || `第 ${item.episodeNumber} 集`}</span>
+                    {active && <Check size={14} />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
         <header className="youxi-film-side-shots-header">
-          <strong>本集镜头</strong>
+          <h3>本集镜头 <span>{shots.length}</span></h3>
           {readyIds.length > 0 && (
             <button type="button" className="youxi-film-select-all" onClick={toggleSelectAllReady}>
               {allReadySelected ? "取消全选" : "全选"}
@@ -192,7 +230,7 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
             return (
               <label
                 key={shot.id || shot.shotIndex}
-                className={`youxi-film-shot-row ${shot.ready ? "" : "is-disabled"}`}
+                className={`youxi-film-shot-row${shot.ready ? "" : " is-disabled"}${checked ? " is-selected" : ""}`}
               >
                 <input
                   type="checkbox"
@@ -200,6 +238,7 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
                   disabled={!shot.ready}
                   onChange={() => toggleShot(shotId, shot.ready)}
                 />
+                <span className="youxi-film-shot-mark" aria-hidden="true">{checked ? "✓" : ""}</span>
                 <span>
                   <strong>{shot.title || `镜 ${shot.shotIndex}`}</strong>
                   <small>镜 {shot.shotIndex} · {shot.durationSec || 5}s</small>
@@ -216,10 +255,13 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
         </div>
       </aside>
       <section className="youxi-film-main">
-        {(film?.stale || (incomplete && readyCount > 0) || error || (showAssemble && selectedReadyCount === 0) || selectionDiffersFromFilm) && (
+        {(film?.stale || film?.hasCaptions || (incomplete && readyCount > 0) || error || (showAssemble && selectedReadyCount === 0) || selectionDiffersFromFilm) && (
           <div className="youxi-film-banners">
             {film?.stale && (
-              <p className="youxi-film-banner youxi-film-banner--warn">分镜视频已更新，请重新拼接</p>
+              <p className="youxi-film-banner youxi-film-banner--warn">分镜视频已更新，当前成片已过期，请重新拼接</p>
+            )}
+            {filmSrc && film?.hasCaptions && (
+              <p className="youxi-film-banner">本片带有字幕轨道，播放器可开关中文字幕</p>
             )}
             {incomplete && readyCount > 0 && (
               <p className="youxi-film-banner">
@@ -238,56 +280,52 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
           </div>
         )}
         <div className="youxi-final-player">
-          {filmSrc ? (
-            <video
-              key={`${filmSrc}|${filmVersion}`}
-              controls
-              playsInline
-              preload="metadata"
-              data-ratio={ratio}
-              src={filmSrc}
-              poster={posterSrc || undefined}
-            >
-              {captionSrc && (
-                <track
-                  key={captionSrc}
-                  kind="captions"
-                  src={captionSrc}
-                  srcLang="zh-CN"
-                  label="中文"
-                  default
-                />
-              )}
-            </video>
-          ) : (
-            <div className="youxi-story-empty-preview" data-ratio={ratio}>
-              <div className="youxi-story-empty-state">
-                <Film size={24} />
-                <strong>{filmQuery.isLoading ? "正在读取成片…" : "尚未生成成片"}</strong>
-                <span>
+          <div className="youxi-film-stage">
+            {filmSrc ? (
+              <video
+                key={`${filmSrc}|${filmVersion}`}
+                controls
+                playsInline
+                preload="metadata"
+                data-ratio={ratio}
+                src={filmSrc}
+                poster={posterSrc || undefined}
+              >
+                {captionSrc && (
+                  <track
+                    key={captionSrc}
+                    kind="captions"
+                    src={captionSrc}
+                    srcLang="zh-CN"
+                    label="中文"
+                    default
+                  />
+                )}
+              </video>
+            ) : (
+              <div className="youxi-film-empty">
+                <Film size={42} />
+                <h3>{filmQuery.isLoading ? "正在读取成片…" : "尚未生成成片"}</h3>
+                <p>
                   {readyCount > 0
-                    ? "勾选本集已出片镜头后按镜序硬切拼接"
+                    ? "勾选左侧已出片镜头，生成成片"
                     : "本集分镜出片后可在此拼接并导出 MP4"}
-                </span>
+                </p>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
         {showAssemble && (
           <div className="youxi-film-actions">
             <button
-              className="button button--primary"
+              className={`button button--primary youxi-film-merge${assembleMutation.isPending ? " is-loading" : ""}`}
               type="button"
               disabled={!canAssemble}
               onClick={() => assembleMutation.mutate(pickedIds)}
             >
               <Scissors size={14} />
               {" "}
-              {assembleMutation.isPending
-                ? "拼接中…"
-                : filmSrc
-                  ? (film?.stale || selectionDiffersFromFilm ? "按勾选重新拼接" : "重新拼接成片")
-                  : `拼接成片（${selectedReadyCount} 镜）`}
+              {assembleLabel}
             </button>
           </div>
         )}
