@@ -3338,25 +3338,14 @@
 .drama-workspace .drama-chapter.active { color: #fff; border-color: transparent; background: #3a2d86; }
 .drama-workspace .drama-chapter.active .drama-chapter__count { color: rgba(255,255,255,.72); }
 .drama-workspace .drama-chapter__count { color: #8d8d98; }
-.drama-workspace .drama-script__toolbar { border-bottom-color: rgba(255,255,255,.06); background: transparent; }
-.drama-workspace .drama-script__toolbar .youxi-shot-model { color: #c9c9d2; }
-.drama-workspace .drama-script__toolbar .youxi-shot-model select {
-  min-width: 132px;
-  color: #f4f4f7;
-  border-color: rgba(255,255,255,.12);
-  background: #1d1d24;
-}
-.drama-workspace .drama-script__toolbar .youxi-shot-model .demo-select { min-width: 132px; }
-.drama-workspace .drama-script__toolbar .youxi-shot-model .demo-select .select-trigger {
-  width: auto;
-  height: 32px;
-  padding: 0 10px;
-  font-size: 12px;
-  color: #f4f4f7;
-  border-color: rgba(255,255,255,.12);
-  background: #1d1d24;
-}
-.drama-workspace .drama-script__toolbar .youxi-shot-model .demo-select .select-value { color: #f4f4f7; font-size: 12px; }
+.drama-workspace .drama-script__toolbar { position: relative; z-index: 6; border-bottom-color: rgba(255,255,255,.06); background: transparent; }
+.script-model-control { min-width: 0; display: flex; align-items: center; gap: 10px; }
+.script-model-control > label { color: #d5d5d9; font-size: 13px; white-space: nowrap; }
+.chapter-model-select { width: min(280px, 42vw); }
+.chapter-model-select .select-trigger { height: 36px; border-radius: 9px; font-size: 13px; }
+.chapter-model-select .select-value,
+.chapter-model-select .select-option { font-size: 13px; }
+.chapter-model-select .select-menu { z-index: 40; }
 .drama-script__lock {
   height: 24px;
   padding: 0 8px;
@@ -3516,11 +3505,14 @@
 .asset-extract-button { flex: 0 0 auto; border: 1px solid rgba(151,137,255,.25); color: #d9d4ff; background: rgba(118,104,255,.08); }
 .asset-extract-button:hover:not(:disabled) { border-color: rgba(151,137,255,.45); color: #fff; background: rgba(118,104,255,.15); }
 .asset-extract-button:disabled, .asset-primary-button:disabled, .asset-secondary-button:disabled { opacity: .48; cursor: not-allowed; }
-.asset-toolbar { padding: 16px 0 14px; }
+.asset-toolbar { position: relative; z-index: 5; padding: 16px 0 14px; }
 .asset-model-control { display: flex; align-items: center; gap: 10px; color: #c8c8ce; font-size: 13px; }
-.asset-model-control select { width: min(280px, 36vw); height: 40px; padding: 0 12px; border: 1px solid rgba(255,255,255,.12); border-radius: 10px; color: #f4f4f7; background: #202126; font-size: 13px; }
-.asset-model-control .demo-select { flex: 1; min-width: 0; max-width: min(280px, 36vw); }
-.asset-model-control .demo-select .select-trigger { height: 40px; font-size: 13px; }
+.asset-model-control > label { font-weight: 550; white-space: nowrap; }
+.asset-model-select { width: 252px; flex: 0 0 auto; }
+.asset-model-select .select-trigger { height: 40px; background: #202126; font-size: 13px; }
+.asset-model-select .select-value,
+.asset-model-select .select-option { font-size: 13px; }
+.asset-model-select .select-menu { z-index: 190; }
 .asset-toolbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 .asset-primary-button { border: 1px solid rgba(168,154,255,.4); color: #fff; background: linear-gradient(135deg, #6557e7, #7769f2); }
 .asset-secondary-button { border: 1px solid rgba(255,255,255,.12); color: #e4e4e8; background: #24252a; }
@@ -3620,7 +3612,9 @@
 .asset-modal-section { padding: 15px; border: 1px solid #2b2b32; border-radius: 13px; background: #18181d; }
 .asset-modal-parameter-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(180px, .8fr); gap: 14px; }
 .asset-modal-config .asset-model-control, .asset-modal-resolution { display: flex; flex-direction: column; align-items: stretch; gap: 8px; color: #d7d5df; font-size: 13px; font-weight: 650; }
-.asset-modal-config .asset-model-control select { width: 100%; max-width: none; height: 42px; }
+.asset-modal-config .asset-model-select { width: 100%; }
+.asset-modal-config .asset-model-select .select-trigger { height: 42px; font-size: 14px; }
+.asset-modal-config .asset-model-select .select-value { font-size: 14px; }
 .asset-modal-resolution > div { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .asset-modal-resolution button { height: 42px; border: 1px solid #383840; border-radius: 9px; color: #aaa8b3; background: #222228; font-weight: 600; cursor: pointer; }
 .asset-modal-resolution button:hover { border-color: #6258be; color: #fff; }
@@ -3695,6 +3689,9 @@
   .asset-image-modal-body { display: flex; flex-direction: column; overflow-y: auto; }
   .asset-history-panel { min-height: 320px; }
   .asset-modal-parameter-grid, .asset-modal-section-head { display: flex; flex-direction: column; }
+  .asset-toolbar { align-items: stretch; flex-direction: column; }
+  .asset-model-control { align-items: stretch; flex-direction: column; }
+  .asset-model-select { width: 100%; }
 }
 @media (max-width: 1400px) {
   .asset-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -4614,8 +4611,16 @@
   font-size: 14px;
   cursor: pointer;
 }
-.drama-workspace .youxi-film-chapter-trigger:hover,
-.drama-workspace .youxi-film-episode-picker.is-open .youxi-film-chapter-trigger { border-color: rgba(143, 130, 255, .48); }
+.drama-workspace .youxi-chapters > .youxi-film-episode-picker > .youxi-film-chapter-trigger:hover,
+.drama-workspace .youxi-chapters > .youxi-film-episode-picker.is-open > .youxi-film-chapter-trigger {
+  border-color: rgba(143, 130, 255, .48);
+  color: #e8e8ec;
+  background: #121214;
+}
+.drama-workspace .youxi-film-chapter-trigger:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(118, 104, 255, .13);
+}
 .drama-workspace .youxi-film-chapter-trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .drama-workspace .youxi-film-chapter-menu {
   position: absolute;

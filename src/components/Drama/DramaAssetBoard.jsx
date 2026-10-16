@@ -20,6 +20,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchAssets } from "../../api/assets.js";
+import { DemoSelect } from "../DemoSelect.jsx";
 import {
   bindDramaAssetImageFromLibrary,
   bindDramaImageModel,
@@ -42,7 +43,6 @@ import {
 import { MEDIA_THUMB_WIDTH, mediaUrl, retryMediaOnce } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
-import { DemoSelect } from "../DemoSelect.jsx";
 import { GenerationHistoryPanel, SwitchFinalModal } from "./GenerationHistoryPanel.jsx";
 
 const TYPES = [
@@ -328,6 +328,10 @@ function SubjectCreateDialog({ type, pending, error, onClose, onCreate }) {
   );
 }
 
+function imageModelLabel(item) {
+  return `${item.name}${item.provider ? ` · ${item.provider}` : ""}`;
+}
+
 function ImageModelSelect({
   imageModels,
   imageModelsLoading,
@@ -338,14 +342,29 @@ function ImageModelSelect({
   disabled,
   onBindModel,
 }) {
+  const options = [];
+  if (!imageModels.length) {
+    options.push({ value: "", label: "暂无已启用图像模型", disabled: true });
+  }
+  if (seriesImageModelId && !imageModels.some((item) => String(item.id) === String(seriesImageModelId))) {
+    options.push({
+      value: String(seriesImageModelId),
+      label: seriesImageModelName || "已绑定（当前已停用）",
+    });
+  }
+  imageModels.forEach((item) => {
+    options.push({ value: String(item.id), label: imageModelLabel(item) });
+  });
+
   return (
-    <label className="asset-model-control">
-      图像模型
+    <div className="asset-model-control">
+      <label>图像模型</label>
       <DemoSelect
-        aria-label="全局图片生成模型"
-        value={imageModelId}
+        className="asset-model-select"
+        ariaLabel="全局图片生成模型"
+        placeholder={imageModels.length ? "请选择图像模型" : "暂无已启用图像模型"}
+        value={imageModelId ? String(imageModelId) : ""}
         disabled={disabled}
-        onChange={onBindModel}
         options={[
           ...(imageModelsLoading ? [{ value: "", label: "正在加载图像模型…", disabled: true }] : []),
           ...(imageModelsError ? [{ value: "", label: "图像模型加载失败", disabled: true }] : []),
@@ -360,8 +379,9 @@ function ImageModelSelect({
             label: `${item.name}${item.provider ? ` · ${item.provider}` : ""}`,
           })),
         ]}
+        onChange={onBindModel}
       />
-    </label>
+    </div>
   );
 }
 

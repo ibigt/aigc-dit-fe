@@ -137,7 +137,6 @@ export function DramaScriptPanel({
   });
 
   const scenes = episode?.script?.scenes || [];
-  const textModelLocked = episode?.status === "已锁定" || scenes.length > 0;
   const elapsed = progressStartedAt ? Math.max(0, Math.floor((analysisNow - progressStartedAt) / 1000)) : 0;
   const currentStage = analysisStage(elapsed);
   const elapsedLabel = `${Math.floor(elapsed / 60)}分${String(elapsed % 60).padStart(2, "0")}秒`;
@@ -187,28 +186,38 @@ export function DramaScriptPanel({
 
       <section className="drama-script">
         <div className="drama-script__toolbar">
-          <div>
-            <label className="youxi-shot-model">
-              <span className="youxi-shot-model-label">文本模型</span>
-              <DemoSelect
-                aria-label="剧本分析文本模型"
-                value={textModelId}
-                disabled={!series?.id || analyzing || textModelLocked || bindTextModel.isPending}
-                title={textModelLocked ? "分析完成后不能再更换文本模型" : undefined}
-                onChange={(value) => bindTextModel.mutate(value)}
-                options={[
-                  ...(textModelsQuery.isLoading ? [{ value: "", label: "正在加载文本模型…", disabled: true }] : []),
-                  ...(textModelsQuery.isError ? [{ value: "", label: "文本模型加载失败", disabled: true }] : []),
-                  ...(!textModelsQuery.isLoading && !textModelsQuery.isError && textModels.length === 0
-                    ? [{ value: "", label: "暂无已启用文本模型", disabled: true }]
-                    : []),
-                  ...textModels.map((item) => ({
-                    value: String(item.id),
-                    label: `${item.name}${item.provider ? ` · ${item.provider}` : ""}`,
-                  })),
-                ]}
-              />
-            </label>
+          <div
+            className="script-model-control"
+            title={
+              analyzing
+                ? "正在分析剧本，暂时不能更换文本模型"
+                : textModelLocked
+                  ? "分析完成后不能再更换文本模型"
+                  : undefined
+            }
+          >
+            <label>文本模型</label>
+            <DemoSelect
+              className="chapter-model-select"
+              ariaLabel="剧本分析文本模型"
+              placeholder={textModels.length ? "请选择文本模型" : "暂无已启用文本模型"}
+              value={textModelId}
+              disabled={!series?.id || analyzing || textModelLocked || bindTextModel.isPending}
+              options={[
+                ...(textModelsQuery.isLoading ? [{ value: "", label: "正在加载文本模型…", disabled: true }] : []),
+                ...(textModelsQuery.isError ? [{ value: "", label: "文本模型加载失败", disabled: true }] : []),
+                ...(!textModelsQuery.isLoading && !textModelsQuery.isError && textModels.length === 0
+                  ? [{ value: "", label: "暂无已启用文本模型", disabled: true }]
+                  : []),
+                ...textModels.map((item) => ({
+                  value: String(item.id),
+                  label: `${item.name}${item.provider ? ` · ${item.provider}` : ""}`,
+                })),
+              ]}
+              onChange={(value) => {
+                if (value) bindTextModel.mutate(value);
+              }}
+            />
             {textModelLocked && <span className="drama-script__lock">已锁定</span>}
           </div>
           <div>

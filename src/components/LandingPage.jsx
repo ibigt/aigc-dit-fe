@@ -1,6 +1,7 @@
 import { ArrowRight, ChevronDown, CircleGauge, Film, Images, Layers3, LogOut, Play, Sparkles, UserRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { api } from "../api/client.js";
 import { Brand } from "./Brand.jsx";
 import { ProfileModal } from "./ProfileModal.jsx";
 
@@ -9,12 +10,24 @@ export function LandingPage({ config, user, onLogout, onUserUpdate }) {
   const showcase = config.media.slice(1, 5);
   const [userMenu, setUserMenu] = useState(false);
   const [profileMode, setProfileMode] = useState(null);
+  const [version, setVersion] = useState("");
   const menuRef = useRef(null);
 
   useEffect(() => {
     const close = (event) => { if (!menuRef.current?.contains(event.target)) setUserMenu(false); };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get("/version")
+      .then((data) => {
+        const text = typeof data?.version === "string" ? data.version.trim() : "";
+        if (!cancelled && text) setVersion(text);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
   }, []);
 
   return (
@@ -119,7 +132,7 @@ export function LandingPage({ config, user, onLogout, onUserUpdate }) {
       <footer className="landing-footer shell-width">
         <Brand config={config} showSubtitle={false} />
         <p>让技术隐于幕后，让创意站在光里。</p>
-        <span>© 2026 {config.appName}</span>
+        <span>{version}</span>
       </footer>
       {user && <ProfileModal open={Boolean(profileMode)} mode={profileMode} user={user} onClose={() => setProfileMode(null)} onSave={(next) => { onUserUpdate(next); setProfileMode(null); }} />}
     </div>
