@@ -624,6 +624,8 @@ function UsersPage() {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [deleteUserTarget, setDeleteUserTarget] = useState(null);
+  const [resetPasswordTarget, setResetPasswordTarget] = useState(null);
+  const [disableUserTarget, setDisableUserTarget] = useState(null);
   const [editing, setEditing] = useState(undefined);
   const [notice, setNotice] = useState("");
   const usersQuery = useQuery({
@@ -706,8 +708,8 @@ function UsersPage() {
             <td>
               <div className="table-actions">
                 <button title="编辑" aria-label={`编辑用户：${user.name}`} onClick={() => setEditing(user)}><Pencil size={14} /></button>
-                <button title="重置密码" aria-label={`重置密码：${user.name}`} onClick={() => resetMutation.mutate(user)}><KeyRound size={14} /></button>
-                <button title={user.status === "ENABLED" ? "禁用" : "启用"} aria-label={`${user.status === "ENABLED" ? "禁用" : "启用"}用户：${user.name}`} onClick={() => statusMutation.mutate(user)}>{user.status === "ENABLED" ? <Ban size={14} /> : <Play size={14} />}</button>
+                <button title="重置密码" aria-label={`重置密码：${user.name}`} onClick={() => setResetPasswordTarget(user)}><KeyRound size={14} /></button>
+                <button title={user.status === "ENABLED" ? "禁用" : "启用"} aria-label={`${user.status === "ENABLED" ? "禁用" : "启用"}用户：${user.name}`} onClick={() => user.status === "ENABLED" ? setDisableUserTarget(user) : statusMutation.mutate(user)}>{user.status === "ENABLED" ? <Ban size={14} /> : <Play size={14} />}</button>
                 <button className="danger" title="删除" aria-label={`删除用户：${user.name}`} onClick={() => setDeleteUserTarget(user)}><Trash2 size={14} /></button>
               </div>
             </td>
@@ -727,6 +729,33 @@ function UsersPage() {
       onConfirm={() => {
         deleteMutation.mutate(deleteUserTarget, {
           onSuccess: () => setDeleteUserTarget(null),
+        });
+      }}
+    />}
+    {resetPasswordTarget && <ConfirmDialog
+      open
+      title="重置密码？"
+      message={`确定重置「${resetPasswordTarget.name}」的登录密码吗？重置后将生成新的临时密码。`}
+      confirmLabel="重置密码"
+      busyLabel="重置中…"
+      danger={false}
+      onClose={() => setResetPasswordTarget(null)}
+      onConfirm={() => {
+        resetMutation.mutate(resetPasswordTarget, {
+          onSuccess: () => setResetPasswordTarget(null),
+        });
+      }}
+    />}
+    {disableUserTarget && <ConfirmDialog
+      open
+      title="禁用用户？"
+      message={`确定禁用「${disableUserTarget.name}」吗？禁用后该账号将无法继续使用。`}
+      confirmLabel="禁用"
+      busyLabel="禁用中…"
+      onClose={() => setDisableUserTarget(null)}
+      onConfirm={() => {
+        statusMutation.mutate(disableUserTarget, {
+          onSuccess: () => setDisableUserTarget(null),
         });
       }}
     />}

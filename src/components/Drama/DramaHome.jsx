@@ -32,7 +32,7 @@ const emptyForm = {
 
 function DramaDialog({ title, eyebrow, wide, onClose, children }) {
   return (
-    <div className="drama-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className={`drama-dialog-backdrop${wide ? " drama-dialog-backdrop--sheet" : ""}`} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className={`drama-dialog${wide ? " drama-dialog--create" : ""}`} role="dialog" aria-modal="true" aria-labelledby="drama-dialog-title">
         <header>
           <div>
@@ -422,7 +422,7 @@ export function DramaHome() {
                 || (videoModels.length > 0 && !form.videoModelId)
               }
             >
-              {createMutation.isPending ? "创建中…" : "创建并进入"} <ChevronRight size={16} />
+              {createMutation.isPending ? "创建中…" : "创建并进入"}
             </button>
           </footer>
         </DramaDialog>

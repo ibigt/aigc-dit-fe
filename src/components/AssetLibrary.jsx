@@ -1,4 +1,4 @@
-import { AudioLines, Check, Download, Filter, Grid3X3, Image, List, Search, Trash2, Upload, Video, X } from "lucide-react";
+import { AudioLines, Check, Download, Filter, Grid3X3, List, Search, Trash2, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteAsset, fetchAssets, uploadAsset } from "../api/assets.js";
@@ -8,12 +8,17 @@ import { validateAssetFile } from "../lib/assetUpload.js";
 import { formatMediaMeta, runBatchDelete } from "../lib/assetBatch.js";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { AudioPreview } from "./AudioPreview.jsx";
+import { WorksTypeIcon } from "./WorksTypeIcon.jsx";
 
 const AUTO_DISMISS_DELAY_MS = 3000;
 const ORDER_OPTIONS = [
   { value: "time_desc", label: "最新上传" },
   { value: "time_asc", label: "最早上传" },
 ];
+
+function AssetTypeIcon({ type }) {
+  return <WorksTypeIcon type={type} />;
+}
 
 export function AssetLibrary() {
   const queryClient = useQueryClient();
@@ -281,9 +286,9 @@ export function AssetLibrary() {
 
       <div className="works-controls asset-library-controls">
         <div className="works-type-tabs" role="tablist" aria-label="素材类型">
-          {[["all", "全部", Grid3X3], ["image", "图片", Image], ["video", "视频", Video], ["audio", "音频", AudioLines]].map(([value, label, Icon]) => (
+          {[["all", "全部"], ["image", "图片"], ["video", "视频"], ["audio", "音频"]].map(([value, label]) => (
             <button key={value} type="button" role="tab" aria-selected={filter === value} className={`works-type-tab${filter === value ? " is-active" : ""}`} onClick={() => setFilter(value)}>
-              <Icon size={16} aria-hidden="true" />
+              <AssetTypeIcon type={value} />
               <span>{label}</span>
             </button>
           ))}
@@ -381,8 +386,6 @@ export function AssetLibrary() {
           const isPicked = pickedIds.has(item.id);
           const meta = item.meta;
           const kindLabel = item.type === "audio" ? "音频" : item.type === "video" ? "视频" : "图片";
-          const typeIcon = item.type === "audio" ? AudioLines : item.type === "video" ? Video : Image;
-          const TypeIcon = typeIcon;
           const metaParts = item.type === "audio"
             ? [meta?.format, meta?.duration]
             : item.type === "video"
@@ -397,7 +400,7 @@ export function AssetLibrary() {
                 <span aria-hidden="true"><Check size={13} strokeWidth={2.4} /></span>
               </label>
               <button type="button" className="asset-item-delete" aria-label={`删除素材：${item.title}`} title="删除" onClick={(e) => { e.stopPropagation(); confirmDelete(item); }}><Trash2 size={15} /></button>
-              <span className="work-kind asset-kind"><TypeIcon size={13} aria-hidden="true" />{kindLabel}</span>
+              <span className="work-kind asset-kind"><AssetTypeIcon type={item.type} />{kindLabel}</span>
               <button type="button" className="asset-preview-hit" onClick={() => setSelected(item)} aria-label={`预览素材：${item.title}`} />
             </div>
           );

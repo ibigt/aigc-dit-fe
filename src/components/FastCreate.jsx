@@ -1,4 +1,4 @@
-import { ArrowLeftRight, AtSign, AudioLines, Box, Check, CheckCircle2, ChevronDown, Coins, Download, Film, Image, Images, Layers3, Maximize2, MoreHorizontal, Pencil, Plus, RectangleHorizontal, RectangleVertical, RefreshCw, RotateCcw, Save, ScanLine, Sparkles, Square, Trash2, Video, X } from "lucide-react";
+import { AudioLines, Box, Check, CheckCircle2, Download, Film, Image, Images, Maximize2, Pencil, Plus, RefreshCw, Save, Sparkles, Video, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchAssets } from "../api/assets.js";
@@ -11,11 +11,13 @@ import { modelCatalogMessage } from "../lib/modelCatalog.js";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { AssetPickerDialog } from "./AssetPickerDialog.jsx";
 import { sameAsset } from "../lib/assetPicker.js";
+import { WorksTypeIcon } from "./WorksTypeIcon.jsx";
+import { WorkWaveform } from "./AudioPreview.jsx";
 
 const videoRatios = ["自动", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
 const imageRatios = ["21:9", "16:9", "5:4", "4:3", "3:2", "1:1", "2:3", "3:4", "4:5", "9:16"];
-const videoDurations = Array.from({ length: 12 }, (_, index) => index + 4);
-const miniMaxDurations = Array.from({ length: 12 }, (_, index) => index + 4);
+const videoDurations = [4, 5, 6, 7, 8, 9, 10, 11, 12];
+const miniMaxDurations = [4, 5, 6, 7, 8, 9, 10, 11, 12];
 const miniMaxMaxDurations = Array.from({ length: 11 }, (_, index) => index + 5);
 const miniMaxComfyDurations = Array.from({ length: 11 }, (_, index) => index + 5);
 const agnesDurations = Array.from({ length: 9 }, (_, index) => index + 4);
@@ -229,107 +231,6 @@ const creationPresets = {
   ],
 };
 
-function CosmicBackdrop({ active }) {
-  const videoRef = useRef(null);
-
-  useEffect(() => {
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const syncPlayback = () => {
-      const video = videoRef.current;
-      if (!video) return;
-      if (!active || reducedMotion.matches) video.pause();
-      else video.play().catch(() => {});
-    };
-    syncPlayback();
-    reducedMotion.addEventListener("change", syncPlayback);
-    return () => reducedMotion.removeEventListener("change", syncPlayback);
-  }, [active]);
-
-  return <div className="fast-cosmic-backdrop" aria-hidden="true">
-    <video ref={videoRef} muted loop playsInline preload="metadata" poster="/media/quick-create/cosmic-flight-poster.jpg" tabIndex={-1}>
-      <source media="(max-width: 720px)" src="/media/quick-create/cosmic-nebula-mobile.mp4" type="video/mp4" />
-      <source src="/media/quick-create/cosmic-flight-bg.mp4" type="video/mp4" />
-    </video>
-    <span className="fast-cosmic-backdrop__beam" />
-    <span className="fast-cosmic-backdrop__veil" />
-  </div>;
-}
-
-function GravityDots() {
-  const canvasRef = useRef(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return undefined;
-    const context = canvas.getContext("2d");
-    const pointer = { x: -1000, y: -1000, active: false };
-    let frame = 0;
-    let width = 0;
-    let height = 0;
-    let density = 1;
-
-    const resize = () => {
-      const bounds = canvas.getBoundingClientRect();
-      width = bounds.width;
-      height = bounds.height;
-      density = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.max(1, Math.floor(width * density));
-      canvas.height = Math.max(1, Math.floor(height * density));
-      context.setTransform(density, 0, 0, density, 0, 0);
-    };
-    const move = (event) => {
-      const bounds = canvas.getBoundingClientRect();
-      pointer.x = event.clientX - bounds.left;
-      pointer.y = event.clientY - bounds.top;
-      pointer.active = pointer.x >= 0 && pointer.x <= width && pointer.y >= 0 && pointer.y <= height;
-    };
-    const leave = () => { pointer.active = false; };
-    const draw = (time) => {
-      context.clearRect(0, 0, width, height);
-      const spacing = 24;
-      const radius = 290;
-      for (let y = 12; y < height; y += spacing) {
-        for (let x = 12; x < width; x += spacing) {
-          let drawX = x;
-          let drawY = y;
-          let alpha = 0.22;
-          if (pointer.active) {
-            const dx = pointer.x - x;
-            const dy = pointer.y - y;
-            const distance = Math.hypot(dx, dy);
-            if (distance < radius && distance > 0) {
-              const envelope = Math.pow(1 - distance / radius, 1.6);
-              const ripple = Math.sin(distance * 0.055 - time * 0.00145) * envelope * 8;
-              drawX -= (dx / distance) * ripple;
-              drawY -= (dy / distance) * ripple;
-              alpha = 0.22 + envelope * 0.2;
-            }
-          }
-          context.beginPath();
-          context.arc(drawX, drawY, 1.05, 0, Math.PI * 2);
-          context.fillStyle = `rgba(92, 102, 123, ${alpha})`;
-          context.fill();
-        }
-      }
-      frame = window.requestAnimationFrame(draw);
-    };
-
-    resize();
-    window.addEventListener("resize", resize);
-    window.addEventListener("pointermove", move, { passive: true });
-    window.addEventListener("pointerleave", leave);
-    frame = window.requestAnimationFrame(draw);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("resize", resize);
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerleave", leave);
-    };
-  }, []);
-
-  return <canvas ref={canvasRef} className="create-gravity-dots" aria-hidden="true" />;
-}
-
 function makeInitialSession() {
   return {
     id: DEFAULT_SESSION_ID,
@@ -345,6 +246,76 @@ function extensionOf(url) {
   return match ? match[1].toLowerCase() : "bin";
 }
 
+const MAX_REFERENCE_ASSETS = 15;
+
+function QuickAudioPopover({ voices, formats, voiceId, setVoiceId, audioFormat, setAudioFormat, speed, setSpeed, minSpeed, maxSpeed }) {
+  const [voiceKeyword, setVoiceKeyword] = useState("");
+  const [voiceLanguageFilter, setVoiceLanguageFilter] = useState("全部");
+  const languages = [...new Set(voices.map(voiceLanguage))];
+  const normalizedKeyword = voiceKeyword.trim().toLowerCase();
+  const visibleVoices = voices.filter((voice) => {
+    const matchesLanguage = voiceLanguageFilter === "全部" || voiceLanguage(voice) === voiceLanguageFilter;
+    const matchesKeyword = !normalizedKeyword || `${voiceLabel(voice)} ${voiceIdOf(voice)}`.toLowerCase().includes(normalizedKeyword);
+    return matchesLanguage && matchesKeyword;
+  });
+  const speedProgress = Math.min(100, Math.max(0, ((speed - minSpeed) / (maxSpeed - minSpeed || 1)) * 100));
+  return (
+    <div className="select-menu quick-audio-popover" role="dialog" aria-label="语音参数设置">
+      <section className="quick-audio-section">
+        <label><span>音色</span><small>共 {voices.length} 个</small></label>
+        <div className="quick-voice-tools">
+          <input value={voiceKeyword} onChange={(event) => setVoiceKeyword(event.target.value)} placeholder="搜索音色名称或 Voice ID" />
+          <select value={voiceLanguageFilter} onChange={(event) => setVoiceLanguageFilter(event.target.value)}>
+            <option value="全部">全部语言</option>
+            {languages.map((language) => <option key={language} value={language}>{language}</option>)}
+          </select>
+        </div>
+        <div className="quick-voice-grid">
+          {visibleVoices.map((voice) => {
+            const id = voiceIdOf(voice);
+            const selected = voiceId === id;
+            return (
+              <button type="button" className={selected ? "selected" : ""} key={id} onClick={() => setVoiceId(id)}>
+                <span>{voiceLabel(voice)}</span>
+                <small>{voiceLanguage(voice)} · {id}</small>
+                {selected && <Check size={12} className="quick-option-check" />}
+              </button>
+            );
+          })}
+        </div>
+        {!visibleVoices.length && <div className="quick-voice-empty">没有匹配的音色</div>}
+      </section>
+
+      <section className="quick-audio-section">
+        <label>格式</label>
+        <div className="quick-format-grid">
+          {formats.map((fmt) => {
+            const selected = audioFormat === fmt;
+            return (
+              <button type="button" role="option" aria-selected={selected} className={`quick-param-option ${selected ? "selected" : ""}`} key={fmt} onClick={() => setAudioFormat(fmt)}>
+                <span>{fmt.toUpperCase()}</span>
+                {selected && <Check size={13} className="quick-option-check" />}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="quick-audio-section quick-audio-speed">
+        <label><span>语速</span><b>{speed.toFixed(2)}x</b></label>
+        <input type="range" style={{ "--range-progress": `${speedProgress}%` }} min={minSpeed} max={maxSpeed} step="0.05" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} />
+        <div><small>{minSpeed}x</small><small>{maxSpeed}x</small></div>
+      </section>
+    </div>
+  );
+}
+
+/**
+ * 单条生成结果的消息卡片。
+ * - 上方：媒体回显（视频 / 音频 / 图片）；
+ * - 中间：精简元信息（模型/类型/参数/耗时/积分）；
+ * - 下方：可折叠的 Prompt 与四个动作（复用参数 / 再次生成 / 保存 / 高清下载）。
+ */
 function ResultMessage({ message, onReuse, onSave, savedIds = [], savingId }) {
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -392,38 +363,41 @@ function ResultMessage({ message, onReuse, onSave, savedIds = [], savingId }) {
 
   if (message.pending) {
     return (
-      <div className="message message--result">
-        <span><Sparkles size={16} /></span>
-        <div className="generating-line"><i /><i /><i /> {message.text}</div>
+      <div className="quick-message quick-message--result">
+        <span className="quick-message__avatar"><Sparkles size={16} /></span>
+        <div className="quick-message__body">
+          <div className="quick-generating-line"><i /><i /><i /> {message.text}</div>
+        </div>
       </div>
     );
   }
   return (
-    <div className="message message--result">
-      <span><Sparkles size={16} /></span>
-      <div className="result-content">
-        <p>{message.text}</p>
-        {saved && <div className="result-save-banner"><Check size={14} /> 已保存到素材库</div>}
+    <div className="quick-message quick-message--result">
+      <span className="quick-message__avatar"><Sparkles size={16} /></span>
+      <div className="quick-result-card">
+        <p className="quick-result-card__headline">{message.text}</p>
+        {saved && <div className="quick-result-card__saved"><Check size={14} /> 已保存到素材库</div>}
         {items.length > 0 && (
-          <div className="result-media-wrap">
+          <div className="quick-result-media">
             {items.map((media) => media.type === "video"
               ? <video key={media.id || media.src} src={media.src} poster={media.poster} controls playsInline><track kind="captions" src="/media/demo-captions.vtt" srcLang="zh" label="中文" /></video>
               : media.type === "audio"
-                ? <div className="creation-audio-result" key={media.id || media.src}><span><AudioLines size={24} /></span><div><small>语音作品</small><strong>{media.title || "语音作品"}</strong><audio src={media.src} controls preload="metadata" /></div></div>
+                ? <div className="quick-result-audio" key={media.id || media.src}><span><AudioLines size={24} /></span><div><small>语音作品</small><strong>{media.title || "语音作品"}</strong><audio src={media.src} controls preload="metadata" /></div></div>
                 : <img key={media.id || media.src} src={media.src} alt={media.title || ""} />)}
-            {message.creationType !== "语音" && <span className="media-spec-badge">{message.ratio} · {message.resolution}{message.creationType === "视频" ? ` · ${message.duration}` : ""}</span>}
+            {message.creationType !== "语音" && <span className="quick-result-spec">{message.ratio} · {message.resolution}{message.creationType === "视频" ? ` · ${message.duration}` : ""}</span>}
           </div>
         )}
-        <div className="result-meta-grid">
+        {message.error && <div className="quick-result-error">生成失败：{message.text}</div>}
+        <div className="quick-result-meta">
           <span><small>模型</small><strong>{message.model}</strong></span>
           <span><small>类型</small><strong>{message.creationType}</strong></span>
-          <span><small>创建时间</small><strong>{message.createdAt}</strong></span>
+          {message.createdAt && <span><small>创建时间</small><strong>{message.createdAt}</strong></span>}
           <span><small>耗时</small><strong>{message.elapsed}</strong></span>
           <span><small>积分消耗</small><strong>{message.credits} 积分</strong></span>
         </div>
         {message.prompt && (
           <div
-            className={`result-prompt${promptExpanded ? " is-expanded" : ""}`}
+            className={`quick-result-prompt${promptExpanded ? " is-expanded" : ""}`}
             role="button"
             tabIndex={0}
             aria-expanded={promptExpanded}
@@ -440,7 +414,7 @@ function ResultMessage({ message, onReuse, onSave, savedIds = [], savingId }) {
             <p>{promptForDisplay(message.prompt) || message.prompt}</p>
           </div>
         )}
-        <div className="result-actions">
+        <div className="quick-result-actions">
           <button type="button" onClick={() => onReuse(message, "edit")}><Pencil size={13} /> 复用参数</button>
           <button type="button" onClick={() => onReuse(message, "regenerate")}><RefreshCw size={13} /> 再次生成</button>
           {primaryId && (
@@ -457,84 +431,6 @@ function ResultMessage({ message, onReuse, onSave, savedIds = [], savingId }) {
       </div>
     </div>
   );
-}
-
-const MAX_REFERENCE_ASSETS = 15;
-
-function UploadTile({ label, detail, material, onClick, onRemove, disabled = false }) {
-  const preview = material ? mediaUrl(material.poster || material.url) : "";
-  const isVideo = material?.type === "video";
-  const isAudio = material?.type === "audio";
-  return (
-    <div className={`creation-upload ${material ? "has-preview" : ""}`}>
-      <button type="button" onClick={onClick} disabled={disabled}>
-        {material
-          ? isAudio
-            ? <span className="creation-upload__audio"><AudioLines size={22} /><small>{material.name || "参考音频"}</small></span>
-            : isVideo && !material.poster
-            ? <video src={mediaUrl(material.url)} muted playsInline preload="metadata" aria-label={`${label}视频预览`} />
-            : <img src={preview} alt={`${label}预览`} />
-          : <><Plus size={24} /><span>{label}</span><small>{detail}</small></>}
-      </button>
-      {material && <span className="creation-upload__type">{isAudio ? <AudioLines size={10} /> : isVideo ? <Video size={10} /> : <Image size={10} />}</span>}
-      {material && <button className="creation-upload__remove" type="button" aria-label={`移除${label}`} onClick={onRemove} disabled={disabled}><X size={12} /></button>}
-    </div>
-  );
-}
-
-function SegmentedOptions({ options, value, onChange, formatter = (item) => item }) {
-  return <div className="creation-option-grid">{options.map((item) => <button type="button" className={value === item ? "active" : ""} key={item} onClick={() => onChange(item)}>{formatter(item)}{value === item && <Check size={11} />}</button>)}</div>;
-}
-
-function RatioOption({ ratio }) {
-  const [width = 1, height = 1] = ratio.split(":").map(Number);
-  const Icon = ratio === "自动" ? ScanLine : width === height ? Square : width > height ? RectangleHorizontal : RectangleVertical;
-  return <span className="ratio-option"><Icon size={12} /><small>{ratio}</small></span>;
-}
-
-function ParameterPanel({ generationType, ratio, setRatio, resolution, setResolution, duration, setDuration, quality, setQuality, durationOptions = videoDurations, resolutionOptions }) {
-  const resolutions = resolutionOptions || (generationType === "video" ? videoResolutions : ["1K", "2K", "4K"]);
-  return <div className={`creation-popover creation-parameter-popover is-${generationType}`}>
-    <section><label>比例</label><SegmentedOptions options={generationType === "video" ? videoRatios : imageRatios} value={ratio} onChange={setRatio} formatter={(item) => <RatioOption ratio={item} />} /></section>
-    <section><label>分辨率</label><SegmentedOptions options={resolutions} value={resolution} onChange={setResolution} /></section>
-    {generationType === "video" ? <section><label>时长</label><SegmentedOptions options={durationOptions} value={duration} onChange={setDuration} formatter={(item) => `${item}s`} /></section> : <section><label>画质</label><SegmentedOptions options={qualityLevels} value={quality} onChange={setQuality} /></section>}
-  </div>;
-}
-
-function AudioParameterPanel({ voices, formats, voiceId, setVoiceId, audioFormat, setAudioFormat, speed, setSpeed, minSpeed, maxSpeed }) {
-  const [voiceKeyword, setVoiceKeyword] = useState("");
-  const [voiceLanguageFilter, setVoiceLanguageFilter] = useState("全部");
-  const languages = [...new Set(voices.map(voiceLanguage))];
-  const normalizedKeyword = voiceKeyword.trim().toLowerCase();
-  const visibleVoices = voices.filter((voice) => {
-    const matchesLanguage = voiceLanguageFilter === "全部" || voiceLanguage(voice) === voiceLanguageFilter;
-    const matchesKeyword = !normalizedKeyword || `${voiceLabel(voice)} ${voiceIdOf(voice)}`.toLowerCase().includes(normalizedKeyword);
-    return matchesLanguage && matchesKeyword;
-  });
-  return <div className="creation-popover creation-parameter-popover is-audio">
-    <section className="creation-voice-section"><label><span>音色</span><small>共 {voices.length} 个</small></label><div className="creation-voice-tools"><input value={voiceKeyword} onChange={(event) => setVoiceKeyword(event.target.value)} placeholder="搜索音色名称或 Voice ID" /><select value={voiceLanguageFilter} onChange={(event) => setVoiceLanguageFilter(event.target.value)}><option value="全部">全部语言</option>{languages.map((language) => <option key={language} value={language}>{language}</option>)}</select></div><div className="creation-voice-grid">{visibleVoices.map((voice) => { const id = voiceIdOf(voice); return <button type="button" className={voiceId === id ? "active" : ""} key={id} onClick={() => setVoiceId(id)}><span>{voiceLabel(voice)}</span><small>{voiceLanguage(voice)} · {id}</small>{voiceId === id && <Check size={12} />}</button>; })}</div>{!visibleVoices.length && <div className="creation-voice-empty">没有匹配的音色</div>}</section>
-    <section><label>格式</label><SegmentedOptions options={formats} value={audioFormat} onChange={setAudioFormat} formatter={(item) => item.toUpperCase()} /></section>
-    <section className="creation-speed-control"><label><span>语速</span><b>{speed.toFixed(2)}x</b></label><input type="range" min={minSpeed} max={maxSpeed} step="0.05" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} /><div><small>{minSpeed}x</small><small>{maxSpeed}x</small></div></section>
-  </div>;
-}
-
-function CreationPresetCards({ generationType, onSelect }) {
-  return <div className="creation-preset-grid">{creationPresets[generationType].map((preset) => (
-    <button type="button" className="creation-preset-card" key={preset.id} onClick={() => onSelect(preset)}>
-      {generationType === "video" ? (
-        <span className="creation-preset-card__media"><video src={preset.video} poster={preset.poster} muted loop autoPlay playsInline preload="metadata" aria-hidden="true" tabIndex={-1} /></span>
-      ) : generationType === "audio" ? (
-        <span className="creation-preset-card__media"><span className="audio-preview"><AudioLines size={34} /><span /><span /><span /><span /></span></span>
-      ) : (
-        <span className="creation-preset-card__media is-image">
-          <img className="creation-preset-card__backdrop" src={preset.image} alt="" aria-hidden="true" />
-          <img className="creation-preset-card__subject" src={preset.image} alt={preset.title} />
-        </span>
-      )}
-      <span className="creation-preset-card__shade" />
-      <span className="creation-preset-card__content"><strong>{preset.title}</strong><em>{preset.description}</em></span>
-    </button>
-  ))}</div>;
 }
 
 const SESSION_DRAFT_KEY = "fastcreate.composer.drafts";
@@ -613,17 +509,39 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const [voiceId, setVoiceId] = useState("alloy");
   const [speed, setSpeed] = useState(1);
   const [audioFormat, setAudioFormat] = useState("mp3");
-  const [openPanel, setOpenPanel] = useState(null);
   const [referenceImages, setReferenceImages] = useState([]);
+  const [openPanel, setOpenPanel] = useState(null);
+  const [dropup, setDropup] = useState(false);
+
+  function togglePanel(panelName, event) {
+    if (openPanel === panelName) {
+      setOpenPanel(null);
+      return;
+    }
+    if (event?.currentTarget) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const estimatedHeight = panelName === "params" && generationType === "audio" ? 400 : 280;
+      const needDropup = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
+      setDropup(needDropup);
+    } else {
+      setDropup(false);
+    }
+    setOpenPanel(panelName);
+    setAssetPickerOpen(false);
+  }
   const [firstFrame, setFirstFrame] = useState(null);
   const [lastFrame, setLastFrame] = useState(null);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const [pendingAssets, setPendingAssets] = useState([]);
   const [sessionMenuId, setSessionMenuId] = useState(null);
   const [queuedPrompt, setQueuedPrompt] = useState(null);
+  const [editingSessionId, setEditingSessionId] = useState(null);
   const referenceInputRef = useRef(null);
   const firstFrameInputRef = useRef(null);
   const lastFrameInputRef = useRef(null);
+  const textareaRef = useRef(null);
   const generatingSessionRef = useRef(new Set());
   const regenerateRef = useRef(false);
   const sessionMenuRef = useRef(null);
@@ -631,9 +549,11 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const activeSessionIdRef = useRef(activeSessionId);
   const activeSession = sessions.find((item) => item.id === activeSessionId) || sessions[0];
   const sessionGenerating = isSessionGenerating(activeSession, generatingSessionIds);
+
   const selectedModel = useMemo(() => availableModels.find((item) => String(item.id) === String(model)) || availableModels[0], [availableModels, model]);
   const audioOptions = selectedModel?.audioOptions || {};
-  const voices = (audioOptions.voices?.length ? audioOptions.voices : [audioOptions.defaultVoice || "alloy"]).filter((item) => voiceIdOf(item));
+  const availableVoices = (audioOptions.voices?.length ? audioOptions.voices : [audioOptions.defaultVoice || "alloy"]).filter((item) => voiceIdOf(item));
+  const voices = availableVoices;
   const voiceIds = voices.map(voiceIdOf);
   const audioFormats = audioOptions.formats?.length ? audioOptions.formats : [audioOptions.defaultFormat || "mp3"];
   const minSpeed = Number(audioOptions.minSpeed ?? 0.25);
@@ -703,7 +623,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     if (!queuedPrompt || !sameId(activeSessionId, queuedPrompt.sessionId)) return;
     setPrompt(queuedPrompt.text);
     setQueuedPrompt(null);
-    window.setTimeout(() => document.querySelector(".creation-composer textarea")?.focus(), 0);
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
   }, [queuedPrompt, activeSessionId, setPrompt]);
   useEffect(() => {
     let cancelled = false;
@@ -762,7 +682,12 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   useEffect(() => {
     if (!openPanel) return undefined;
     const close = (event) => {
-      if (event.target.closest(".creation-control-wrap")) return;
+      if (
+        event.target.closest(".quick-config-group") ||
+        event.target.closest(".quick-prompt-wrap") ||
+        event.target.closest(".quick-popover") ||
+        event.target.closest(".select-menu")
+      ) return;
       setOpenPanel(null);
     };
     const onKey = (event) => {
@@ -958,7 +883,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
       setFirstFrame(null);
       setLastFrame(null);
     }
-    window.setTimeout(() => document.querySelector(".creation-composer textarea")?.focus(), 0);
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
   }
 
   function openAssetPicker() {
@@ -1289,95 +1214,552 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
       setRegenerateTick((tick) => tick + 1);
       return;
     }
-    window.setTimeout(() => document.querySelector(".creation-composer textarea")?.focus(), 0);
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
   }
 
-  return (
-    <div className="create-layout">
-      <aside className="session-sidebar">
-        <button className="new-session" onClick={createSessionLocal}><Plus size={16} /> 新建创作</button>
-        <span className="sidebar-label">会话历史</span>
-        {sessions.map((session) => (
-          <div className={`session-item ${session.id === activeSessionId ? "active" : ""} ${sessionMenuId === session.id ? "menu-open" : ""}`} key={session.id}>
-            <button type="button" className="session-open" onClick={() => { setSessionMenuId(null); switchSession(session); }}>
-              {session.generationType === "video" ? <Video size={15} /> : session.generationType === "audio" ? <AudioLines size={15} /> : <Image size={15} />}
-              <span>{session.title}<small>{isSessionGenerating(session, generatingSessionIds) ? "生成中" : session.updated}</small></span>
+  function beginRenameSession(session) {
+    setSessionMenuId(null);
+    setEditingSessionId(session.id);
+  }
+
+  function commitRenameSession(session, nextTitle) {
+    const title = String(nextTitle || "").trim().slice(0, 30) || "未命名创作";
+    setSessions((items) => items.map((item) => item.id === session.id ? { ...item, title } : item));
+    setEditingSessionId(null);
+  }
+
+  function promptPlaceholder() {
+    if (generationType === "video") {
+      return videoMode === "frames"
+        ? "可选：描述镜头运动与画面变化。不填则根据首帧自动生成。"
+        : "描述您想要生成的视频内容，例如，「一个孩子在公园里放风筝，金色阳光，镜头上移。」";
+    }
+    if (generationType === "audio") {
+      return "输入需要朗读的文本，例如，「欢迎使用同道智能语音创作平台。」";
+    }
+    return "描述您想生成的图片，例如，「夕阳映照在海面上，鲜艳的色彩与汹涌的波涛交相辉映。」";
+  }
+
+  function configLabel() {
+    if (generationType === "video") return `${resolution} · ${duration}s · ${ratio}`;
+    if (generationType === "audio") {
+      const voiceName = voiceLabel(voices.find((voice) => voiceIdOf(voice) === voiceId) || voiceId);
+      return `${voiceName} · ${speed.toFixed(2)}x · ${audioFormat.toUpperCase()}`;
+    }
+    return `${resolution} · ${quality} · ${ratio}`;
+  }
+
+  function refArt(ref) {
+    if (!ref) return "none";
+    const url = mediaUrl(ref.poster || ref.url);
+    if (!url) return "none";
+    return `url("${url}")`;
+  }
+
+  function inspirationArt(preset, index) {
+    if (preset.video) return `url("${preset.poster || preset.video}")`;
+    if (preset.image) return `url("${preset.image}")`;
+    if (preset.frames?.length) return `url("${mediaUrl(preset.frames[0].url)}")`;
+    // 语音模式的封面由 .inspiration-card.is-audio 自身的渐变 + WorkWaveform 接管，这里返回 null
+    if (generationType === "audio") return null;
+    return `url("/media/quick-create/image-product.jpg")`;
+  }
+
+  const presets = creationPresets[generationType] || [];
+  const paramButtonIcon = generationType === "audio" ? <AudioLines size={14} /> : <Maximize2 size={14} />;
+
+  function renderCreationPanel() {
+    return (
+      <section className="quick-creation-panel" aria-label="创作输入">
+        <input ref={referenceInputRef} aria-label="上传参考素材" className="visually-hidden" type="file"
+          accept={generationType === "video" && !imageOnlyRefs(selectedModel) ? `image/*,video/*${supportsAudioReference ? ",audio/*,.mp3,.wav,.m4a,.aac" : ""}` : "image/*"}
+          multiple
+          disabled={!supportsLibrary || sessionGenerating}
+          onChange={(event) => { addReferenceImages(event.target.files); event.target.value = ""; }} />
+        <input ref={firstFrameInputRef} aria-label="上传视频首帧" className="visually-hidden" type="file" accept="image/*"
+          disabled={!supportsFrames || sessionGenerating}
+          onChange={(event) => { setFrame(event.target.files?.[0], setFirstFrame); event.target.value = ""; }} />
+        <input ref={lastFrameInputRef} aria-label="上传视频尾帧" className="visually-hidden" type="file" accept="image/*"
+          disabled={!supportsFrames || sessionGenerating}
+          onChange={(event) => { setFrame(event.target.files?.[0], setLastFrame); event.target.value = ""; }} />
+        <div className="quick-panel-head">
+          <div className="creation-type-switch" role="group" aria-label="创作类型">
+            <button type="button" className={`creation-type-button ${generationType === "video" ? "active" : ""}`} aria-pressed={generationType === "video"} onClick={() => changeType("video")}>
+              <WorksTypeIcon type="video" /><span>视频</span>
             </button>
-            <div className="session-menu-wrap" ref={sessionMenuId === session.id ? sessionMenuRef : null}>
+            <button type="button" className={`creation-type-button ${generationType === "image" ? "active" : ""}`} aria-pressed={generationType === "image"} onClick={() => changeType("image")}>
+              <WorksTypeIcon type="image" /><span>图片</span>
+            </button>
+            <button type="button" className={`creation-type-button ${generationType === "audio" ? "active" : ""}`} aria-pressed={generationType === "audio"} onClick={() => changeType("audio")}>
+              <WorksTypeIcon type="audio" /><span>语音</span>
+            </button>
+          </div>
+          <span className="quick-draft-status">内容自动保存</span>
+        </div>
+
+        <div className="quick-reference-row">
+          <div className="quick-reference-list">
+            {generationType === "video" && videoMode === "frames" ? (
+              <>
+                {firstFrame && (
+                  <div className="quick-reference is-frame-first" style={{ "--reference-art": refArt(firstFrame) }}>
+                    <span>{firstFrame.name || "首帧"}</span>
+                    <button type="button" aria-label="移除首帧" onClick={() => setFirstFrame(null)}>×</button>
+                  </div>
+                )}
+                {!firstFrame && (
+                  <button type="button" className="quick-frame-slot" onClick={() => firstFrameInputRef.current?.click()}>
+                    <span aria-hidden="true">＋</span><strong>首帧</strong><small>起始画面</small>
+                  </button>
+                )}
+                <span className="quick-frame-link" aria-hidden="true">⇌</span>
+                {lastFrame && (
+                  <div className="quick-reference is-frame-last" style={{ "--reference-art": refArt(lastFrame) }}>
+                    <span>{lastFrame.name || "尾帧"}</span>
+                    <button type="button" aria-label="移除尾帧" onClick={() => setLastFrame(null)}>×</button>
+                  </div>
+                )}
+                {!lastFrame && (
+                  <button type="button" className="quick-frame-slot" onClick={() => lastFrameInputRef.current?.click()}>
+                    <span aria-hidden="true">＋</span><strong>尾帧</strong><small>结束画面</small>
+                  </button>
+                )}
+              </>
+            ) : supportsLibrary ? (
+              <>
+                {referenceImages.map((ref, index) => (
+                  <div key={ref.storageKey || ref.id || `${ref.url}-${index}`} className="quick-reference" style={{ "--reference-art": refArt(ref) }}>
+                    <span>{ref.type === "video" ? "视频" : ref.type === "audio" ? "音频" : "图片"}</span>
+                    <button type="button" aria-label={`删除参考素材 ${ref.name || `参考 ${index + 1}`}`} onClick={() => setReferenceImages((items) => items.filter((_, idx) => idx !== index))}>×</button>
+                  </div>
+                ))}
+                {referenceImages.length < MAX_REFERENCE_ASSETS && (
+                  <button type="button" className="quick-add-reference" onClick={() => referenceInputRef.current?.click()}>
+                    <span aria-hidden="true">＋</span>
+                    <strong>参考图片</strong>
+                    <small>{generationType === "video" ? (imageOnlyRefs(selectedModel) ? "图片" : supportsAudioReference ? `图片/视频/音频` : `图片/视频`) : "支持多选"}</small>
+                  </button>
+                )}
+              </>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="quick-prompt-wrap">
+          <textarea
+            ref={textareaRef}
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendPrompt(); } }}
+            placeholder={promptPlaceholder()}
+            maxLength={4096}
+          />
+          <div className="quick-prompt-meta">
+            <div className="quick-prompt-actions">
+              <button type="button" aria-label="引用素材" disabled={!supportsLibrary || sessionGenerating} onClick={openAssetPicker}>@</button>
+              <button type="button" aria-label="重置输入" onClick={resetComposer}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M4 4v6h6"/><path d="M5.5 15a8 8 0 1 0 1-8L4 10"/></svg>
+              </button>
+            </div>
+            <span className={prompt.length >= 3800 ? "is-warning" : ""}>{prompt.length} / 4096</span>
+          </div>
+        </div>
+        {submitError && (
+          <p className="create-submit-error">
+            {submitError}
+            {insufficientCredits && onNeedRecharge && (
+              <button type="button" className="creation-recharge-link" onClick={() => { setSubmitError(""); setInsufficientCredits(false); onNeedRecharge(); }}>去充值</button>
+            )}
+          </p>
+        )}
+        {!selectedModel && <p className="create-submit-error">{modelCatalogMessage({ loading: modelCatalogLoading, error: modelCatalogError, category: generationType })}</p>}
+
+        <div className="quick-config-row">
+          <div className="quick-config-group">
+            <div className={`custom-select quick-select ${dropup ? "dropup" : ""} ${openPanel === "model" ? "open" : ""}`}>
               <button
                 type="button"
-                className="session-menu-trigger"
-                aria-haspopup="menu"
-                aria-expanded={sessionMenuId === session.id}
-                aria-label={`会话操作：${session.title}`}
-                onClick={() => setSessionMenuId((id) => (id === session.id ? null : session.id))}
+                className="select-trigger"
+                aria-haspopup="listbox"
+                aria-expanded={openPanel === "model"}
+                aria-label="选择模型"
+                disabled={!availableModels.length}
+                onClick={(event) => togglePanel("model", event)}
               >
-                <MoreHorizontal size={15} />
+                {selectedModel?.logo ? (
+                  <img src={selectedModel.logo} alt="" style={{ width: 15, height: 15, borderRadius: 3 }} />
+                ) : (
+                  <Box size={15} />
+                )}
+                <span className="select-value">{selectedModel?.name || "选择模型"}</span>
+                <svg className="select-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                  <path d="m6 8 4 4 4-4" />
+                </svg>
               </button>
-              {sessionMenuId === session.id && (
-                <div className="session-menu" role="menu">
-                  <button type="button" role="menuitem" className="danger" onClick={() => { setSessionMenuId(null); requestDeleteSession(session); }}>
-                    <Trash2 size={14} /> 删除
-                  </button>
+              {openPanel === "model" && (
+                <div className="select-menu quick-model-menu" role="listbox" aria-label="可用模型">
+                  {availableModels.map((item) => {
+                    const selected = String(item.id) === String(selectedModel?.id);
+                    return (
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={selected}
+                        className={`select-option ${selected ? "selected" : ""}`}
+                        key={item.id}
+                        onClick={() => {
+                          setModel(String(item.id));
+                          setOpenPanel(null);
+                          setAssetPickerOpen(false);
+                        }}
+                      >
+                        <span>{item.name}</span>
+                        {selected && (
+                          <svg className="quick-option-check" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                            <path d="m5 10 3 3 7-7" />
+                          </svg>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
-          </div>
-        ))}
-      </aside>
-      <section className="create-main">
-        <CosmicBackdrop active={theme === "dark"} />
-        <div className={`conversation ${activeSession.messages.length ? "conversation--active" : ""}`}>
-          {!activeSession.messages.length ? <><GravityDots /><div className="create-welcome"><div className="create-welcome__title"><span>使用</span><span className="create-welcome__kind">{generationType === "video" ? <Video size={15} /> : generationType === "audio" ? <AudioLines size={15} /> : <Image size={15} />}{generationType === "video" ? "视频" : generationType === "audio" ? "语音" : "图片"}</span><span>开启今日创作</span></div><p>选择一个灵感场景，素材与提示词将自动带入输入框</p><div className="create-welcome__section-label">灵感场景</div><CreationPresetCards generationType={generationType} onSelect={applyPreset} /></div></> : <div className="message-list">{activeSession.messages.map((message, index) => message.type === "user" ? <div className="message message--user" key={`${activeSession.id}-${index}`}><span>你</span><p>{message.text}</p></div> : <ResultMessage key={`${activeSession.id}-${index}`} message={message} onReuse={reuseResult} onSave={saveResult} savedIds={savedCreationIds} savingId={savingId} />)}{sessionGenerating && !activeSession.messages.some((item) => item.pending) && <div className="message message--result"><span><Sparkles size={16} /></span><div className="generating-line"><i /><i /><i /> {generationType === "audio" ? "正在合成语音…" : "正在构思画面与光线…"}</div></div>}</div>}
-        </div>
-        <div className="composer-shell composer-shell--expanded">
-          <div className={`composer creation-composer ${referenceImages.length || firstFrame || lastFrame ? "has-material" : ""}`}>
-            <input ref={referenceInputRef} aria-label="上传参考素材" className="visually-hidden" type="file" accept={generationType === "video" && !imageOnlyRefs(selectedModel) ? `image/*,video/*${supportsAudioReference ? ",audio/*,.mp3,.wav,.m4a,.aac" : ""}` : "image/*"} multiple disabled={!supportsLibrary || sessionGenerating} onChange={(event) => { addReferenceImages(event.target.files); event.target.value = ""; }} />
-            <input ref={firstFrameInputRef} aria-label="上传视频首帧" className="visually-hidden" type="file" accept="image/*" disabled={!supportsFrames || sessionGenerating} onChange={(event) => { setFrame(event.target.files?.[0], setFirstFrame); event.target.value = ""; }} />
-            <input ref={lastFrameInputRef} aria-label="上传视频尾帧" className="visually-hidden" type="file" accept="image/*" disabled={!supportsFrames || sessionGenerating} onChange={(event) => { setFrame(event.target.files?.[0], setLastFrame); event.target.value = ""; }} />
-            <div className="composer-kind-tabs" role="tablist" aria-label="创作类型"><button role="tab" aria-selected={generationType === "video"} className={generationType === "video" ? "active" : ""} onClick={() => changeType("video")}><Video size={14} />视频</button><button role="tab" aria-selected={generationType === "image"} className={generationType === "image" ? "active" : ""} onClick={() => changeType("image")}><Image size={14} />图片</button><button role="tab" aria-selected={generationType === "audio"} className={generationType === "audio" ? "active" : ""} onClick={() => changeType("audio")}><AudioLines size={14} />语音</button></div>
-            {submitError && (
-              <p className="create-submit-error">
-                {submitError}
-                {insufficientCredits && onNeedRecharge && (
-                  <button type="button" className="creation-recharge-link" onClick={() => { setSubmitError(""); setInsufficientCredits(false); onNeedRecharge(); }}>去充值</button>
+
+            {showVideoModes && (
+              <div className={`custom-select quick-select quick-mode-select ${dropup ? "dropup" : ""} ${openPanel === "mode" ? "open" : ""}`}>
+                <button
+                  type="button"
+                  className="select-trigger"
+                  aria-haspopup="listbox"
+                  aria-expanded={openPanel === "mode"}
+                  onClick={(event) => togglePanel("mode", event)}
+                >
+                  <span className="quick-control-symbol">◇</span>
+                  <span className="select-value">{videoMode === "reference" ? "参考生成" : "首/尾帧"}</span>
+                  <svg className="select-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                    <path d="m6 8 4 4 4-4" />
+                  </svg>
+                </button>
+                {openPanel === "mode" && (
+                  <div className="select-menu quick-mode-menu" role="listbox" aria-label="生成模式">
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={videoMode === "reference"}
+                      className={`select-option quick-mode-option ${videoMode === "reference" ? "selected" : ""}`}
+                      onClick={() => {
+                        setVideoMode("reference");
+                        setFirstFrame(null);
+                        setLastFrame(null);
+                        setOpenPanel(null);
+                      }}
+                    >
+                      <span className="quick-mode-copy">
+                        <strong>参考生成</strong>
+                        <small>{imageOnlyRefs(selectedModel) ? "可用图片作为参考（不支持参考视频）" : "可用图片或视频作为参考"}</small>
+                      </span>
+                      {videoMode === "reference" && (
+                        <svg className="quick-option-check" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                          <path d="m5 10 3 3 7-7" />
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={videoMode === "frames"}
+                      className={`select-option quick-mode-option ${videoMode === "frames" ? "selected" : ""}`}
+                      disabled={!supportsFrames}
+                      onClick={() => {
+                        if (!supportsFrames) return;
+                        setVideoMode("frames");
+                        setReferenceImages([]);
+                        setOpenPanel(null);
+                      }}
+                    >
+                      <span className="quick-mode-copy">
+                        <strong>首/尾帧</strong>
+                        <small>{supportsFrames ? "控制视频起始与结束画面" : "当前模型不支持首尾帧"}</small>
+                      </span>
+                      {videoMode === "frames" && (
+                        <svg className="quick-option-check" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                          <path d="m5 10 3 3 7-7" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                 )}
-              </p>
+              </div>
             )}
-            {!selectedModel && <p className="create-submit-error">{modelCatalogMessage({ loading: modelCatalogLoading, error: modelCatalogError, category: generationType })}</p>}
-            <div className="creation-composer__body">
-              <div className={`creation-reference-slots ${videoMode === "frames" && generationType === "video" ? "is-frames" : ""}`}>
-                {generationType === "video" && videoMode === "frames" ? <><UploadTile label="首帧" detail="起始画面" material={firstFrame} disabled={sessionGenerating} onClick={() => firstFrameInputRef.current?.click()} onRemove={() => setFirstFrame(null)} /><ArrowLeftRight className="frame-bridge" size={15} /><UploadTile label="尾帧" detail="结束画面" material={lastFrame} disabled={sessionGenerating} onClick={() => lastFrameInputRef.current?.click()} onRemove={() => setLastFrame(null)} /></> : supportsLibrary ? <>{referenceImages.map((item, index) => <UploadTile key={item.storageKey || item.id || `${item.url}-${index}`} label={item.name || `参考 ${index + 1}`} material={item} disabled={sessionGenerating} onRemove={() => setReferenceImages((items) => items.filter((_, itemIndex) => itemIndex !== index))} />)}{referenceImages.length < MAX_REFERENCE_ASSETS && <UploadTile label="参考" detail={generationType === "video" ? (imageOnlyRefs(selectedModel) ? "图片" : supportsAudioReference ? `图片/视频/音频（最多${MAX_REFERENCE_ASSETS}个）` : `图片/视频（最多${MAX_REFERENCE_ASSETS}个）`) : `支持多选（最多${MAX_REFERENCE_ASSETS}个）`} disabled={sessionGenerating} onClick={() => referenceInputRef.current?.click()} />}</> : null}
-              </div>
-              <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendPrompt(); } }} placeholder={generationType === "video" ? (videoMode === "frames" ? "可选：描述镜头运动与画面变化。不填则根据首帧自动生成。" : "描述您想要生成的视频内容，例如，“一个孩子在公园里放风筝，金色阳光，镜头上移。”") : generationType === "audio" ? "输入需要朗读的文本，例如，“欢迎使用同道智能语音创作平台。”" : "描述您想生成的图片，例如，“夕阳映照在海面上，鲜艳的色彩与汹涌的波涛交相辉映。”"} maxLength={4096} />
-              <span className={`creation-character-count${prompt.length >= 3800 ? " is-warning" : ""}`}>{prompt.length} / 4096{prompt.length >= 3800 ? " · 接近字数上限，请精简" : ""}</span>
-            </div>
-            <footer className="creation-composer__footer">
-              <div className="creation-controls">
-                <div className="creation-control-wrap">
-                  <button type="button" className="creation-pill creation-model-pill" aria-haspopup="listbox" aria-expanded={openPanel === "model"} aria-label="选择模型" disabled={!availableModels.length} onClick={() => { setOpenPanel(openPanel === "model" ? null : "model"); setAssetPickerOpen(false); }}>
-                    {selectedModel?.logo ? <img src={selectedModel.logo} alt="" /> : <Box size={14} />}<span>{selectedModel?.name || "选择模型"}</span><ChevronDown size={13} />
-                  </button>
-                  {openPanel === "model" && <div className="creation-popover creation-model-popover" role="listbox" aria-label="可用模型">{availableModels.map((item) => {
-                    const selected = String(item.id) === String(selectedModel?.id);
-                    return <button type="button" role="option" aria-selected={selected} className={selected ? "active" : ""} key={item.id} onClick={() => { setModel(String(item.id)); setOpenPanel(null); setAssetPickerOpen(false); }}>{item.logo ? <img src={item.logo} alt="" /> : <Box size={18} />}<span><strong>{item.name}</strong><small>{item.description || "适用于当前创作类型"}</small><em><i>{item.provider || "模型服务"}</i>{item.badge && <i>{item.badge}</i>}</em></span>{selected && <Check size={14} />}</button>;
-                  })}</div>}
+
+            <div className={`custom-select quick-select quick-params-select ${generationType === "audio" ? "quick-audio-select" : ""} ${dropup ? "dropup" : ""} ${openPanel === "params" ? "open" : ""}`}>
+              <button
+                type="button"
+                className="select-trigger"
+                aria-haspopup="dialog"
+                aria-expanded={openPanel === "params"}
+                onClick={(event) => togglePanel("params", event)}
+              >
+                {generationType === "audio" && <AudioLines size={15} />}
+                <span className="select-value">{configLabel()}</span>
+                <svg className="select-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                  <path d="m6 8 4 4 4-4" />
+                </svg>
+              </button>
+              {openPanel === "params" && generationType !== "audio" && (
+                <div className="select-menu quick-parameter-menu" role="dialog" aria-label="参数设置">
+                  <section>
+                    <h3>比例</h3>
+                    <div className="quick-ratio-grid">
+                      {(generationType === "video" ? videoRatios : imageRatios).map((r) => {
+                        const selected = ratio === r;
+                        return (
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={selected}
+                            className={`quick-param-option ${selected ? "selected" : ""}`}
+                            key={r}
+                            onClick={() => setRatio(r)}
+                          >
+                            <span className="quick-ratio-icon" />
+                            <span>{r}</span>
+                            {selected && (
+                              <svg className="quick-option-check" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                                <path d="m5 10 3 3 7-7" />
+                              </svg>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                  <section>
+                    <h3>分辨率</h3>
+                    <div className="quick-resolution-grid">
+                      {(generationType === "video" ? videoResolutionsFor(selectedModel) : ["1K", "2K", "4K"]).map((res) => {
+                        const selected = resolution === res;
+                        return (
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={selected}
+                            className={`quick-param-option ${selected ? "selected" : ""}`}
+                            key={res}
+                            onClick={() => setResolution(res)}
+                          >
+                            <span>{res}</span>
+                            {selected && (
+                              <svg className="quick-option-check" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                                <path d="m5 10 3 3 7-7" />
+                              </svg>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                  <section>
+                    <h3>{generationType === "video" ? "时长" : "画质"}</h3>
+                    <div className="quick-duration-grid">
+                      {(generationType === "video" ? durationOptionsFor(selectedModel) : qualityLevels).map((opt) => {
+                        const selected = generationType === "video" ? duration === opt : quality === opt;
+                        return (
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={selected}
+                            className={`quick-param-option ${selected ? "selected" : ""}`}
+                            key={String(opt)}
+                            onClick={() => (generationType === "video" ? setDuration(opt) : setQuality(opt))}
+                          >
+                            <span>{generationType === "video" ? `${opt}s` : opt}</span>
+                            {selected && (
+                              <svg className="quick-option-check" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                                <path d="m5 10 3 3 7-7" />
+                              </svg>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
                 </div>
-                {showVideoModes && <div className="creation-control-wrap"><button type="button" className="creation-pill" aria-expanded={openPanel === "mode"} onClick={() => setOpenPanel(openPanel === "mode" ? null : "mode")}><Film size={14} />{videoMode === "reference" ? "参考生成" : "首/尾帧"}<ChevronDown size={13} /></button>{openPanel === "mode" && <div className="creation-popover creation-mode-popover"><button className={videoMode === "reference" ? "active" : ""} onClick={() => { setVideoMode("reference"); setFirstFrame(null); setLastFrame(null); setOpenPanel(null); }}><Images size={14} /><span><strong>参考生成</strong><small>{imageOnlyRefs(selectedModel) ? "可用图片作为参考（不支持参考视频）" : "可用图片或视频作为参考"}</small></span>{videoMode === "reference" && <Check size={14} />}</button><button className={videoMode === "frames" ? "active" : ""} disabled={!supportsFrames} onClick={() => { if (!supportsFrames) return; setVideoMode("frames"); setReferenceImages([]); setOpenPanel(null); }}><Film size={14} /><span><strong>首/尾帧</strong><small>{supportsFrames ? "控制视频起始与结束画面" : "当前模型不支持首尾帧"}</small></span>{videoMode === "frames" && <Check size={14} />}</button></div>}</div>}
-                <div className="creation-control-wrap"><button type="button" className={`creation-pill creation-spec-pill ${generationType === "audio" ? "is-audio" : ""}`} aria-expanded={openPanel === "params"} onClick={() => setOpenPanel(openPanel === "params" ? null : "params")}>{generationType === "audio" ? <AudioLines size={14} /> : <Maximize2 size={14} />}<span>{generationType === "video" ? `${resolution} · ${duration}s · ${ratio}` : generationType === "audio" ? `${voiceLabel(voices.find((voice) => voiceIdOf(voice) === voiceId) || voiceId)} · ${speed.toFixed(2)}x · ${audioFormat.toUpperCase()}` : `${resolution} · ${quality} · ${ratio}`}</span><ChevronDown size={13} /></button>{openPanel === "params" && (generationType === "audio" ? <AudioParameterPanel voices={voices} formats={audioFormats} voiceId={voiceId} setVoiceId={setVoiceId} audioFormat={audioFormat} setAudioFormat={setAudioFormat} speed={speed} setSpeed={setSpeed} minSpeed={minSpeed} maxSpeed={maxSpeed} /> : <ParameterPanel generationType={generationType} ratio={ratio} setRatio={setRatio} resolution={resolution} setResolution={setResolution} duration={duration} setDuration={setDuration} quality={quality} setQuality={setQuality} durationOptions={durationOptionsFor(selectedModel)} resolutionOptions={generationType === "video" ? videoResolutionsFor(selectedModel) : ["1K", "2K", "4K"]} />)}</div>
-                {generationType !== "audio" && <button type="button" className="creation-icon-action" title={sessionGenerating ? "生成中不可变更引用" : supportsLibrary ? (generationType === "video" ? (videoMode === "frames" ? "从素材库引用首尾帧图片" : "从素材库引用图片或视频") : "从素材库引用") : (generationType === "video" && videoMode === "frames" ? "当前模型不支持首尾帧" : "当前模型不支持参考素材")} aria-label={videoMode === "frames" && generationType === "video" ? "从素材库引用首尾帧" : "从素材库引用素材"} disabled={!supportsLibrary || sessionGenerating} onClick={() => { if (supportsLibrary) openAssetPicker(); }}><AtSign size={16} /></button>}
-                <button type="button" className="creation-icon-action" title="重置输入" aria-label="重置输入内容与参数" onClick={resetComposer}><RotateCcw size={15} /></button>
-              </div>
-              <div className="creation-submit-group">
-                <div className="creation-control-wrap"><button type="button" className="creation-copy-button" aria-label={`副本数 ${copiesLimited ? 1 : copies}`} aria-expanded={openPanel === "copies"} disabled={copiesLimited} title={copiesLimited ? "当前模型仅支持 1 份" : undefined} onClick={() => { if (!copiesLimited) setOpenPanel(openPanel === "copies" ? null : "copies"); }}><Layers3 size={15} /><span>{copiesLimited ? 1 : copies}</span></button>{!copiesLimited && openPanel === "copies" && <div className="creation-popover creation-copy-popover">{[1, 2, 3, 4].map((item) => <button key={item} className={copies === item ? "active" : ""} onClick={() => { setCopies(item); setOpenPanel(null); }}>{item}{copies === item && <Check size={13} />}</button>)}</div>}</div>
-                <span className={`creation-cost${creditShortage ? " is-insufficient" : ""}`} title={selectedModel ? "根据模型售价、参数与副本数计算" : "暂无可用模型"}><Coins size={15} /><b>{selectedModel ? `消耗 ${creditCost} 积分` : "--"}</b></span>
-                {creditShortage && onNeedRecharge && (
-                  <button type="button" className="creation-recharge-link" onClick={onNeedRecharge}>积分不足 · 去充值</button>
-                )}
-                <button className="creation-submit" aria-label="开始创作" onClick={sendPrompt} disabled={!canSubmit}><Sparkles size={16} />{sessionGenerating ? "生成中" : "创作"}</button>
-              </div>
-            </footer>
+              )}
+              {openPanel === "params" && generationType === "audio" && (
+                <QuickAudioPopover
+                  voices={voices}
+                  formats={audioFormats}
+                  voiceId={voiceId}
+                  setVoiceId={setVoiceId}
+                  audioFormat={audioFormat}
+                  setAudioFormat={setAudioFormat}
+                  speed={speed}
+                  setSpeed={setSpeed}
+                  minSpeed={minSpeed}
+                  maxSpeed={maxSpeed}
+                />
+              )}
+            </div>
           </div>
+
+          <div className="quick-submit-group">
+            {!copiesLimited && (
+              <div className="quick-quantity">
+                <button type="button" onClick={() => setCopies((c) => Math.max(1, c - 1))} aria-label="减少生成数量">−</button>
+                <span>生成 {copies} 个</span>
+                <button type="button" onClick={() => setCopies((c) => Math.min(4, c + 1))} aria-label="增加生成数量">＋</button>
+              </div>
+            )}
+            <span className={`quick-points ${creditShortage ? "is-insufficient" : ""}`} title={selectedModel ? "根据模型售价、参数与副本数计算" : "暂无可用模型"}>
+              ✦ {selectedModel ? `${creditCost} 积分` : "--"}
+            </span>
+            {creditShortage && onNeedRecharge && (
+              <button type="button" className="creation-recharge-link" onClick={onNeedRecharge}>积分不足 · 去充值</button>
+            )}
+            <button type="button" className="quick-create-button" aria-label="开始创作" onClick={sendPrompt} disabled={!canSubmit}>
+              <Sparkles size={15} />
+              {sessionGenerating ? "生成中" : "创作"}
+            </button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <div className={`creator-page ${sessions.length > 0 ? "has-conversations" : "no-conversations"}`}>
+      {sessions.length > 0 && (
+        <aside className="conversation-rail" aria-label="创作会话">
+        <button className="new-button" type="button" onClick={createSessionLocal}>
+          <span aria-hidden="true">＋</span>
+          <span>新建创作</span>
+        </button>
+        <div className="rail-label">
+          <span>会话历史</span>
+          <span>{sessions.length}</span>
+        </div>
+        <div className="conversation-list">
+          {sessions.map((session) => {
+            const editing = editingSessionId === session.id;
+            const active = session.id === activeSessionId;
+            const menuOpen = sessionMenuId === session.id;
+            const busy = isSessionGenerating(session, generatingSessionIds);
+            return (
+              <article
+                key={session.id}
+                className={`conversation ${active ? "active" : ""} ${editing ? "is-editing" : ""} ${menuOpen ? "menu-open" : ""} ${busy ? "is-busy" : ""}`}
+                tabIndex={0} role="button"
+                aria-current={active ? "true" : "false"}
+                onClick={() => { setSessionMenuId(null); switchSession(session); }}
+              >
+                <span className="conversation-type" aria-hidden="true"><WorksTypeIcon type={session.generationType} /></span>
+                <span className="conversation-copy">
+                  {editing
+                    ? <input className="conversation-name-input" autoFocus maxLength={30} defaultValue={session.title}
+                        onBlur={(event) => commitRenameSession(session, event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") event.currentTarget.blur();
+                          if (event.key === "Escape") { event.currentTarget.blur(); setEditingSessionId(null); }
+                        }} />
+                    : <strong title={session.title}>{session.title}</strong>}
+                  <time>{busy ? "生成中…" : session.updated}</time>
+                </span>
+                <button className="conversation-more" type="button"
+                  aria-label={`${session.title} 的更多操作`}
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  onClick={(event) => { event.stopPropagation(); setSessionMenuId(menuOpen ? null : session.id); }}
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
+                </button>
+                {menuOpen && (
+                  <div className="quick-session-menu" role="menu" ref={sessionMenuRef} onClick={(event) => event.stopPropagation()}>
+                    <button type="button" role="menuitem" onClick={() => beginRenameSession(session)}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m4 20 4.3-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20Z"/><path d="m13.8 7.5 3 3"/></svg>
+                      <span>重命名</span>
+                    </button>
+                    <button type="button" role="menuitem" className="danger" onClick={() => { setSessionMenuId(null); requestDeleteSession(session); }}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13"/><path d="M10 11v5M14 11v5"/></svg>
+                      <span>删除会话</span>
+                    </button>
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      </aside>
+      )}
+      <section className={`creator-workspace ${activeSession.messages.length ? "has-history" : ""}`}>
+        <div className={`quick-content ${activeSession.messages.length ? "has-history" : ""}`}>
+          {activeSession.messages.length > 0 && (
+            <section className="quick-conversation" aria-label="会话消息">
+              <div className="quick-message-list">
+                {activeSession.messages.map((message, index) => message.type === "user"
+                  ? <div className="quick-message quick-message--user" key={`${activeSession.id}-${index}`}>
+                      <span className="quick-message__avatar">你</span>
+                      <div className="quick-message__bubble"><p>{message.text}</p></div>
+                    </div>
+                  : <ResultMessage
+                      key={`${activeSession.id}-${index}`}
+                      message={message}
+                      onReuse={reuseResult}
+                      onSave={saveResult}
+                      savedIds={savedCreationIds}
+                      savingId={savingId}
+                    />)}
+                {sessionGenerating && !activeSession.messages.some((item) => item.pending) && (
+                  <div className="quick-message quick-message--result">
+                    <span className="quick-message__avatar"><Sparkles size={16} /></span>
+                    <div className="quick-message__body">
+                      <div className="quick-generating-line"><i /><i /><i /> {generationType === "audio" ? "正在合成语音…" : "正在构思画面与光线…"}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {!activeSession.messages.length && (
+            <header className="quick-heading">
+              <h1>今天想创作什么？</h1>
+              <p>输入创意描述，或选择下方灵感场景快速开始创作</p>
+            </header>
+          )}
+
+          {renderCreationPanel()}
+
+          {!activeSession.messages.length && (
+            <section className="quick-inspiration">
+              <div className="quick-section-head">
+                <div>
+                  <h2>灵感场景</h2>
+                  <p>选择一个灵感场景，素材与提示词将自动带入输入框</p>
+                </div>
+              </div>
+              <div className="inspiration-grid">
+                {presets.map((preset, index) => {
+                  const isAudio = generationType === "audio";
+                  const art = isAudio ? undefined : inspirationArt(preset, index);
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className={`inspiration-card${isAudio ? " is-audio" : ""}`}
+                      style={art ? { "--art": art } : undefined}
+                      onClick={() => applyPreset(preset)}
+                    >
+                      {isAudio && <span className="inspiration-waveform"><WorkWaveform /></span>}
+                      <span className="inspiration-apply">应用场景</span>
+                      <span className="card-copy"><strong>{preset.title}</strong><span>{preset.description}</span></span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
         </div>
       </section>
       {assetPickerOpen && supportsLibrary && (

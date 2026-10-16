@@ -1,5 +1,5 @@
-import { AudioLines, CalendarDays, Check, Copy, Download, Expand, FolderInput, Grid3X3, Image, List, Play, Search, SlidersHorizontal, Sparkles, Trash2, Video, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { CalendarDays, Check, Copy, Download, FolderInput, Grid3X3, Image, List, Search, Sparkles, Trash2, X } from "lucide-react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteCreation, fetchCreations, saveCreationToAsset } from "../api/creations.js";
 import { creationTitleForDisplay, promptForDisplay } from "../lib/createFlow.js";
@@ -9,6 +9,7 @@ import { formatDateTime, MEDIA_THUMB_WIDTH, mediaUrl } from "../lib/media.js";
 import { zipStore } from "../lib/zipStore.js";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { AudioPreview, WorkWaveform } from "./AudioPreview.jsx";
+import { WorksTypeIcon } from "./WorksTypeIcon.jsx";
 
 const TIME_RANGES = [
   { id: "all", label: "全部时间" },
@@ -24,22 +25,63 @@ const PROJECT_FILTERS = [
 ];
 
 const TYPE_LABELS = { video: "视频", image: "图片", audio: "语音" };
+const PROJECT_LABELS = { quick: "快速创作", drama: "短剧创作" };
 
 function typeLabel(type) {
   return TYPE_LABELS[type] || "作品";
 }
 
+function projectLabel(item) {
+  return PROJECT_LABELS[item.projectKind] || item.projectName || "未归入项目";
+}
+
+function WorkPlayIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="m9 7 8 5-8 5V7Z" />
+    </svg>
+  );
+}
+
+function WorkExpandIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" />
+    </svg>
+  );
+}
+
+function WorkAudioIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z" />
+      <path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3M8 22h8" />
+    </svg>
+  );
+}
+
+function WorkGridIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <rect x="4" y="4" width="6" height="6" rx="1" />
+      <rect x="14" y="4" width="6" height="6" rx="1" />
+      <rect x="4" y="14" width="6" height="6" rx="1" />
+      <rect x="14" y="14" width="6" height="6" rx="1" />
+    </svg>
+  );
+}
+
 function durationSecondsOf(item) {
   const rawValue = item?.durationSec ?? item?.duration;
   const parsedValue = Number(rawValue);
-  if (Number.isFinite(parsedValue) && parsedValue >= 0) return parsedValue;
+  if (Number.isFinite(parsedValue) && parsedValue > 0) return parsedValue;
   const matchedValue = Number(String(rawValue || "").match(/[\d.]+/)?.[0]);
   return Number.isFinite(matchedValue) && matchedValue >= 0 ? matchedValue : null;
 }
 
 function formatPlaybackDuration(seconds) {
   const totalSeconds = Number(seconds);
-  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return "—";
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return "—";
   const wholeSeconds = Math.floor(totalSeconds);
   return `${Math.floor(wholeSeconds / 60)}:${String(wholeSeconds % 60).padStart(2, "0")}`;
 }
@@ -48,6 +90,51 @@ function formatVideoDuration(item) {
   const seconds = durationSecondsOf(item);
   return seconds == null ? "—" : `${seconds}秒`;
 }
+
+const AUDIO_MIME_FORMATS = {
+  "audio/mpeg": "MP3",
+  "audio/wav": "WAV",
+  "audio/x-wav": "WAV",
+  "audio/mp4": "M4A",
+  "audio/aac": "AAC",
+  "audio/flac": "FLAC",
+  "audio/ogg": "OGG",
+  "audio/opus": "OPUS",
+  "audio/L16": "PCM",
+};
+
+function actualExtensionOf(item) {
+  for (const rawSource of [item?.storageKey, item?.src, item?.url]) {
+    if (!rawSource) continue;
+    let source = String(rawSource);
+    try {
+      source = decodeURIComponent(source);
+    } catch {
+    }
+    const keyMatch = source.match(/[?&]key=([^&]+)/);
+    const mediaPath = (keyMatch ? keyMatch[1] : source).split(/[?#]/)[0];
+    const extension = mediaPath.match(/\.([a-z0-9]{2,5})$/i)?.[1];
+    if (extension) return extension.toLowerCase();
+  }
+  return "";
+}
+
+function audioFormatOf(item) {
+  const explicitFormat = String(item?.format || item?.audioFormat || "").trim();
+  if (explicitFormat && explicitFormat.toLowerCase() !== "音频") {
+    return AUDIO_MIME_FORMATS[explicitFormat.toLowerCase()] || explicitFormat.toUpperCase();
+  }
+  const mimeType = AUDIO_MIME_FORMATS[String(item?.mimeType || item?.mime_type || "").toLowerCase()];
+  if (mimeType) return mimeType;
+  const extension = actualExtensionOf(item);
+  return AUDIO_MIME_FORMATS[extension] || extension.toUpperCase();
+}
+
+const AudioSpecText = memo(function AudioSpecText({ item }) {
+  // 后端若已返回 durationSec 就直接用；不再前端创建 <audio> 加载 metadata，避免切分类时大量并行音频下载。
+  const seconds = durationSecondsOf(item);
+  return <>{audioFormatOf(item) || "音频"} · {formatPlaybackDuration(seconds)}</>;
+});
 
 function createdFrom(range) {
   if (!range || range === "all") return undefined;
@@ -109,7 +196,9 @@ export function MyCreations({ onReuse }) {
       from: createdFrom(timeRange),
     }),
     placeholderData: keepPreviousData,
-    refetchInterval: 10000,
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    refetchInterval: false,
   });
   const deleteMutation = useMutation({
     mutationFn: deleteCreation,
@@ -266,9 +355,9 @@ export function MyCreations({ onReuse }) {
 
       <div className="works-controls">
         <div className="works-type-tabs" role="tablist" aria-label="作品类型">
-          {[["all", "全部", SlidersHorizontal], ["video", "视频", Video], ["image", "图片", Image], ["audio", "语音", AudioLines]].map(([value, label, Icon]) => (
+          {[["all", "全部"], ["video", "视频"], ["image", "图片"], ["audio", "语音"]].map(([value, label]) => (
             <button key={value} type="button" role="tab" aria-selected={filter === value} className={`works-type-tab${filter === value ? " is-active" : ""}`} onClick={() => setFilter(value)}>
-              <Icon size={16} aria-hidden="true" />
+              <WorksTypeIcon type={value} />
               <span>{label}</span>
             </button>
           ))}
@@ -337,7 +426,7 @@ export function MyCreations({ onReuse }) {
             const promptText = promptForDisplay(item.prompt) || "—";
             const isPicked = picked.includes(item.id);
             const specText = item.type === "audio"
-              ? `${item.format || "音频"} · ${formatPlaybackDuration(durationSecondsOf(item))}`
+              ? <AudioSpecText item={item} />
               : `${item.ratio || "—"} · ${item.resolution || "—"}${item.type === "video" ? ` · ${formatVideoDuration(item)}` : ""}`;
             return view === "grid" ? (
               <article key={item.id} className={`work-card${isPicked ? " is-selected" : ""}`} data-work-item={item.id}>
@@ -350,7 +439,7 @@ export function MyCreations({ onReuse }) {
                   <span className="work-spec">{specText}</span>
                   <span className="work-kind">{typeLabel(item.type)}</span>
                   <button type="button" className="work-preview-button" onClick={() => setSelected(item)} aria-label={`预览${title}`}>
-                    {item.type === "image" ? <Expand size={18} /> : <Play size={18} fill="currentColor" />}
+                    {item.type === "image" ? <WorkExpandIcon /> : <WorkPlayIcon />}
                   </button>
                 </div>
                 <div className="work-card-body">
@@ -374,9 +463,10 @@ export function MyCreations({ onReuse }) {
                     <input type="checkbox" checked={isPicked} onChange={() => togglePicked(item.id)} aria-label={`选择${title}`} />
                     <span aria-hidden="true"><Check size={13} strokeWidth={2.4} /></span>
                   </label>
+                  <span className="work-spec">{specText}</span>
                   <span className="work-kind">{typeLabel(item.type)}</span>
                   <button type="button" className="work-preview-button" onClick={() => setSelected(item)} aria-label={`预览${title}`}>
-                    {item.type === "image" ? <Expand size={18} /> : <Play size={18} fill="currentColor" />}
+                    {item.type === "image" ? <WorkExpandIcon /> : <WorkPlayIcon />}
                   </button>
                 </div>
                 <div className="work-list-copy">
@@ -392,7 +482,7 @@ export function MyCreations({ onReuse }) {
                   </div>
                   <p>{promptText}</p>
                   <footer>
-                    <span>未归入项目</span>
+                    <span>{projectLabel(item)}</span>
                     <span>{item.createdAtLabel} · 生成耗时 {item.elapsed}</span>
                   </footer>
                 </div>
@@ -416,7 +506,7 @@ export function MyCreations({ onReuse }) {
                   ? <AudioPreview
                       src={selected.src}
                       title={creationTitleForDisplay(selected)}
-                      format={selected.format}
+                      format={audioFormatOf(selected)}
                       duration={durationSecondsOf(selected)}
                     />
                   : <figure className="work-preview-art">
@@ -425,7 +515,6 @@ export function MyCreations({ onReuse }) {
                         alt={creationTitleForDisplay(selected)}
                         onClick={() => setLightbox({ src: selected.src, title: creationTitleForDisplay(selected) })}
                       />
-                      <button type="button" aria-label="查看大图" onClick={() => setLightbox({ src: selected.src, title: creationTitleForDisplay(selected) })}><Expand size={28} /></button>
                     </figure>}
             </div>
             <footer>
