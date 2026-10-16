@@ -15,6 +15,7 @@ import {
 } from "../../api/drama.js";
 import { formatDateTime, mediaUrl } from "../../lib/media.js";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
+import { DemoSelect } from "../DemoSelect.jsx";
 import { DramaStylePicker } from "./DramaStylePicker.jsx";
 import { DEFAULT_DRAMA_STYLE_KEY } from "./dramaStyles.js";
 import { DRAMA_ASPECT_RATIOS, preferredResolution, resolutionOptionsFor } from "./dramaSpecs.js";
@@ -424,102 +425,100 @@ export function DramaHome() {
             </label>
             <label>
               故事简介
+              <small className="drama-field-count">{form.synopsis.length} / 200</small>
               <textarea
                 maxLength={200}
                 value={form.synopsis}
                 onChange={(event) => setForm({ ...form, synopsis: event.target.value })}
                 placeholder="用一两句话描述核心人物与冲突（可选，最多 200 字）"
               />
-              <small className="drama-field-count">{form.synopsis.length} / 200</small>
             </label>
             <div>
               <label>
                 文本模型
-                <select
+                <DemoSelect
+                  ariaLabel="文本模型"
                   value={form.textModelId}
-                  onChange={(event) => setForm({ ...form, textModelId: event.target.value })}
+                  onChange={(value) => setForm({ ...form, textModelId: value })}
                   disabled={textModelsQuery.isLoading || textModelsQuery.isError}
-                  required
-                >
-                  {textModelsQuery.isLoading && <option value="">正在加载文本模型…</option>}
-                  {textModelsQuery.isError && <option value="">文本模型加载失败</option>}
-                  {!textModelsQuery.isLoading && !textModelsQuery.isError && textModels.length === 0 && (
-                    <option value="">暂无已启用文本模型</option>
-                  )}
-                  {textModels.map((item) => (
-                    <option key={item.id} value={item.id}>{item.name}{item.provider ? ` · ${item.provider}` : ""}</option>
-                  ))}
-                </select>
+                  options={[
+                    ...(textModelsQuery.isLoading ? [{ value: "", label: "正在加载文本模型…", disabled: true }] : []),
+                    ...(textModelsQuery.isError ? [{ value: "", label: "文本模型加载失败", disabled: true }] : []),
+                    ...(!textModelsQuery.isLoading && !textModelsQuery.isError && textModels.length === 0
+                      ? [{ value: "", label: "暂无已启用文本模型", disabled: true }]
+                      : []),
+                    ...textModels.map((item) => ({
+                      value: String(item.id),
+                      label: `${item.name}${item.provider ? ` · ${item.provider}` : ""}`,
+                    })),
+                  ]}
+                />
               </label>
               <label>
                 图片模型
-                <select
+                <DemoSelect
                   aria-label="图片模型"
                   value={form.imageModelId}
-                  onChange={(event) => setForm({ ...form, imageModelId: event.target.value })}
+                  onChange={(value) => setForm({ ...form, imageModelId: value })}
                   disabled={imageModelsQuery.isLoading || imageModelsQuery.isError}
-                  required={imageModels.length > 0}
-                >
-                  {imageModelsQuery.isLoading && <option value="">正在加载图片模型…</option>}
-                  {imageModelsQuery.isError && <option value="">图片模型加载失败</option>}
-                  {!imageModelsQuery.isLoading && !imageModelsQuery.isError && imageModels.length === 0 && (
-                    <option value="">暂无已启用图片模型</option>
-                  )}
-                  {imageModels.map((item) => (
-                    <option key={item.id} value={item.id}>{item.name}{item.provider ? ` · ${item.provider}` : ""}</option>
-                  ))}
-                </select>
+                  options={[
+                    ...(imageModelsQuery.isLoading ? [{ value: "", label: "正在加载图片模型…", disabled: true }] : []),
+                    ...(imageModelsQuery.isError ? [{ value: "", label: "图片模型加载失败", disabled: true }] : []),
+                    ...(!imageModelsQuery.isLoading && !imageModelsQuery.isError && imageModels.length === 0
+                      ? [{ value: "", label: "暂无已启用图片模型", disabled: true }]
+                      : []),
+                    ...imageModels.map((item) => ({
+                      value: String(item.id),
+                      label: `${item.name}${item.provider ? ` · ${item.provider}` : ""}`,
+                    })),
+                  ]}
+                />
               </label>
             </div>
             <div className="drama-create-form__full">
               <label>
                 视频模型
-                <select
+                <DemoSelect
                   aria-label="视频模型"
                   value={form.videoModelId}
-                  onChange={(event) => setForm({ ...form, videoModelId: event.target.value })}
+                  onChange={(value) => setForm({ ...form, videoModelId: value })}
                   disabled={videoModelsQuery.isLoading || videoModelsQuery.isError}
-                  required={videoModels.length > 0}
-                >
-                  {videoModelsQuery.isLoading && <option value="">正在加载视频模型…</option>}
-                  {videoModelsQuery.isError && <option value="">视频模型加载失败</option>}
-                  {!videoModelsQuery.isLoading && !videoModelsQuery.isError && videoModels.length === 0 && (
-                    <option value="">暂无已启用视频模型</option>
-                  )}
-                  {videoModels.map((item) => (
-                    <option key={item.id} value={item.id}>{item.name}{item.provider ? ` · ${item.provider}` : ""}</option>
-                  ))}
-                </select>
+                  options={[
+                    ...(videoModelsQuery.isLoading ? [{ value: "", label: "正在加载视频模型…", disabled: true }] : []),
+                    ...(videoModelsQuery.isError ? [{ value: "", label: "视频模型加载失败", disabled: true }] : []),
+                    ...(!videoModelsQuery.isLoading && !videoModelsQuery.isError && videoModels.length === 0
+                      ? [{ value: "", label: "暂无已启用视频模型", disabled: true }]
+                      : []),
+                    ...videoModels.map((item) => ({
+                      value: String(item.id),
+                      label: `${item.name}${item.provider ? ` · ${item.provider}` : ""}`,
+                    })),
+                  ]}
+                />
               </label>
             </div>
             <div>
               <label>
                 视频比例
-                <select
+                <DemoSelect
                   aria-label="视频比例"
                   value={form.aspectRatio}
-                  onChange={(event) => setForm({ ...form, aspectRatio: event.target.value })}
-                >
-                  {DRAMA_ASPECT_RATIOS.map((item) => (
-                    <option key={item.id} value={item.id}>{item.label}</option>
-                  ))}
-                </select>
+                  onChange={(value) => setForm({ ...form, aspectRatio: value })}
+                  options={DRAMA_ASPECT_RATIOS.map((item) => ({ value: item.id, label: item.label }))}
+                />
               </label>
               <label>
                 视频清晰度
-                <select
+                <DemoSelect
                   aria-label="视频清晰度"
                   value={resolutionOptions.includes(form.defaultResolution) ? form.defaultResolution : resolutionOptions[resolutionOptions.length - 1]}
-                  onChange={(event) => setForm({ ...form, defaultResolution: event.target.value })}
-                >
-                  {resolutionOptions.map((item) => (
-                    <option key={item} value={item}>{item}</option>
-                  ))}
-                </select>
+                  onChange={(value) => setForm({ ...form, defaultResolution: value })}
+                  options={resolutionOptions.map((item) => ({ value: item, label: item }))}
+                />
               </label>
             </div>
             <div className="drama-create-form__style">
-              <span>视觉风格</span>
+              <span>风格参考</span>
               <DramaStylePicker
                 value={form.styleKey}
                 onChange={(next) => setForm((current) => ({ ...current, styleKey: next }))}

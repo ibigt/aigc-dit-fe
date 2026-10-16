@@ -53,7 +53,7 @@
 .drama-toast--error { color: #9a3d48; border-color: #f0c9cc; background: #fff5f6; }
 .youxi-subject-layout > .drama-toast { top: 16px; z-index: 40; min-height: 40px; padding: 0 16px; font-size: 13px; white-space: nowrap; }
 .drama-dialog-backdrop, .drama-overview-backdrop { position: fixed; z-index: 400; inset: 0; padding: 25px; display: grid; place-items: center; background: rgba(25,31,39,.35); backdrop-filter: blur(5px); }.drama-dialog { width: min(520px,94vw); max-height: 90vh; overflow-y: auto; border: 1px solid #e0e4e8; border-radius: 16px; color: #26303a; background: #fff; box-shadow: 0 24px 70px rgba(27,34,44,.2); }.drama-dialog > header { min-height: 66px; padding: 0 18px; border-bottom: 1px solid #edf0f2; display: flex; align-items: center; justify-content: space-between; }.drama-dialog > header div { display: flex; flex-direction: column; gap: 3px; }.drama-dialog > header span { color: #7a84dd; font-size: 11px; text-transform: uppercase; letter-spacing: .09em; }.drama-dialog > header h2 { margin: 0; font-size: 14px; }.drama-dialog > header button { width: 31px; height: 31px; border: 1px solid #e1e5e9; border-radius: 8px; display: grid; place-items: center; color: #747e89; background: #fff; }
-.drama-create-form, .director-form { padding: 17px 18px; display: flex; flex-direction: column; gap: 12px; }.drama-create-form > label, .director-form > label, .drama-create-form > div > label { display: flex; flex-direction: column; gap: 6px; color: #6c7681; font-size: 12px; }.drama-create-form > div { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }.drama-create-form input, .drama-create-form textarea, .drama-create-form select, .director-form textarea, .director-form select { width: 100%; min-height: 38px; padding: 9px 10px; border: 1px solid #dde2e7; border-radius: 8px; outline: 0; background: #fff; font-size: 12px; }.drama-create-form textarea, .director-form textarea { min-height: 80px; resize: vertical; }.drama-create-form footer, .director-form footer { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }.drama-create-form footer button, .director-form footer button { min-height: 33px; padding: 0 12px; border: 1px solid #dfe3e7; border-radius: 8px; background: #fff; font-size: 12px; }.drama-create-form footer .button--primary, .director-form footer .button--primary { color: #fff; border-color: transparent; background: var(--primary); }
+.drama-create-form, .director-form { padding: 17px 18px; display: flex; flex-direction: column; gap: 12px; }.drama-create-form > label, .director-form > label, .drama-create-form > div > label { display: flex; flex-direction: column; gap: 6px; color: #e8e8eb; font-size: 14px; }.drama-create-form > div { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }.drama-create-form input, .drama-create-form textarea, .drama-create-form select, .director-form textarea, .director-form select { width: 100%; min-height: 38px; padding: 9px 10px; border: 1px solid #dde2e7; border-radius: 8px; outline: 0; background: #fff; font-size: 12px; }.drama-create-form textarea, .director-form textarea { min-height: 80px; resize: vertical; }.drama-create-form footer, .director-form footer { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }.drama-create-form footer button, .director-form footer button { min-height: 33px; padding: 0 12px; border: 1px solid #dfe3e7; border-radius: 8px; background: #fff; font-size: 12px; }.drama-create-form footer .button--primary, .director-form footer .button--primary { color: #fff; border-color: transparent; background: var(--primary); }
 .drama-overview-backdrop { justify-items: end; padding: 0; }.drama-overview-panel { width: min(380px,92vw); height: 100%; overflow-y: auto; padding: 17px; color: #28323c; background: #fff; box-shadow: -20px 0 55px rgba(24,31,40,.18); }.drama-overview-panel > header { min-height: 48px; display: flex; justify-content: space-between; }.drama-overview-panel > header div { display: flex; flex-direction: column; gap: 3px; }.drama-overview-panel > header span { color: #9199a3; font-size: 11px; }.drama-overview-panel h2 { margin: 0; font-size: 15px; }.drama-overview-panel > header button { width: 30px; height: 30px; border: 1px solid #e1e5e9; border-radius: 8px; display: grid; place-items: center; background: #fff; }.drama-overview-cover { width: 100%; aspect-ratio: 1.65; border-radius: 11px; object-fit: cover; }.overview-progress { margin-top: 14px; display: grid; grid-template-columns: 1fr auto; gap: 7px; align-items: center; font-size: 12px; }.overview-progress strong { font-size: 11px; }.overview-progress > i { grid-column: 1 / 3; height: 5px; overflow: hidden; border-radius: 5px; background: #edf0f3; }.overview-progress b { display: block; height: 100%; border-radius: inherit; background: var(--primary); }.overview-metrics { display: grid; grid-template-columns: repeat(4,1fr); margin-top: 12px; border: 1px solid #e4e7eb; border-radius: 9px; }.overview-metrics span { padding: 10px 3px; border-right: 1px solid #e7eaed; display: flex; flex-direction: column; align-items: center; gap: 3px; color: #9098a2; font-size: 11px; }.overview-metrics span:last-child { border-right: 0; }.overview-metrics strong { color: #3b4550; font-size: 11px; }.drama-overview-panel h3 { margin: 18px 0 9px; font-size: 12px; }.overview-episode { width: 100%; height: 34px; padding: 0; border: 0; display: grid; grid-template-columns: 50px 1fr 32px; align-items: center; gap: 8px; color: #616b76; background: none; font-size: 12px; text-align: left; }.overview-episode i { height: 4px; overflow: hidden; border-radius: 4px; background: #edf0f3; }.overview-episode b { display: block; height: 100%; background: #7984ed; }.overview-episode em { color: #939ba4; font-style: normal; text-align: right; }.overview-activity { margin: 0; padding: 9px; border-radius: 8px; display: grid; grid-template-columns: 18px 1fr; color: #626c77; background: #f5f7f9; font-size: 12px; line-height: 1.5; }.overview-activity small { grid-column: 2; color: #979fa8; font-size: 11px; }
 .export-options { padding: 14px; display: flex; flex-direction: column; gap: 7px; }.export-options > button { min-height: 62px; padding: 10px 12px; border: 1px solid #e0e4e8; border-radius: 10px; display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 8px; color: #5c66cf; background: #fff; text-align: left; }.export-options > button:hover { border-color: #cbd0f2; background: #f7f8ff; }.export-options > button span { display: flex; flex-direction: column; gap: 3px; }.export-options strong { color: #313b46; font-size: 12px; }.export-options small { color: #929aa4; font-size: 11px; }
 /* Night variants for the story tools */
@@ -211,13 +211,59 @@
 .mode-card-list > button.active > i { border-color: transparent; }
 .settings-segment { height: 36px; margin-bottom: 12px; padding: 3px; display: grid; grid-template-columns: 1fr 1fr; border-radius: 9px; background: #f0f2f5; }
 .settings-segment button { color: #626d7b; border: 0; border-radius: 7px; background: transparent; font-size: 12px; }.settings-segment button.active { color: #30384a; background: #fff; box-shadow: 0 1px 5px rgba(30,40,60,.09); font-weight: 700; }
-.style-card-tabbar { display: inline-flex; gap: 6px; margin: 0 0 10px; padding: 4px; border-radius: 10px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.06); }
-.style-card-tabbar button { appearance: none; -webkit-appearance: none; padding: 6px 16px; border: 1px solid transparent; border-radius: 7px; background: rgba(255,255,255,.06); color: #aeb9c6; font-size: 13px; cursor: pointer; transition: color .15s, border-color .15s, background .15s; }
-.style-card-tabbar button:hover:not(.active):not(:disabled) { color: #e4e9f1; background: rgba(255,255,255,.1); }
-.style-card-tabbar button.active { color: #8c97f5; background: transparent; border-color: #6572ed; font-weight: 600; box-shadow: 0 0 0 3px rgba(101,114,237,.12); }
-.style-card-tabbar button:disabled { opacity: .5; cursor: not-allowed; }
+.style-category-tabs,
+.style-card-tabbar {
+  width: max-content;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0 0 12px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .035);
+}
+.style-category-tab,
+.style-card-tabbar button {
+  appearance: none;
+  -webkit-appearance: none;
+  min-width: 72px;
+  height: 32px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 7px;
+  outline: 0;
+  color: #92949d;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 550;
+  transition: color 150ms, background 150ms, box-shadow 150ms;
+}
+.style-category-tab:hover,
+.style-card-tabbar button:hover:not(.active):not(.selected):not(:disabled) {
+  color: #e6e4f6;
+  background: rgba(255, 255, 255, .045);
+}
+.style-category-tab.selected,
+.style-category-tab.active,
+.style-card-tabbar button.active,
+.style-card-tabbar button.selected {
+  color: #fff;
+  background: rgba(118, 104, 255, .24);
+  box-shadow: inset 0 0 0 1px rgba(151, 138, 255, .28);
+}
+.style-category-tab:focus-visible,
+.style-card-tabbar button:focus-visible {
+  box-shadow: 0 0 0 3px rgba(118, 104, 255, .2);
+}
+.style-category-tab:disabled,
+.style-card-tabbar button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
 .style-card-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 7px; }
-.style-card-grid button { position: relative; height: 96px; overflow: hidden; padding: 0; border: 2px solid transparent; border-radius: 9px; background: #eef0f4; }
+.style-card-grid button { position: relative; height: 96px; overflow: hidden; padding: 0; border: 2px solid transparent; border-radius: 9px; background: #15151d; background-clip: padding-box; }
 .style-card-grid img { width: 100%; height: 100%; object-fit: cover; }
 .style-card-grid button::after { content: ""; position: absolute; inset: 45% 0 0; background: linear-gradient(transparent,rgba(0,0,0,.74)); }
 .style-card-grid button span { position: absolute; z-index: 2; left: 8px; right: 8px; bottom: 5px; color: #fff; font-size: 11px; text-align: left; }
@@ -3205,9 +3251,9 @@
 .drama-create-footer { flex: 0 0 auto; min-height: 72px; align-items: center; margin: 0; padding: 0 24px; border-top: 1px solid var(--divider); background: #191b21; }
 .drama-create-form > .drama-create-form__full { grid-template-columns: 1fr; }
 .drama-create-form > .drama-create-form__style { display: flex; flex-direction: column; gap: 8px; }
-.drama-create-form__style > span { color: #6c7681; font-size: 12px; margin-bottom: 4px; }
+.drama-create-form__style > span { color: #e8e8eb; font-size: 14px; margin-bottom: 6px; display: block; }
 .drama-create-form__style .style-card-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-.drama-field-count { color: #8b939e; font-size: 11px; text-align: right; }
+.drama-field-count { color: #8b939e; font-size: 11px; float: right; }
 
 .youxi-workspace .drama-workspace-actions { flex: 1 1 auto; min-width: 0; justify-content: flex-end; }
 .drama-series-specs { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; flex-wrap: wrap; }
@@ -3219,10 +3265,8 @@
 .drama-style-menu > button:disabled,
 .drama-series-specs select:disabled { opacity: .6; cursor: not-allowed; }
 .drama-style-menu__panel { position: absolute; z-index: 40; top: calc(100% + 8px); right: 0; width: min(420px, 72vw); max-height: min(460px, 70vh); overflow: auto; padding: 12px; border: 1px solid rgba(255,255,255,.12); border-radius: 12px; background: #1c1c22; box-shadow: 0 18px 48px rgba(0,0,0,.35); }
-.drama-style-menu__panel .style-card-tabbar { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.08); }
-.drama-style-menu__panel .style-card-tabbar button { color: #c8c6d2; background: rgba(255,255,255,.07); }
-.drama-style-menu__panel .style-card-tabbar button:hover:not(.active):not(:disabled) { color: #fff; background: rgba(255,255,255,.12); }
-.drama-style-menu__panel .style-card-tabbar button.active { color: #d7d2ff; background: transparent; border-color: #7669e8; box-shadow: 0 0 0 3px rgba(118,105,232,.16); }
+.drama-style-menu__panel .style-card-tabbar,
+.drama-style-menu__panel .style-category-tabs { margin-bottom: 10px; }
 
 .drama-script-done { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border: 1px solid #d9ddff; border-radius: 12px; background: #f4f5ff; }
 .drama-script-done strong { display: block; margin-bottom: 4px; color: #2c3550; font-size: 15px; }

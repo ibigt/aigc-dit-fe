@@ -87,6 +87,10 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
   }, [dramaId]);
 
   useEffect(() => {
+    if (active === "admin") setCollapsed(true);
+  }, [active]);
+
+  useEffect(() => {
     const onDocMouseDown = (event) => {
       if (!menuRef.current?.contains(event.target)) setUserMenu(false);
     };

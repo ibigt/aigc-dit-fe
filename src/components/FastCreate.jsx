@@ -1399,7 +1399,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
             </div>
             <div className={`quick-panel-head${hasConversationHistory ? " has-type-switch" : ""}`}>
               {hasConversationHistory && renderCreationTypeSwitch()}
-              <span className="quick-draft-status">内容自动保存</span>
+              {/*<span className="quick-draft-status">内容自动保存</span>*/}
             </div>
 
         <div className="quick-prompt-wrap">
@@ -1466,6 +1466,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
                         key={item.id}
                         onClick={() => {
                           setModel(String(item.id));
+                          setCopies(1);
                           setOpenPanel(null);
                           setAssetPickerOpen(false);
                         }}
