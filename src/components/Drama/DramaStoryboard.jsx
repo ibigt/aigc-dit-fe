@@ -1,11 +1,14 @@
-import { CircleCheck, Film, Lock, Maximize2, Plus, RefreshCw, Sparkles, Trash2, Video, Wand2, X, ZoomIn } from "lucide-react";
+import { Check, ChevronDown, CircleCheck, Film, Lock, Maximize2, Plus, RefreshCw, Sparkles, Trash2, Video, Wand2, X, ZoomIn } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   bindDramaVideoModel,
+  clearDramaShotEndFrame,
+  clearDramaShotFirstFrame,
   compileDramaShot,
   compileDramaStoryboard,
+  copyDramaShotPrevEndFrame,
   createDramaShot,
   deleteDramaShot,
   deleteDramaShotGeneration,
@@ -21,8 +24,13 @@ import {
   startDramaShotBatchGenerate,
   updateDramaSeries,
   updateDramaShot,
+  uploadDramaShotEndFrame,
+  uploadDramaShotFirstFrame,
+  useDramaShotAssetEndFrame,
+  useDramaShotAssetFirstFrame,
 } from "../../api/drama.js";
-import { mediaUrl } from "../../lib/media.js";
+import { fetchAssets } from "../../api/assets.js";
+import { MEDIA_THUMB_WIDTH, mediaUrl } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 import { isRetryableRequestError } from "../../api/client.js";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
@@ -31,7 +39,7 @@ import { PromptChipEditor } from "./PromptChipEditor.jsx";
 import { narrativeMentionCount, parsePromptToTokens, referenceIdsOf, stripMentionMarks } from "../../lib/promptChips.js";
 import { GenerationHistoryPanel, SwitchFinalModal } from "./GenerationHistoryPanel.jsx";
 import { VideoLightbox } from "./VideoLightbox.jsx";
-import { DRAMA_ASPECT_RATIOS } from "./dramaSpecs.js";
+import { DRAMA_ASPECT_RATIOS, preferredResolution, resolutionOptionsFor } from "./dramaSpecs.js";
 
 const DURATIONS = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
@@ -235,6 +243,37 @@ function isOfficialSeedance(model) {
 }
 
 /** 接口未返回 supportsI2v 时，按适配协议判断；RunningHub 的 seedance-2 没有首尾帧。 */
+function modelLogo(name = "") {
+  const text = name.toLowerCase();
+  if (text.includes("doubao") || text.includes("seedance") || text.includes("bytedance")) return "/assets/model-logos/bytedance-seed.ico";
+  if (text.includes("minimax")) return "/assets/model-logos/minimax.ico";
+  return "/assets/model-logos/agnes.png";
+}
+
+function modelSupportsR2v(model) {
+  if (!model) return true;
+  return model.supportsR2v !== false;
+}
+
+/** 没单独保存过的镜头按参考图；模型只有首尾帧时默认首尾帧。 */
+function shotGenerateMode(shot, model) {
+  const supportsI2v = modelSupportsI2v(model);
+  if (!modelSupportsR2v(model) && supportsI2v) return "i2v";
+  if (shot?.videoGenerateMode === "i2v" && supportsI2v) return "i2v";
+  return "r2v";
+}
+
+function previousEpisodeShot(shot, shots) {
+  if (!shot) return null;
+  return (shots || [])
+    .filter((item) => item.id !== shot.id && Number(item.shotIndex) < Number(shot.shotIndex))
+    .sort((a, b) => Number(b.shotIndex) - Number(a.shotIndex))[0] || null;
+}
+
+function previousFrameReady(shot) {
+  return Boolean(shot && (shot.endFrameKey || shot.endFrameUrl || shot.videoTailKey || shot.videoTailUrl || shot.videoKey || shot.videoUrl));
+}
+
 function modelSupportsI2v(model) {
   if (!model) return false;
   if (model.supportsI2v === true) return true;
@@ -333,17 +372,92 @@ function imageCap(model) {
   return cap;
 }
 
+function FrameLibraryDialog({ label, assets, loading, error, busy, onClose, onConfirm }) {
+  const [selectedId, setSelectedId] = useState(null);
+  const selected = assets.find((item) => String(item.id) === String(selectedId)) || null;
+  const body = (
+    <div
+      className="drama-dialog-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onClose();
+      }}
+    >
+      <section className="creation-asset-dialog" role="dialog" aria-modal="true" aria-labelledby="frame-library-title">
+        <header>
+          <div>
+            <small>素材库</small>
+            <h2 id="frame-library-title">选择{label}</h2>
+          </div>
+          <button type="button" aria-label="关闭素材选择" disabled={busy} onClick={onClose}>
+            <X size={17} />
+          </button>
+        </header>
+        <div className="creation-asset-grid">
+          {loading && <p className="creation-asset-empty">正在加载图片素材…</p>}
+          {!loading && error && <p className="creation-asset-empty">{error}</p>}
+          {!loading && !error && !assets.length && <p className="creation-asset-empty">素材库还没有图片</p>}
+          {!loading && !error && assets.map((asset) => {
+            const name = asset.title || asset.name || "未命名";
+            const preview = mediaUrl(asset.poster || asset.posterUrl || asset.src || asset.url || asset.storageKey, { w: MEDIA_THUMB_WIDTH });
+            const picked = String(asset.id) === String(selectedId);
+            return (
+              <button
+                type="button"
+                className={picked ? "selected" : ""}
+                key={asset.id || preview}
+                aria-pressed={picked}
+                disabled={busy}
+                onClick={() => setSelectedId(asset.id)}
+              >
+                <img src={preview} alt={name} />
+                <span>
+                  <strong>{name}</strong>
+                  <small>图片素材</small>
+                </span>
+                {picked && (
+                  <span className="creation-asset-check" aria-hidden="true">
+                    <Check size={13} strokeWidth={3} />
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <footer>
+          <span>{selected ? `已选择 ${selected.title || selected.name || "未命名"}` : "请选择一张图片"}</span>
+          <div>
+            <button type="button" disabled={busy} onClick={onClose}>取消</button>
+            <button
+              type="button"
+              className="primary"
+              disabled={busy || !selected}
+              onClick={() => onConfirm(selected.id)}
+            >
+              {busy ? "引用中…" : "引用素材"}
+            </button>
+          </div>
+        </footer>
+      </section>
+    </div>
+  );
+  return createPortal(body, document.body);
+}
+
 function ShotPromptPane({
   selected,
   frozen,
   lockedAssets,
   durationOptions,
   ratio,
+  resolution,
+  resolutionOptions,
   videoModels,
   videoModelId,
   selectedVideoModel,
   onVideoModel,
   onRatio,
+  onResolution,
   onSave,
   onGenerate,
   generateDisabled,
@@ -352,12 +466,38 @@ function ShotPromptPane({
   onCompileShot,
   compilingShot,
   onZoom,
+  onUploadFrame,
+  onUseAssetFrame,
+  onClearFrame,
+  onCopyPrevEnd,
+  canCopyPrevEnd,
+  frameBusy,
 }) {
   const serverPrompt = selected?.visiblePrompt || "";
   const [draft, setDraft] = useState(serverPrompt);
   const [promptExpanded, setPromptExpanded] = useState(false);
+  const [menu, setMenu] = useState(null);
+  const [librarySlot, setLibrarySlot] = useState(null);
   const expandedEditorRef = useRef(null);
   const commitPromptRef = useRef(async () => {});
+  const barRef = useRef(null);
+  const firstInputRef = useRef(null);
+  const endInputRef = useRef(null);
+  const supportsI2v = modelSupportsI2v(selectedVideoModel);
+  const supportsR2v = modelSupportsR2v(selectedVideoModel);
+  const framesMode = shotGenerateMode(selected, selectedVideoModel) === "i2v";
+  const modeValue = framesMode ? "i2v" : "r2v";
+  const libraryQuery = useQuery({
+    queryKey: ["account-image-assets"],
+    queryFn: () => fetchAssets({ kind: "image" }),
+    enabled: Boolean(librarySlot),
+    staleTime: 30_000,
+  });
+  const libraryImages = libraryQuery.data || [];
+  const videoModelName = selectedVideoModel?.name
+    || videoModels.find((item) => String(item.id) === String(videoModelId))?.name
+    || "请选择视频模型";
+  const resolutionLabel = resolutionOptions?.includes(resolution) ? resolution : (resolutionOptions?.[resolutionOptions.length - 1] || "720P");
   const cap = imageCap(selectedVideoModel);
   const mentionCount = narrativeMentionCount(draft, lockedAssets);
   const overLimit = cap != null && mentionCount > cap;
@@ -382,7 +522,18 @@ function ShotPromptPane({
   useEffect(() => {
     setDraft(serverPrompt);
     setPromptExpanded(false);
+    setMenu(null);
+    setLibrarySlot(null);
   }, [selected?.id, serverPrompt]);
+
+  useEffect(() => {
+    if (!menu) return undefined;
+    const close = (event) => {
+      if (barRef.current && !barRef.current.contains(event.target)) setMenu(null);
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [menu]);
 
   useEffect(() => {
     if (!promptExpanded) return undefined;
@@ -423,63 +574,195 @@ function ShotPromptPane({
     commitPrompt();
   }
 
+  function pickFile(slot, file) {
+    if (!file || frozen) return;
+    setMenu(null);
+    onUploadFrame?.(slot, file);
+  }
+
+  function pickAsset(slot, assetId) {
+    setMenu(null);
+    setLibrarySlot(null);
+    onUseAssetFrame?.(slot, assetId);
+  }
+
   if (!selected) return null;
+  const durationValue = clampDuration(durationOptions, selected.durationSec);
   return (
-    <div className="youxi-shot-editor">
+    <div className="youxi-shot-editor" ref={barRef}>
       <div className="youxi-shot-editor__controls">
         <strong className="youxi-shot-editor__title">
           镜 {selected.shotIndex}{selected.title ? ` · ${selected.title}` : ""}
         </strong>
-        <label className="youxi-shot-model">
-          <span>视频比例</span>
-          <select
-            aria-label="视频比例"
-            value={ratio}
-            disabled={frozen}
-            onChange={(event) => onRatio(event.target.value)}
-          >
-            {DRAMA_ASPECT_RATIOS.map((item) => (
-              <option key={item.id} value={item.id}>{item.label}</option>
-            ))}
-          </select>
-        </label>
-        <label className="youxi-shot-model">
-          <span>视频模型</span>
-          <select
+        <div className="youxi-shot-spec">
+          <button
+            type="button"
+            className="youxi-shot-spec__trigger"
             aria-label="分镜视频模型"
-            value={videoModelId}
+            aria-expanded={menu === "model"}
             disabled={frozen}
-            onChange={(event) => onVideoModel(event.target.value)}
+            onClick={() => setMenu((current) => (current === "model" ? null : "model"))}
           >
-            <option value="">{videoModels.length ? "请选择视频模型" : "暂无已启用视频模型"}</option>
-            {videoModels.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}{item.provider ? ` · ${item.provider}` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="youxi-shot-model">
-          <span>生成方式</span>
-          <select aria-label="生成方式" value="r2v" disabled>
-            <option value="r2v">参考图</option>
-          </select>
-        </label>
-        <label className="youxi-shot-model">
-          <span>分镜秒数</span>
-          <select
+            <img className="model-brand-logo" src={modelLogo(videoModelName)} alt="" />
+            <span>{videoModelName}</span>
+            <ChevronDown size={14} />
+          </button>
+          {menu === "model" && (
+            <div className="youxi-shot-spec__menu" role="listbox">
+              {!videoModels.length && <p>暂无已启用视频模型</p>}
+              {videoModels.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="option"
+                  aria-selected={String(item.id) === String(videoModelId)}
+                  onClick={() => {
+                    setMenu(null);
+                    if (String(item.id) !== String(videoModelId)) onVideoModel(String(item.id));
+                  }}
+                >
+                  <img className="model-brand-logo" src={modelLogo(item.name)} alt="" />
+                  <span>{item.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="youxi-shot-spec">
+          <button
+            type="button"
+            className="youxi-shot-spec__trigger"
+            aria-label="清晰度与比例"
+            aria-expanded={menu === "spec"}
+            disabled={frozen}
+            onClick={() => setMenu((current) => (current === "spec" ? null : "spec"))}
+          >
+            <span>{resolutionLabel} · {ratio}</span>
+            <ChevronDown size={14} />
+          </button>
+          {menu === "spec" && (
+            <div className="youxi-shot-spec__panel">
+              <p>比例</p>
+              <div className="youxi-shot-spec__ratios" role="listbox" aria-label="视频比例">
+                {DRAMA_ASPECT_RATIOS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="option"
+                    aria-selected={item.id === ratio}
+                    onClick={() => {
+                      setMenu(null);
+                      if (item.id !== ratio) onRatio(item.id);
+                    }}
+                  >
+                    <i data-ratio={item.id} />
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+              </div>
+              <p>清晰度</p>
+              <div className="youxi-shot-spec__grid" role="listbox" aria-label="视频清晰度">
+                {(resolutionOptions || []).map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    role="option"
+                    aria-selected={item === resolutionLabel}
+                    onClick={() => {
+                      setMenu(null);
+                      if (item !== resolution) onResolution(item);
+                    }}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="youxi-shot-modebar">
+        <div className="youxi-shot-gen">
+          <button
+            type="button"
+            className="youxi-shot-mode__trigger"
+            aria-label="生成方式"
+            aria-expanded={menu === "mode"}
+            disabled={frozen}
+            onClick={() => setMenu((current) => (current === "mode" ? null : "mode"))}
+          >
+            <span className="youxi-shot-mode__mark" aria-hidden="true">◇</span>
+            <span>{modeValue === "i2v" ? "首尾帧" : "参考图"}</span>
+            <ChevronDown size={14} />
+          </button>
+          {menu === "mode" && (
+            <div className="youxi-shot-mode__menu" role="listbox" aria-label="视频生成方式">
+              {(supportsR2v || (!supportsR2v && !supportsI2v)) && (
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={modeValue === "r2v"}
+                  onClick={() => {
+                    setMenu(null);
+                    if (modeValue !== "r2v") onSave(selected, { videoGenerateMode: "r2v" }).catch(() => {});
+                  }}
+                >
+                  <span>
+                    <strong>参考图</strong>
+                    <small>使用已引用的角色、场景或道具图片作为视频参考</small>
+                  </span>
+                </button>
+              )}
+              {supportsI2v && (
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={modeValue === "i2v"}
+                  onClick={() => {
+                    setMenu(null);
+                    if (modeValue !== "i2v") onSave(selected, { videoGenerateMode: "i2v" }).catch(() => {});
+                  }}
+                >
+                  <span>
+                    <strong>首尾帧</strong>
+                    <small>控制视频的开始画面和结束画面</small>
+                  </span>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="youxi-shot-duration">
+          <button
+            type="button"
+            className="youxi-shot-mode__trigger"
             aria-label="本镜时长"
-            value={clampDuration(durationOptions, selected.durationSec)}
+            aria-expanded={menu === "duration"}
             disabled={frozen}
-            onChange={(event) => {
-              onSave(selected, { durationSec: Number(event.target.value) }).catch(() => {});
-            }}
+            onClick={() => setMenu((current) => (current === "duration" ? null : "duration"))}
           >
-            {(durationOptions?.length ? durationOptions : DURATIONS).map((item) => (
-              <option key={item} value={item}>{item} 秒</option>
-            ))}
-          </select>
-        </label>
+            <span>{durationValue}s</span>
+            <ChevronDown size={14} />
+          </button>
+          {menu === "duration" && (
+            <div className="youxi-shot-duration__menu" role="listbox" aria-label="视频时长">
+              {(durationOptions?.length ? durationOptions : DURATIONS).map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  role="option"
+                  aria-selected={Number(item) === Number(durationValue)}
+                  onClick={() => {
+                    setMenu(null);
+                    if (Number(item) !== Number(durationValue)) onSave(selected, { durationSec: Number(item) }).catch(() => {});
+                  }}
+                >
+                  {item}s
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       <div className="youxi-field drama-prompt-field">
         <span className="drama-prompt-field__head">
@@ -487,13 +770,127 @@ function ShotPromptPane({
           {selected.legacyOverride ? <em className="drama-engine">旧覆盖</em> : null}
         </span>
         <div
-          className="drama-prompt-field__box"
+          className={`drama-prompt-field__box${framesMode ? " is-keyframes" : ""}`}
           onBlur={(event) => {
             if (promptExpanded) return;
             if (event.currentTarget.contains(event.relatedTarget)) return;
             commitPrompt();
           }}
         >
+          {framesMode && (
+        <div className="youxi-shot-frames">
+          <input
+            ref={firstInputRef}
+            className="visually-hidden"
+            type="file"
+            accept="image/*"
+            aria-label="上传首帧"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              pickFile("first", file);
+            }}
+          />
+          <input
+            ref={endInputRef}
+            className="visually-hidden"
+            type="file"
+            accept="image/*"
+            aria-label="上传尾帧"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              pickFile("end", file);
+            }}
+          />
+          <div className="youxi-shot-frame-pair">
+            {["first", "end"].map((slot, index) => {
+              const isFirst = slot === "first";
+              const url = isFirst ? selected.firstFrameUrl : selected.endFrameUrl;
+              const openKey = isFirst ? "first" : "end";
+              const label = isFirst ? "首帧" : "尾帧";
+              return (
+                <div className="youxi-shot-frame-pair__item" key={slot}>
+                  {index === 1 && <span className="youxi-shot-frame-link" aria-hidden="true">⇄</span>}
+                  <div className={`youxi-shot-frame${isFirst ? "" : " is-end"}`}>
+                    <div className={`youxi-shot-frame__card${url ? " has-image" : ""}`}>
+                      {url ? <img src={mediaUrl(url)} alt="" /> : null}
+                      <button
+                        type="button"
+                        className="youxi-shot-frame__select"
+                        disabled={frozen || frameBusy}
+                        aria-label={url ? `替换${label}` : `选择${label}`}
+                        aria-expanded={menu === openKey}
+                        onClick={() => setMenu((current) => (current === openKey ? null : openKey))}
+                      >
+                        {url ? <span className="youxi-shot-frame__replace">替换</span> : <span className="youxi-shot-frame__plus">＋</span>}
+                        <strong>{label}</strong>
+                      </button>
+                      {url && (
+                        <button
+                          type="button"
+                          className="youxi-shot-frame__clear"
+                          aria-label={`删除${label}`}
+                          disabled={frozen || frameBusy}
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                          }}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onClearFrame?.(slot);
+                          }}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                    {menu === openKey && (
+                      <div className="youxi-shot-frame__menu" role="menu">
+                        <button type="button" onClick={() => (isFirst ? firstInputRef : endInputRef).current?.click()}>
+                          本地上传
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMenu(null);
+                            setLibrarySlot(slot);
+                          }}
+                        >
+                          素材库
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            className="youxi-shot-frame__prev"
+            disabled={frozen || frameBusy || !canCopyPrevEnd}
+            title={canCopyPrevEnd ? "把上一镜尾帧复制到本镜首帧" : "上一镜还没有尾帧"}
+            onClick={() => onCopyPrevEnd?.()}
+          >
+            加载上一镜尾帧
+          </button>
+        </div>
+          )}
+          {librarySlot && (
+            <FrameLibraryDialog
+              label={librarySlot === "end" ? "尾帧" : "首帧"}
+              assets={libraryImages}
+              loading={libraryQuery.isLoading}
+              error={libraryQuery.isError ? (libraryQuery.error?.message || "素材加载失败") : ""}
+              busy={frameBusy}
+              onClose={() => {
+                if (!frameBusy) setLibrarySlot(null);
+              }}
+              onConfirm={(id) => pickAsset(librarySlot, id)}
+            />
+          )}
           <PromptChipEditor
             inline
             value={draft}
@@ -556,11 +953,15 @@ function ShotPromptPane({
           document.body,
         )
         : null}
-      <p className={overLimit || missing.length ? "drama-form-error" : "youxi-shot-editor__hint"}>
-        {overLimit
-          ? `当前模型最多支持 ${cap} 张`
-          : `叙述里的 @ 会计入参考图，重复引用只算一张。当前 ${mentionCount} 张${cap != null ? `，最多 ${cap} 张` : ""}。`}
-        {missing.length ? ` 还没有参考图：${missing.join("、")}。` : ""}
+      <p className={!framesMode && (overLimit || missing.length) ? "drama-form-error" : "youxi-shot-editor__hint"}>
+        {framesMode
+          ? (selected.firstFrameKey
+            ? "首尾帧出片使用本镜首帧，尾帧可以不设。"
+            : "请先设置首帧后再生成。尾帧可以不设。")
+          : overLimit
+            ? `当前模型最多支持 ${cap} 张`
+            : `叙述里的 @ 会计入参考图，重复引用只算一张。当前 ${mentionCount} 张${cap != null ? `，最多 ${cap} 张` : ""}。`}
+        {!framesMode && missing.length ? ` 还没有参考图：${missing.join("、")}。` : ""}
       </p>
       <label className="youxi-field">
         <span>台词</span>
@@ -591,8 +992,14 @@ function ShotPromptPane({
         <button
           className="youxi-toolbar-primary"
           type="button"
-          disabled={generateDisabled || overLimit || missing.length > 0}
-          title={overLimit ? `当前模型最多支持 ${cap} 张` : missing.length ? "叙述里的引用还没有参考图" : generateTitle}
+          disabled={generateDisabled || (!framesMode && (overLimit || missing.length > 0))}
+          title={framesMode && !selected.firstFrameKey
+            ? "请先设置首帧"
+            : !framesMode && overLimit
+              ? `当前模型最多支持 ${cap} 张`
+              : !framesMode && missing.length
+                ? "叙述里的引用还没有参考图"
+                : generateTitle}
           onClick={onGenerate}
         >
           <Video size={14} /> {generating ? "出片中…" : "生成当前镜头"}
@@ -788,6 +1195,13 @@ export function DramaStoryboard({ series, episode }) {
     [videoModels, videoModelId]
   );
   const ratio = series?.aspectRatio || "16:9";
+  const resolutionOptions = useMemo(
+    () => resolutionOptionsFor(selectedVideoModel),
+    [selectedVideoModel],
+  );
+  const resolution = resolutionOptions.includes(series?.defaultResolution)
+    ? series.defaultResolution
+    : preferredResolution(resolutionOptions, series?.defaultResolution);
   const batchRunning = batchJob?.status === "RUNNING" || batchJob?.status === "PENDING";
   const batchLockedIds = useMemo(() => {
     if (!batchRunning || !batchJob?.items?.length) return new Set();
@@ -1057,8 +1471,33 @@ export function DramaStoryboard({ series, episode }) {
     return "";
   }
 
+  useEffect(() => {
+    const current = series?.defaultResolution;
+    if (!seriesId || !selectedVideoModel || !current) return undefined;
+    const options = resolutionOptionsFor(selectedVideoModel);
+    if (options.includes(current)) return undefined;
+    let cancelled = false;
+    updateDramaSeries(seriesId, { defaultResolution: preferredResolution(options, current) })
+      .then(() => {
+        if (!cancelled) queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+      })
+      .catch((error) => {
+        if (!cancelled) setActionError(error.message || "清晰度保存失败");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [seriesId, selectedVideoModel, series?.defaultResolution, queryClient]);
+
   const bindMutation = useMutation({
-    mutationFn: (id) => bindDramaVideoModel(seriesId, Number(id)),
+    mutationFn: async (id) => {
+      await bindDramaVideoModel(seriesId, Number(id));
+      const model = videoModels.find((item) => String(item.id) === String(id));
+      const options = resolutionOptionsFor(model);
+      if (series?.defaultResolution && !options.includes(series.defaultResolution)) {
+        await updateDramaSeries(seriesId, { defaultResolution: preferredResolution(options, series.defaultResolution) });
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
       queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
@@ -1075,6 +1514,25 @@ export function DramaStoryboard({ series, episode }) {
     },
     onError: (error) => setActionError(error.message || "更新视频比例失败"),
   });
+
+  const resolutionMutation = useMutation({
+    mutationFn: (defaultResolution) => updateDramaSeries(seriesId, { defaultResolution }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+      setActionError("");
+    },
+    onError: (error) => setActionError(error.message || "更新清晰度失败"),
+  });
+
+  async function changeFrame(task) {
+    if (!selected?.id) return;
+    try {
+      const result = await runShot(selected.id, "frame", task);
+      patchShot(result);
+    } catch {
+      // runShot 已写入错误横幅
+    }
+  }
 
   function patchShot(next) {
     if (!next?.id) return;
@@ -1291,18 +1749,24 @@ export function DramaStoryboard({ series, episode }) {
   const imageLimit = imageCap(selectedVideoModel);
   const overImageLimit = imageLimit != null && mentionCount > imageLimit;
   const missingRefs = (selected?.unboundNames || []).length > 0;
-  const generateDisabled = !selected || generating || drafting || frozenByRecompile || !videoModelId || selectedBatchLocked || overImageLimit || missingRefs;
+  const framesMode = shotGenerateMode(selected, selectedVideoModel) === "i2v";
+  const missingFirstFrame = framesMode && !selected?.firstFrameKey;
+  const generateDisabled = !selected || generating || drafting || frozenByRecompile || !videoModelId || selectedBatchLocked
+    || missingFirstFrame
+    || (!framesMode && (overImageLimit || missingRefs));
   const generateTitle = selectedBatchLocked
     ? "该镜正在批量生成中"
     : frozenByRecompile
       ? "正在重新编译提示词，暂不可出片"
       : drafting
         ? "正在拆镜，暂不可出片"
-        : overImageLimit
-          ? `当前模型最多支持 ${imageLimit} 张`
-          : missingRefs
-            ? "叙述里的引用还没有参考图"
-            : undefined;
+        : missingFirstFrame
+          ? "请先设置首帧"
+          : !framesMode && overImageLimit
+            ? `当前模型最多支持 ${imageLimit} 张`
+            : !framesMode && missingRefs
+              ? "叙述里的引用还没有参考图"
+              : undefined;
   const queryError = boardQuery.error && !isRetryableRequestError(boardQuery.error)
     ? boardQuery.error
     : null;
@@ -1467,6 +1931,8 @@ export function DramaStoryboard({ series, episode }) {
               lockedAssets={lockedAssets}
               durationOptions={durationOptions}
               ratio={ratio}
+              resolution={resolution}
+              resolutionOptions={resolutionOptions}
               videoModels={videoModels}
               videoModelId={videoModelId}
               selectedVideoModel={selectedVideoModel}
@@ -1475,6 +1941,7 @@ export function DramaStoryboard({ series, episode }) {
                 if (value) bindMutation.mutate(value);
               }}
               onRatio={(value) => ratioMutation.mutate(value)}
+              onResolution={(value) => resolutionMutation.mutate(value)}
               onSave={saveShot}
               onGenerate={() => generate(selected)}
               generateDisabled={generateDisabled}
@@ -1483,6 +1950,29 @@ export function DramaStoryboard({ series, episode }) {
               onCompileShot={() => setCompileShotOpen(true)}
               compilingShot={Boolean(selected && busy[selected.id] === "compile")}
               onZoom={setPreview}
+              onUploadFrame={(slot, file) => changeFrame(() => (
+                slot === "end" ? uploadDramaShotEndFrame(selected.id, file) : uploadDramaShotFirstFrame(selected.id, file)
+              ))}
+              onUseAssetFrame={(slot, assetId) => changeFrame(() => (
+                slot === "end" ? useDramaShotAssetEndFrame(selected.id, assetId) : useDramaShotAssetFirstFrame(selected.id, assetId)
+              ))}
+              onClearFrame={(slot) => changeFrame(async () => {
+                const result = slot === "end"
+                  ? await clearDramaShotEndFrame(selected.id)
+                  : await clearDramaShotFirstFrame(selected.id);
+                if (slot === "end") {
+                  return { ...result, endFrameKey: null, endFrameUrl: null, endFrameSource: "none" };
+                }
+                return {
+                  ...result,
+                  firstFrameKey: null,
+                  firstFrameUrl: null,
+                  firstFrameSource: result?.firstFrameSource === "prev-tail" ? "prev-tail" : "none",
+                };
+              })}
+              onCopyPrevEnd={() => changeFrame(() => copyDramaShotPrevEndFrame(selected.id))}
+              canCopyPrevEnd={previousFrameReady(previousEpisodeShot(selected, shots))}
+              frameBusy={Boolean(selected && busy[selected.id] === "frame")}
             />
             <div className="youxi-story-actions">
               <div>

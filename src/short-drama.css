@@ -4115,6 +4115,40 @@
   border-color: rgba(143, 130, 255, .55);
   background: #2c2844;
 }
+.youxi-storyboard-layout--board .drama-prompt-field__box.is-keyframes {
+  display: flex;
+  align-items: stretch;
+  gap: 18px;
+  height: clamp(180px, 22dvh, 230px);
+  padding: 14px;
+  overflow: visible;
+  border: 1px solid var(--sb-line);
+  border-radius: 10px;
+  background: #202020;
+}
+.youxi-storyboard-layout--board .drama-prompt-field__box.is-keyframes:focus-within {
+  border-color: rgba(143, 130, 255, .5);
+  box-shadow: 0 0 0 3px rgba(118, 104, 255, .1);
+}
+.youxi-storyboard-layout--board .drama-prompt-field__box.is-keyframes .youxi-shot-frames {
+  flex: 0 0 auto;
+  align-items: center;
+  align-self: center;
+}
+.youxi-storyboard-layout--board .drama-prompt-field__box.is-keyframes .drama-prompt-editor__surface--inline {
+  flex: 1 1 auto;
+  align-self: stretch;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  padding: 9px 32px 9px 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
 .drama-dialog.drama-dialog--prompt {
   width: min(1080px, 92vw);
 }
@@ -4195,3 +4229,583 @@
   overflow-x: auto;
   overflow-y: hidden;
 }
+
+.youxi-shot-editor__controls { justify-content: flex-start; }
+.youxi-shot-editor__controls .youxi-shot-editor__title { margin-right: auto; }
+.youxi-shot-spec { position: relative; flex: 0 0 auto; }
+.youxi-shot-spec__trigger {
+  height: 36px;
+  max-width: 240px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #efeff2;
+  font-size: 13px;
+  cursor: pointer;
+}
+.youxi-shot-spec__trigger:hover,
+.youxi-shot-spec__trigger[aria-expanded="true"] {
+  color: #fff;
+  background: rgba(255, 255, 255, .055);
+}
+.youxi-shot-spec__trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.youxi-shot-spec__trigger:disabled { opacity: 0.55; cursor: default; }
+.youxi-shot-spec__menu,
+.youxi-shot-spec__panel,
+.youxi-shot-library,
+.youxi-shot-mode__menu,
+.youxi-shot-duration__menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 10px;
+  background: #202126;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .5);
+}
+.youxi-shot-spec__menu { display: grid; gap: 2px; left: auto; }
+.youxi-shot-spec__menu button,
+.youxi-shot-frame__menu button,
+.youxi-shot-mode__menu button,
+.youxi-shot-duration__menu button {
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #dedee3;
+  text-align: left;
+  cursor: pointer;
+}
+.youxi-shot-spec__menu button:hover,
+.youxi-shot-frame__menu button:hover,
+.youxi-shot-mode__menu button:hover,
+.youxi-shot-duration__menu button:hover,
+.youxi-shot-library button:hover { background: rgba(255, 255, 255, .055); color: #fff; }
+.youxi-shot-spec__menu button[aria-selected="true"] { background: rgba(118, 104, 255, .18); color: #fff; }
+.youxi-shot-spec__panel { width: 390px; max-width: min(390px, 72vw); padding: 12px; }
+.youxi-shot-spec__panel > p { margin: 0 0 7px; color: #c6c6cc; font-size: 13px; font-weight: 600; }
+.youxi-shot-spec__panel > p + div + p { margin-top: 13px; }
+.youxi-shot-spec__ratios,
+.youxi-shot-spec__grid {
+  display: grid;
+  gap: 5px;
+  padding: 5px;
+  border-radius: 9px;
+  background: #191a1e;
+}
+.youxi-shot-spec__ratios { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.youxi-shot-spec__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.youxi-shot-spec__ratios button,
+.youxi-shot-spec__grid button {
+  position: relative;
+  min-width: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #9a9aa3;
+  font-size: 13px;
+  cursor: pointer;
+}
+.youxi-shot-spec__ratios button { height: 51px; flex-direction: column; gap: 3px; }
+.youxi-shot-spec__ratios button:hover,
+.youxi-shot-spec__grid button:hover { color: #fff; background: rgba(255, 255, 255, .055); }
+.youxi-shot-spec__ratios button[aria-selected="true"],
+.youxi-shot-spec__grid button[aria-selected="true"] {
+  border-color: rgba(143, 130, 255, .24);
+  color: #fff;
+  background: #30303a;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .18);
+}
+.youxi-shot-spec__ratios i {
+  display: block;
+  width: 14px;
+  height: 10px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+}
+.youxi-shot-spec__ratios i[data-ratio="21:9"] { width: 18px; height: 8px; }
+.youxi-shot-spec__ratios i[data-ratio="16:9"] { width: 16px; height: 9px; }
+.youxi-shot-spec__ratios i[data-ratio="4:3"] { width: 14px; height: 10px; }
+.youxi-shot-spec__ratios i[data-ratio="1:1"] { width: 11px; height: 11px; }
+.youxi-shot-spec__ratios i[data-ratio="3:4"] { width: 9px; height: 12px; }
+.youxi-shot-spec__ratios i[data-ratio="9:16"] { width: 8px; height: 14px; }
+.youxi-shot-modebar {
+  position: relative;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  margin: 12px 0 10px;
+}
+.youxi-shot-gen,
+.youxi-shot-duration { position: relative; flex: 0 0 auto; }
+.youxi-shot-gen { width: 118px; }
+.youxi-shot-duration { width: 86px; }
+.youxi-shot-mode__trigger {
+  width: 100%;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, .11);
+  border-radius: 10px;
+  color: #efeff2;
+  background: #20242c;
+  font-size: 13px;
+  cursor: pointer;
+}
+.youxi-shot-mode__trigger > span:nth-child(2),
+.youxi-shot-duration .youxi-shot-mode__trigger > span { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.youxi-shot-mode__trigger svg { flex: 0 0 auto; color: #777984; }
+.youxi-shot-mode__trigger:hover:not(:disabled) { border-color: rgba(255, 255, 255, .2); background: #232730; }
+.youxi-shot-mode__trigger:disabled { color: #85858e; background: #1b1c21; cursor: not-allowed; }
+.youxi-shot-mode__mark { flex: 0 0 auto; color: #aaa1ff; font-size: 15px; }
+.youxi-shot-mode__menu { left: 0; right: auto; width: 290px; }
+.youxi-shot-mode__menu button { min-height: 62px; align-items: center; }
+.youxi-shot-mode__menu button[aria-selected="true"] { background: rgba(118, 104, 255, .18); }
+.youxi-shot-mode__menu span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.youxi-shot-mode__menu strong { color: #ececf0; font-size: 13px; font-weight: 600; }
+.youxi-shot-mode__menu small { color: #8b8b94; font-size: 13px; line-height: 1.35; }
+.youxi-shot-mode__menu button[aria-selected="true"] small { color: #aaa4df; }
+.youxi-shot-duration__menu { left: auto; right: 0; width: 112px; max-height: 260px; overflow-y: auto; }
+.youxi-shot-duration__menu button { height: 34px; justify-content: space-between; }
+.youxi-shot-duration__menu button[aria-selected="true"] { color: #fff; background: rgba(118, 104, 255, .18); }
+.youxi-shot-frames { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.youxi-shot-frame-pair { display: flex; align-items: center; gap: 7px; }
+.youxi-shot-frame-pair__item { display: flex; align-items: center; gap: 7px; }
+.youxi-shot-frame-link { color: #65656d; font-size: 15px; }
+.youxi-shot-frame { position: relative; width: 64px; height: 82px; flex: 0 0 auto; }
+.youxi-shot-frame__card {
+  position: relative;
+  width: 64px;
+  height: 82px;
+  overflow: hidden;
+  border: 1px dashed #3a3a42;
+  border-radius: 8px;
+  background: #292c2e;
+  transform: rotate(-5deg);
+  transition: border-color 150ms, background 150ms, transform 150ms;
+}
+.youxi-shot-frame.is-end .youxi-shot-frame__card { transform: rotate(5deg); }
+.youxi-shot-frame__card:hover { border-color: rgba(143, 130, 255, .55); background: #302f3a; transform: rotate(0); }
+.youxi-shot-frame__card > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.youxi-shot-frame__select {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  color: #898991;
+  background: transparent;
+  cursor: pointer;
+}
+.youxi-shot-frame__select strong { font-size: 10px; font-weight: 500; }
+.youxi-shot-frame__plus { font-size: 22px; font-weight: 300; line-height: 1; }
+.youxi-shot-frame__card.has-image .youxi-shot-frame__select {
+  justify-content: flex-end;
+  padding-bottom: 6px;
+  color: #fff;
+  background: linear-gradient(transparent 48%, rgba(8, 8, 11, .82));
+}
+.youxi-shot-frame__replace { margin: auto 0; color: #fff; font-size: 10px; opacity: 0; }
+.youxi-shot-frame__card:hover .youxi-shot-frame__replace { opacity: 1; }
+.youxi-shot-frame__clear {
+  position: absolute;
+  z-index: 4;
+  pointer-events: auto;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, .13);
+  border-radius: 5px;
+  color: #aaaab2;
+  background: rgba(13, 13, 16, .78);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.youxi-shot-frame__clear:hover { color: #ffabb1; background: #51242a; }
+.youxi-shot-frame__menu {
+  position: absolute;
+  z-index: 65;
+  top: calc(100% + 9px);
+  left: 50%;
+  width: 126px;
+  padding: 5px;
+  transform: translateX(-50%);
+  border: 1px solid #37373f;
+  border-radius: 10px;
+  background: #252527;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, .45);
+}
+.youxi-shot-library {
+  left: 50%;
+  right: auto;
+  width: 240px;
+  max-height: 280px;
+  overflow: auto;
+  display: grid;
+  gap: 4px;
+  transform: translateX(-50%);
+}
+.youxi-shot-library button {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  align-items: center;
+  padding: 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #dedee3;
+  text-align: left;
+  cursor: pointer;
+}
+.youxi-shot-library img { width: 42px; height: 42px; object-fit: cover; border-radius: 6px; grid-row: 1 / span 2; }
+.youxi-shot-library small { color: #8b8b94; font-size: 11px; }
+.youxi-shot-library p { margin: 6px; color: #8b8b94; font-size: 12px; }
+.youxi-shot-frame__prev {
+  height: 24px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #8f82ff;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.youxi-shot-frame__prev:hover:not(:disabled) { color: #c8c1ff; background: rgba(118, 104, 255, .11); }
+.youxi-shot-frame__prev:disabled { color: #776bd1; cursor: not-allowed; }
+
+.youxi-creative-workspace.youxi-workspace:has(> .drama-step.youxi-film-layout) {
+  height: auto;
+  max-height: none;
+  overflow: visible;
+}
+.youxi-creative-workspace.youxi-workspace > .drama-step.youxi-film-layout {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none;
+  overflow: hidden;
+}
+.drama-workspace .youxi-film-layout:has(.youxi-chapters) {
+  height: auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 286px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: 16px;
+  background: #151517;
+}
+.drama-workspace .youxi-film-layout > .youxi-film-side,
+.drama-workspace .youxi-film-layout > .youxi-film-main {
+  min-height: 0;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.drama-workspace .youxi-film-layout > .youxi-film-side {
+  height: 0;
+  min-height: 100%;
+  overflow: hidden;
+}
+.drama-workspace .youxi-film-layout > .youxi-film-main {
+  height: auto;
+  overflow: visible;
+}
+.drama-workspace .youxi-film-side {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid rgba(255, 255, 255, .08);
+}
+.drama-workspace .youxi-film-side-title {
+  flex: 0 0 62px;
+  height: 62px;
+  margin: 0;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
+}
+.drama-workspace .youxi-film-side-title h2 { margin: 0; color: #f3f3f5; font-size: 16px; font-weight: 650; }
+.drama-workspace .youxi-film-side-title::after { content: "成片"; color: #777780; font-size: 11px; font-weight: 500; }
+.drama-workspace .youxi-film-episode-picker {
+  position: relative;
+  height: auto;
+  overflow: visible;
+  padding: 15px 14px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
+}
+.drama-workspace .youxi-film-chapter-label {
+  display: block;
+  margin: 0 0 8px 2px;
+  color: #8b8b94;
+  font-size: 11px;
+  font-weight: 500;
+}
+.drama-workspace .youxi-film-chapter-trigger {
+  width: 100%;
+  height: 40px;
+  min-height: 40px;
+  padding: 0 11px 0 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 9px;
+  color: #e8e8ec;
+  background: #121214;
+  font-size: 14px;
+  cursor: pointer;
+}
+.drama-workspace .youxi-film-chapter-trigger:hover,
+.drama-workspace .youxi-film-episode-picker.is-open .youxi-film-chapter-trigger { border-color: rgba(143, 130, 255, .48); }
+.drama-workspace .youxi-film-chapter-trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drama-workspace .youxi-film-chapter-menu {
+  position: absolute;
+  z-index: 20;
+  left: 14px;
+  right: 14px;
+  top: calc(100% - 8px);
+  padding: 6px;
+  display: grid;
+  gap: 2px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 10px;
+  background: #222226;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .5);
+}
+.drama-workspace .youxi-film-chapter-menu button {
+  min-height: 36px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #e8e8ec;
+  text-align: left;
+  cursor: pointer;
+}
+.drama-workspace .youxi-film-chapter-menu button[aria-selected="true"],
+.drama-workspace .youxi-film-chapter-menu button:hover { background: rgba(118, 104, 255, .16); color: #fff; }
+.drama-workspace .youxi-film-side-shots-header {
+  flex: 0 0 52px !important;
+  height: 52px !important;
+  min-height: 52px;
+  padding: 0 14px 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 0;
+  background: transparent;
+}
+.drama-workspace .youxi-film-side-shots-header h3 { margin: 0; color: #f3f3f5; font-size: 14px; font-weight: 650; }
+.drama-workspace .youxi-film-side-shots-header h3 span { margin-left: 5px; color: #777780; font-size: 12px; font-weight: 500; }
+.drama-workspace .youxi-film-select-all {
+  min-width: 48px;
+  min-height: 32px;
+  color: #a99fff !important;
+  background: transparent !important;
+}
+.drama-workspace .youxi-film-select-all:hover { color: #fff !important; background: rgba(118, 104, 255, .12) !important; }
+.drama-workspace .youxi-film-side > .youxi-film-side-shots,
+.drama-workspace .youxi-chapters.youxi-film-side > div.youxi-film-side-shots {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0 10px 12px;
+}
+.drama-workspace .youxi-film-shot-row {
+  min-height: 68px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: #dddde2;
+  background: transparent;
+  cursor: pointer;
+}
+.drama-workspace .youxi-film-shot-row + .youxi-film-shot-row { margin-top: 5px; }
+.drama-workspace .youxi-film-shot-row:hover { background: rgba(255, 255, 255, .03); }
+.drama-workspace .youxi-film-shot-row.is-selected { border-color: rgba(143, 130, 255, .3); background: rgba(118, 104, 255, .1); }
+.drama-workspace .youxi-film-shot-row.is-disabled { opacity: .52; cursor: not-allowed; }
+.drama-workspace .youxi-film-shot-row input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.drama-workspace .youxi-film-shot-mark {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #50505a;
+  border-radius: 5px;
+  color: #fff;
+  background: #202024;
+  font-size: 12px;
+}
+.drama-workspace .youxi-film-shot-row.is-selected .youxi-film-shot-mark { border-color: #8173f4; background: #7163e8; }
+.drama-workspace .youxi-film-shot-row > span:not(.youxi-film-shot-mark) { display: flex; flex-direction: column; gap: 5px; }
+.drama-workspace .youxi-film-shot-row strong { color: #dddde2; font-size: 13px; font-weight: 600; }
+.drama-workspace .youxi-film-shot-row small { color: #8a8a92; font-size: 11px; }
+.drama-workspace .youxi-film-shot-row small.is-ready { color: #7bdaa4; font-size: 10px; font-weight: 600; }
+.drama-workspace .youxi-film-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 30px 28px;
+  background: radial-gradient(circle at 50% 40%, rgba(118, 104, 255, .055), transparent 36%), #141416;
+}
+.drama-workspace .youxi-film-banners {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 18px 0 8px;
+  text-align: center;
+}
+.drama-workspace .youxi-film-banner,
+.drama-workspace .youxi-film-banner--warn {
+  max-width: 760px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.drama-workspace .youxi-film-banner { color: #aaa2ed; }
+.drama-workspace .youxi-film-banner--warn { color: #e7bd7b; }
+.drama-workspace .youxi-film-layout .youxi-final-player {
+  flex: 0 0 auto;
+  width: 100%;
+  min-height: 0;
+  height: auto;
+  overflow: visible;
+  padding: 8px 0 18px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+}
+.drama-workspace .youxi-film-stage {
+  width: min(100%, 920px);
+  min-height: 348px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 15px;
+  background: #0c0c0e;
+  box-shadow: 0 22px 56px rgba(0, 0, 0, .28);
+}
+.drama-workspace .youxi-film-stage video {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  aspect-ratio: auto;
+  object-fit: contain;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.drama-workspace .youxi-film-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  color: #666670;
+  text-align: center;
+}
+.drama-workspace .youxi-film-empty svg { width: 42px; height: 42px; margin-bottom: 14px; color: #8277d7; }
+.drama-workspace .youxi-film-empty h3 { margin: 0; color: #d7d6dc; font-size: 16px; font-weight: 620; }
+.drama-workspace .youxi-film-empty p { margin: 8px 0 0; color: #777780; font-size: 12px; }
+.drama-workspace .youxi-film-actions {
+  flex: 0 0 auto;
+  padding: 0 0 8px;
+  display: flex;
+  justify-content: center;
+}
+.drama-workspace .youxi-film-actions .youxi-film-merge {
+  min-width: 184px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 20px;
+  border: 1px solid rgba(168, 154, 255, .42);
+  border-radius: 10px;
+  color: #fff;
+  background: linear-gradient(135deg, #6557e7, #7769f2);
+  box-shadow: 0 8px 24px rgba(75, 59, 190, .24);
+  font-size: 13px;
+  font-weight: 650;
+}
+.drama-workspace .youxi-film-actions .youxi-film-merge:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7163ed, #8375f7);
+  box-shadow: 0 11px 30px rgba(75, 59, 190, .34);
+  transform: translateY(-1px);
+}
+.drama-workspace .youxi-film-actions .youxi-film-merge:disabled {
+  border-color: rgba(255, 255, 255, .08);
+  color: #6e6e76;
+  background: #25252a;
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+.drama-workspace .youxi-film-actions .youxi-film-merge.is-loading:disabled { color: #bbb5e5; cursor: wait; }
