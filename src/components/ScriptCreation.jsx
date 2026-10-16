@@ -1,6 +1,6 @@
 import {
   BookOpen, Check, ChevronRight, ClipboardCheck, Copy, FileText, History, Paperclip,
-  PenLine, Plus, Save, Search, Send, Sparkles, WandSparkles, Brain, Film,
+  PenLine, Save, Search, Send, Sparkles, WandSparkles, Brain, Film,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -186,7 +186,7 @@ async function copyText(value) {
 function ScriptSidebar({ page, onPage, onNew, tasks, activeTaskId, onOpen, query, setQuery }) {
   const recent = tasks.slice(0, 7);
   return <aside className="script-history">
-    <button className="script-new" type="button" onClick={onNew}><Plus size={16} /> 新建任务</button>
+    <button className="script-new" type="button" onClick={onNew}><span aria-hidden="true">＋</span><span>新建任务</span></button>
     <button className={`script-library-entry ${page === "scripts" ? "active" : ""}`} type="button" onClick={() => onPage("scripts")}><BookOpen size={16} /> 我的剧本 <span>{tasks.length}</span></button>
     <label><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索创作记录" /></label>
     <span className="script-history__label"><History size={13} /> 最近创作</span>
@@ -206,7 +206,7 @@ function ScriptLibrary({ tasks, onNew, onOpen, onPreview, onConvert, onDelete })
     { id: "completed", label: "已完成", count: completed.length },
   ];
   return <section className="script-library">
-    <header><div><h1>我的剧本</h1><p>管理光驭精灵生成、改编和评估的剧本任务</p></div><button type="button" onClick={onNew}><Plus size={16} /> 新建任务</button></header>
+    <header><div><h1>我的剧本</h1><p>管理光驭精灵生成、改编和评估的剧本任务</p></div><button type="button" onClick={onNew}><span aria-hidden="true">＋</span><span>新建任务</span></button></header>
     <div className="script-library__filters" role="tablist" aria-label="剧本状态筛选">{filters.map((item) => <button type="button" role="tab" aria-selected={filter === item.id} className={filter === item.id ? "active" : ""} onClick={() => setFilter(item.id)} key={item.id}>{item.label} {item.count}</button>)}</div>
     {!tasks.length ? <div className="script-library__empty"><FileText size={30} /><strong>还没有剧本任务</strong><p>从一个灵感、一个 TXT 小说或一份现有剧本开始。</p><button type="button" onClick={onNew}>开始创作</button></div> : !visibleTasks.length ? <div className="script-library__empty"><FileText size={30} /><strong>暂无符合条件的剧本</strong><p>切换其他状态筛选查看全部任务。</p><button type="button" onClick={() => setFilter("all")}>查看全部</button></div> : <div className="script-library__grid">{visibleTasks.map((item) => <article key={item.id}>
       <div className="script-library__cover"><span>{modeOf(item.mode).title}</span><FileText size={34} /></div>

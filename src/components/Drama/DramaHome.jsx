@@ -1,5 +1,5 @@
 import { ChevronRight, MoreHorizontal, Pencil, Plus, Trash2, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import {
@@ -47,6 +47,77 @@ function DramaDialog({ title, eyebrow, wide, onClose, children }) {
   );
 }
 
+function GradientDotField() {
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const container = canvas?.parentElement;
+    if (!canvas || !container) return undefined;
+
+    const draw = () => {
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.max(1, Math.round(width * ratio));
+      canvas.height = Math.max(1, Math.round(height * ratio));
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      const context = canvas.getContext("2d");
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      context.clearRect(0, 0, width, height);
+
+      const spacing = width < 760 ? 18 : 20;
+      const radius = width < 760 ? 1.15 : 1.35;
+      const centers = [
+        { x: .42, y: .27, color: [217, 134, 50], spread: .105, strength: .48 },
+        { x: .45, y: .34, color: [181, 166, 55], spread: .10, strength: .58 },
+        { x: .48, y: .49, color: [67, 195, 200], spread: .17, strength: 1.1 },
+        { x: .59, y: .50, color: [60, 168, 232], spread: .18, strength: 1.25 },
+        { x: .65, y: .54, color: [57, 119, 232], spread: .16, strength: 1.05 },
+        { x: .53, y: .68, color: [100, 93, 230], spread: .14, strength: .62 },
+      ];
+
+      for (let y = spacing / 2; y < height; y += spacing) {
+        for (let x = spacing / 2; x < width; x += spacing) {
+          const normalizedX = x / width;
+          const normalizedY = y / height;
+          const ellipseDistance = Math.sqrt(((normalizedX - .54) / .34) ** 2 + ((normalizedY - .50) / .42) ** 2);
+          const edgeAlpha = Math.max(0, Math.min(1, (1 - ellipseDistance) / .32));
+          let total = 0;
+          let red = 0;
+          let green = 0;
+          let blue = 0;
+
+          for (const center of centers) {
+            const deltaX = normalizedX - center.x;
+            const deltaY = normalizedY - center.y;
+            const weight = center.strength * Math.exp(-(deltaX * deltaX + deltaY * deltaY) / (2 * center.spread * center.spread));
+            total += weight;
+            red += center.color[0] * weight;
+            green += center.color[1] * weight;
+            blue += center.color[2] * weight;
+          }
+
+          const alpha = .025 + (.08 + .78 * edgeAlpha) * Math.min(1, total * .82);
+          const ambientMix = total < .02 ? [92, 98, 108] : [red / total, green / total, blue / total];
+          context.beginPath();
+          context.arc(x, y, radius, 0, Math.PI * 2);
+          context.fillStyle = `rgba(${Math.round(ambientMix[0])},${Math.round(ambientMix[1])},${Math.round(ambientMix[2])},${alpha.toFixed(3)})`;
+          context.fill();
+        }
+      }
+    };
+
+    const observer = new ResizeObserver(draw);
+    observer.observe(container);
+    draw();
+    return () => observer.disconnect();
+  }, []);
+
+  return <canvas ref={canvasRef} className="gradient-dot-field" aria-hidden="true" />;
+}
+
 export function DramaHome() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -60,6 +131,14 @@ export function DramaHome() {
     queryKey: ["drama-series"],
     queryFn: fetchDramaSeries,
   });
+
+  useEffect(() => {
+    if (!renameTarget) return;
+    const input = document.querySelector(".project-name-input");
+    input?.focus();
+    input?.select();
+  }, [renameTarget]);
+
   const textModelsQuery = useQuery({
     queryKey: ["drama-text-models"],
     queryFn: fetchDramaTextModels,
@@ -184,8 +263,10 @@ export function DramaHome() {
     renameMutation.mutate({ id: renameTarget.id, name });
   }
 
+  const emptyState = !listQuery.isLoading && !listQuery.isError && series.length === 0;
+
   return (
-    <section className="drama-library short-drama-page drama-project-list">
+    <section className={`drama-library short-drama-page drama-project-list${emptyState ? " is-empty" : ""}`}>
       <header className="drama-library__header">
         <div className="page-header">
           <div>
@@ -193,20 +274,62 @@ export function DramaHome() {
             <p>组织剧集、镜头和生成素材，完成连续内容创作</p>
           </div>
         </div>
-        <button className="page-primary-action" type="button" onClick={() => setCreating(true)}>
-          <Plus size={18} /> 创建项目
-        </button>
+        {!emptyState && (
+          <button className="page-primary-action" type="button" onClick={() => setCreating(true)}>
+            <Plus size={18} /> 创建项目
+          </button>
+        )}
       </header>
-      <div className="project-count">我的项目 · <span>{series.length}</span></div>
       {listQuery.isError && <p className="drama-form-error">{listQuery.error.message || "加载项目失败"}</p>}
-      <div className="drama-project-grid">
-        {listQuery.isLoading && <div className="drama-empty">正在加载项目…</div>}
-        {!listQuery.isLoading && series.length === 0 && <div className="drama-empty">还没有短剧项目，点击右上角创建</div>}
+      {emptyState ? (
+        <div className="creation-canvas">
+          <GradientDotField />
+          <div className="create-action">
+            <button className="create-project-button" type="button" onClick={() => setCreating(true)}>
+              <Plus size={16} /> <span>创建项目</span>
+            </button>
+            <span className="cursor-guide" aria-hidden="true">
+              <span className="cursor-ripple" />
+              <span className="cursor-ripple secondary" />
+              <svg viewBox="0 0 26 30" fill="none">
+                <defs>
+                  <linearGradient id="cursorGradient" x1="3" y1="2" x2="19" y2="25" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#A99BFF" /><stop offset=".52" stopColor="#7668FF" /><stop offset="1" stopColor="#4D72E8" />
+                  </linearGradient>
+                </defs>
+                <path d="M2.5 2.2 22.7 16.5l-8.5 1.8-4.1 9-7.6-25.1Z" fill="url(#cursorGradient)" stroke="#E8E5FF" strokeWidth="2.8" strokeLinejoin="round" />
+                <path d="M2.5 2.2 22.7 16.5l-8.5 1.8-4.1 9-7.6-25.1Z" stroke="#6558E8" strokeWidth="1.1" strokeLinejoin="round" />
+              </svg>
+            </span>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="project-count">我的项目 · <span>{series.length}</span></div>
+          <div className="drama-project-grid">
+            {listQuery.isLoading && <div className="drama-empty">正在加载项目…</div>}
         {series.map((item) => {
           const cover = mediaUrl(item.coverUrl || item.coverKey);
           const episodeCount = item.episodeCount || item.episodes?.length || item.plannedEpisodeCount || 1;
           return (
-            <article className="drama-project-card" key={item.id}>
+            <article
+              className="drama-project-card"
+              key={item.id}
+              tabIndex={0}
+              role="link"
+              aria-label={`打开项目 ${item.name}`}
+              onClick={(event) => {
+                if (event.target.closest("button,input,.drama-project-menu")) return;
+                if (renameTarget || menu) return;
+                navigate(`/console/drama/${item.id}`);
+              }}
+              onKeyDown={(event) => {
+                if ((event.key === "Enter" || event.key === " ") && !event.target.closest("button,input,.drama-project-menu")) {
+                  event.preventDefault();
+                  if (!renameTarget && !menu) navigate(`/console/drama/${item.id}`);
+                }
+              }}
+            >
               <div className={`drama-project-card__cover ${cover ? "" : "is-empty"}`}>
                 {cover ? (
                   <img src={cover} alt="" />
@@ -279,16 +402,12 @@ export function DramaHome() {
                 <p>{item.synopsis || (item.textModelName ? `文本模型 · ${item.textModelName}` : (item.latestEpisode?.name || "新的短剧项目"))}</p>
                 <footer><span>{formatDateTime(item.updatedAt)}</span></footer>
               </div>
-              <button
-                className="drama-project-card__open"
-                type="button"
-                aria-label={`打开短剧项目：${item.name}`}
-                onClick={() => navigate(`/console/drama/${item.id}`)}
-              />
             </article>
           );
         })}
-      </div>
+          </div>
+        </>
+      )}
       {creating && (
         <DramaDialog title="创建短剧" eyebrow="从一个故事开始" wide onClose={() => { if (!createMutation.isPending) { setCreating(false); setForm(emptyForm); } }}>
           <form id="create-drama-form" className="drama-create-form" onSubmit={onSubmit}>

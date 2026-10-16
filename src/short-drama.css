@@ -64,7 +64,7 @@
 .console-shell[data-theme="dark"] :is(.drama-project-card__body>p,.drama-step-title p,.subject-card>small,.subject-card>p,.storyboard-grid p,.storyboard-grid small,.script-welcome>p,.script-mode-cards p,.script-message p) { color: #aab4c1; }
 .console-shell[data-theme="dark"] :is(.drama-project-card__body footer,.drama-script-editor>header,.drama-script-editor footer,.drama-step-title,.shot-table td,.storyboard-grid footer,.script-chat>header,.script-document>header,.script-outline,.script-document>footer) { border-color: #2d3643; }
 .console-shell[data-theme="dark"] .shot-table th { color: #a9b3bf; }.console-shell[data-theme="dark"] .shot-table td { color: #c3ccd7; }.console-shell[data-theme="dark"] .script-message--user p { color: #fff; }.console-shell[data-theme="dark"] .script-history>div button.active,.console-shell[data-theme="dark"] .drama-episode-panel>button.active,.console-shell[data-theme="dark"] .script-outline button.active { background: #252d45; }.console-shell[data-theme="dark"] .drama-view-switch { background: #202731; }.console-shell[data-theme="dark"] .drama-view-switch button.active { background: #30394a; }.console-shell[data-theme="dark"] .film-ready,.console-shell[data-theme="dark"] .drama-toast { color: #91d1ac; background: #1b3329; border-color: #31503f; }.console-shell[data-theme="dark"] .drama-toast--error { color: #f0a3a8; background: #322028; border-color: #5a3338; }
-.console-shell[data-theme="dark"] .script-new { background: #5360c8; }.console-shell[data-theme="dark"] .script-history>div strong { color: #dbe1ea; }.console-shell[data-theme="dark"] .script-history>div button.active strong { color: #cbd1ff; }.console-shell[data-theme="dark"] .script-message--user>div { background: #5965cd; }.console-shell[data-theme="dark"] .script-mode-chip { color: #cbd1ff; background: #29324a; }.console-shell[data-theme="dark"] .script-composer>div:last-child>button:first-child { color: #c0c8d4; }.console-shell[data-theme="dark"] .script-mode-cards em { color: #adb6ff; }
+.console-shell[data-theme="dark"] .script-history>div strong { color: #dbe1ea; }.console-shell[data-theme="dark"] .script-history>div button.active strong { color: #cbd1ff; }.console-shell[data-theme="dark"] .script-message--user>div { background: #5965cd; }.console-shell[data-theme="dark"] .script-mode-chip { color: #cbd1ff; background: #29324a; }.console-shell[data-theme="dark"] .script-composer>div:last-child>button:first-child { color: #c0c8d4; }.console-shell[data-theme="dark"] .script-mode-cards em { color: #adb6ff; }
 .console-shell[data-theme="dark"] .drama-project-card__cover,
 .console-shell[data-theme="dark"] .drama-project-card__placeholder { background: #202731; }
 .console-shell[data-theme="dark"] .drama-project-card__cover.is-empty > span { color: #aab4c1; }
@@ -3025,6 +3025,7 @@
 .drama-project-card__body { position: relative; padding: 14px 14px 15px; }
 .project-title-row { position: relative; min-height: 36px; display: flex; align-items: center; gap: 8px; }
 .project-title-row strong { min-width: 0; flex: 1; overflow: hidden; color: #f5f5f7; font-size: 15px; font-weight: 650; line-height: 24px; text-overflow: ellipsis; white-space: nowrap; }
+.project-title-row .project-name-input { position: relative; z-index: 3; }
 .project-title-row button { width: 36px; height: 36px; flex: 0 0 auto; display: grid; place-items: center; border: 0; border-radius: 9px; color: var(--text-secondary); background: transparent; }
 .project-title-row button:hover,
 .project-title-row button[aria-expanded="true"] { color: #fff; background: var(--bg-hover); }
@@ -3063,6 +3064,70 @@
   border-color: #ef747d;
   box-shadow: 0 0 0 3px rgba(239,116,125,.14);
 }
+.short-drama-page { display: flex; flex-direction: column; }
+.short-drama-page .page-header { flex: 0 0 auto; margin-bottom: 22px; }
+.creation-canvas {
+  position: relative;
+  isolation: isolate;
+  flex: 1 1 auto;
+  min-height: max(520px, calc(100dvh - 196px));
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg-page);
+}
+.gradient-dot-field { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.create-action { position: relative; z-index: 2; display: inline-flex; align-items: center; justify-content: center; }
+.create-project-button {
+  position: relative;
+  z-index: 1;
+  min-width: 132px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 24px;
+  border: 1px solid var(--create-action-border);
+  border-radius: 12px;
+  color: #f2f0ff;
+  background: var(--create-action-bg);
+  backdrop-filter: blur(10px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 8px 24px rgba(49,35,110,.24);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 160ms var(--ease-out), border-color 160ms var(--ease-out), transform 120ms var(--ease-out), box-shadow 160ms;
+}
+.create-project-button svg { width: 16px; height: 16px; color: #a99bff; }
+.create-project-button:hover { background: var(--create-action-hover); border-color: var(--brand-highlight); transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 10px 28px rgba(49,35,110,.3); }
+.create-project-button:active { background: var(--create-action-pressed); transform: scale(.97); }
+.create-project-button:focus-visible { outline: 0; box-shadow: 0 0 0 3px rgba(118,104,255,.18), inset 0 1px 0 rgba(255,255,255,.1), 0 10px 28px rgba(49,35,110,.3); }
+.cursor-guide { position: absolute; z-index: 4; left: calc(100% - 10px); top: calc(100% - 10px); width: 28px; height: 32px; pointer-events: none; transform-origin: 3px 3px; animation: guide-cursor-click 2.2s ease-in-out infinite; }
+.cursor-guide > svg { position: relative; z-index: 3; width: 25px; height: 29px; overflow: visible; filter: drop-shadow(0 2px 5px rgba(0,0,0,.55)); }
+.cursor-ripple { position: absolute; z-index: 1; left: -4px; top: -4px; width: 16px; height: 16px; border: 2px solid rgba(69,151,218,.65); border-radius: 50%; opacity: 0; transform: scale(.35); animation: guide-ripple-primary 2.2s ease-out infinite; }
+.cursor-ripple.secondary { z-index: 0; left: -8px; top: -8px; width: 24px; height: 24px; border-color: rgba(78,123,177,.38); animation-name: guide-ripple-secondary; }
+.create-action:hover .cursor-guide,
+.create-action:hover .cursor-ripple,
+.create-action:focus-within .cursor-guide,
+.create-action:focus-within .cursor-ripple { animation-play-state: paused; }
+@keyframes guide-cursor-click {
+  0%, 43%, 52%, 100% { transform: scale(1); }
+  47% { transform: scale(.91); }
+}
+@keyframes guide-ripple-primary {
+  0%, 45% { opacity: 0; transform: scale(.35); }
+  48% { opacity: .88; transform: scale(.5); }
+  65%, 100% { opacity: 0; transform: scale(2.15); }
+}
+@keyframes guide-ripple-secondary {
+  0%, 48% { opacity: 0; transform: scale(.35); }
+  52% { opacity: .52; transform: scale(.45); }
+  70%, 100% { opacity: 0; transform: scale(2.05); }
+}
+.drama-project-card:focus-visible { box-shadow: 0 0 0 3px rgba(118,104,255,.2); border-color: var(--brand-primary); }
 .drama-project-title .workspace-name-input {
   width: min(420px, 55vw);
   height: 34px;
