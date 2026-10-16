@@ -83,6 +83,10 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
   }, [collapsed]);
 
   useEffect(() => {
+    if (dramaId) setCollapsed(true);
+  }, [dramaId]);
+
+  useEffect(() => {
     const onDocMouseDown = (event) => {
       if (!menuRef.current?.contains(event.target)) setUserMenu(false);
     };
@@ -226,6 +230,7 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
             theme="dark"
             reuse={creationReuse}
             onReuseApplied={() => setCreationReuse(null)}
+            onRequestCollapseSidebar={() => setCollapsed(true)}
             onOpenAssets={() => navigate("/console/assets")}
             credits={user?.credits ?? null}
             onNeedRecharge={() => setCreditsOpen(true)}

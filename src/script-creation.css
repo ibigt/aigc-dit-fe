@@ -35,27 +35,45 @@
   background: var(--script-panel);
 }
 .script-history { padding: 18px 12px; overflow-y: auto; border-right: 1px solid var(--script-divider); }
-.script-new {
+.script-new,
+.script-library > header > button {
   width: 100%;
   height: 40px;
-  border: 0;
+  border: 1px solid rgba(172, 159, 255, .38);
   border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  color: #171717;
-  background: #fff;
+  color: #fff;
+  background: var(--brand-primary);
   font-weight: 600;
-  transition: background 150ms, transform 150ms;
+  box-shadow: 0 6px 18px rgba(75, 59, 190, .22), inset 0 1px 0 rgba(255, 255, 255, .12);
+  cursor: pointer;
+  transition: background 150ms var(--ease-out), border-color 150ms var(--ease-out), box-shadow 150ms var(--ease-out), transform 150ms var(--ease-out);
 }
-.script-new:hover { background: #e9e9eb; }
-.script-new:active { transform: scale(.985); }
-.script-new:focus-visible { outline: 0; box-shadow: 0 0 0 3px rgba(143, 130, 255, .25); }
+.script-library > header > button { width: auto; padding: 0 24px; }
+.script-new:hover,
+.script-library > header > button:hover {
+  border-color: rgba(205, 197, 255, .55);
+  background: var(--brand-highlight);
+  box-shadow: 0 8px 22px rgba(75, 59, 190, .28), inset 0 1px 0 rgba(255, 255, 255, .16);
+}
+.script-new:active,
+.script-library > header > button:active {
+  background: var(--brand-primary);
+  box-shadow: 0 3px 10px rgba(75, 59, 190, .2), inset 0 1px 0 rgba(255, 255, 255, .08);
+  transform: scale(.985);
+}
+.script-new:focus-visible,
+.script-library > header > button:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(143, 130, 255, .28), 0 6px 18px rgba(75, 59, 190, .22);
+}
 .script-new > span:first-child,
 .script-library > header > button > span:first-child { font-size: 20px; font-weight: 400; line-height: 1; }
 .script-new > span:last-child,
-.script-library > header > button > span:last-child { font-size: 16px; font-weight: 600; color: #171717;}
+.script-library > header > button > span:last-child { font-size: 16px; font-weight: 600; color: #fff; }
 .script-history > label {
   height: 36px;
   margin-top: 13px;
@@ -315,10 +333,7 @@
 .script-library > header { display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 24px; border-bottom: 1px solid var(--script-divider); }
 .script-library h1 { margin: 0; color: var(--text-primary); font-size: 28px; font-weight: 500; }
 .script-library > header p { margin: 7px 0 0; color: var(--script-muted); font-size: 13px; }
-.script-library > header > button { height: 40px; flex: 0 0 auto; padding: 0 24px; border: 0; border-radius: 10px; display: inline-flex; align-items: center; gap: 7px; color: #171717; background: #fff; font-weight: 600; transition: background 150ms, transform 150ms; }
-.script-library > header > button:hover { background: #e9e9eb; }
-.script-library > header > button:active { transform: scale(.985); }
-.script-library > header > button:focus-visible { outline: 0; box-shadow: 0 0 0 3px rgba(143, 130, 255, .25); }
+.script-library > header > button { flex: 0 0 auto; }
 .script-library__filters { display: flex; gap: 7px; padding: 18px 0; color: var(--script-muted); font-size: 12px; }
 .script-library__filters button { height: 32px; padding: 0 12px; border: 1px solid transparent; border-radius: 10px; color: var(--text-secondary); background: transparent; cursor: pointer; font-size: 12px; }
 .script-library__filters button:hover { color: var(--text-primary); background: var(--bg-hover); }

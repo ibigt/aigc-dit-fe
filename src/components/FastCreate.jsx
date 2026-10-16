@@ -123,6 +123,47 @@ function clampDurationForModel(model, duration) {
   if (options.includes(duration)) return duration;
   return options.find((item) => item >= duration) || options[options.length - 1] || 5;
 }
+function isMockModel(model) {
+  const adapter = String(model?.adapterKey || "").toLowerCase();
+  const key = String(model?.modelKey || "").toLowerCase();
+  const provider = String(model?.provider || "").toLowerCase();
+  const endpoint = String(model?.endpoint || "").toLowerCase();
+  return adapter === "mock" || key.startsWith("mock") || provider.includes("mock") || endpoint.includes("/mock-api");
+}
+function isSeedreamModel(model) {
+  const adapter = String(model?.adapterKey || "").toLowerCase();
+  const key = String(model?.modelKey || "").toLowerCase();
+  return adapter.startsWith("seedream") || key.includes("seedream");
+}
+function isOpenAiImageModel(model) {
+  const adapter = String(model?.adapterKey || "").toLowerCase();
+  const key = String(model?.modelKey || "").toLowerCase();
+  return adapter === "gpt-image-2.0" || adapter === "gpt-image-2.5"
+    || ((adapter.startsWith("gpt-image") || key.includes("gpt-image")) && /官方|openai/i.test(String(model?.provider || "")));
+}
+function isWan3Model(model) {
+  const adapter = String(model?.adapterKey || "").toLowerCase();
+  const key = String(model?.modelKey || "").toLowerCase();
+  const provider = String(model?.provider || "").toLowerCase();
+  return adapter === "wan3" || key.includes("wan3") || key.includes("wan-3")
+    || provider.includes("dashscope") || provider.includes("百炼");
+}
+function isRunningHubModel(model) {
+  const adapter = String(model?.adapterKey || "").toLowerCase();
+  return adapter === "gpt-image-2" || adapter === "seedance-2"
+    || String(model?.provider || "").toLowerCase() === "runninghub";
+}
+function maxCopiesFor(model) {
+  if (model?.category === "audio") return 1;
+  const configured = Number(model?.maxCopies ?? model?.adapterConfig?.maxCopies ?? model?.pricing?.maxCopies);
+  if (Number.isFinite(configured)) return Math.min(4, Math.max(1, Math.floor(configured)));
+  if (isRunningHubModel(model) || isAgnes(model) || isMiniMaxH3(model) || isSeedanceOfficial(model)) return 1;
+  if (isSeedreamModel(model) || isOpenAiImageModel(model) || isWan3Model(model)
+    || /comfyui/i.test(String(model?.provider || ""))) {
+    return 4;
+  }
+  return isMockModel(model) ? 4 : 1;
+}
 function capabilityBlockReason(model, generationType, referenceImages, firstFrame, lastFrame, videoMode) {
   const hasRefs = (referenceImages || []).length > 0;
   const audioCount = (referenceImages || []).filter((item) => item?.type === "audio").length;
@@ -480,11 +521,13 @@ function usePerSessionDraft(activeSessionId, initial = "") {
   return [value, setValue];
 }
 
-export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light", onOpenAssets, modelCatalogLoading = false, modelCatalogError = null, credits = null, onNeedRecharge = null, reuse = null, onReuseApplied = () => {} }) {
+export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light", onOpenAssets, modelCatalogLoading = false, modelCatalogError = null, credits = null, onNeedRecharge = null, reuse = null, onReuseApplied = () => {}, onRequestCollapseSidebar = null }) {
   const queryClient = useQueryClient();
   const [sessions, setSessions] = useState(() => [makeInitialSession()]);
   const [activeSessionId, setActiveSessionId] = useState(DEFAULT_SESSION_ID);
   const [generationType, setGenerationType] = useState("video");
+  const conversationSessions = sessions.filter((item) => item.id !== DEFAULT_SESSION_ID);
+  const showConversationRail = conversationSessions.length > 0;
   const availableModels = useMemo(() => (config.models || []).filter((item) => item.enabled !== false && (item.category === generationType || item.capabilities?.includes(generationType))), [config.models, generationType]);
   const [model, setModel] = useState(() => String(config.models.find((item) => item.enabled !== false && (item.category === "video" || item.capabilities?.includes("video")))?.id || config.models[0]?.id || ""));
   // 创作框内容按 session 持久化，切走/切回不丢；关 tab 自动清。
@@ -549,6 +592,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const activeSessionIdRef = useRef(activeSessionId);
   const activeSession = sessions.find((item) => item.id === activeSessionId) || sessions[0];
   const sessionGenerating = isSessionGenerating(activeSession, generatingSessionIds);
+  const hasConversationHistory = activeSession.messages.length > 0;
 
   const selectedModel = useMemo(() => availableModels.find((item) => String(item.id) === String(model)) || availableModels[0], [availableModels, model]);
   const audioOptions = selectedModel?.audioOptions || {};
@@ -566,15 +610,8 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const audioOnlyReady = Boolean(selectedModel?.supportsAudioOnlyReference && referenceImages.some((item) => item.type === "audio"));
   const canSubmit = Boolean(selectedModel && (videoMode === "frames" && generationType === "video" ? framesReady : (prompt.trim() || audioOnlyReady)) && !sessionGenerating);
   const showVideoModes = generationType === "video" && (modelSupports(selectedModel, "r2v") || supportsFrames);
-  const copiesLimited = generationType === "audio"
-    || selectedModel?.adapterKey === "gpt-image-2"
-    || selectedModel?.adapterKey === "seedance-2"
-    || selectedModel?.adapterKey === "seedance-2.0"
-    || selectedModel?.adapterKey === "seedance-2.5"
-    || String(selectedModel?.provider || "").toLowerCase() === "runninghub"
-    || isAgnes(selectedModel)
-    || isMiniMaxH3(selectedModel)
-    || isSeedanceOfficial(selectedModel);
+  const maxCopies = maxCopiesFor(selectedModel);
+  const activeCopies = Math.min(maxCopies, Math.max(1, copies));
   const creditCost = selectedModel ? calculateCreditEstimate({
     pricing: selectedModel?.pricing,
     category: generationType,
@@ -582,7 +619,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     quality,
     durationSec: duration,
     characterCount: prompt.length,
-    copies: copiesLimited ? 1 : copies,
+    copies: activeCopies,
   }) : 0;
   const balanceCredits = Number(credits);
   const creditShortage = Boolean(selectedModel) && Number.isFinite(balanceCredits) && creditCost > balanceCredits;
@@ -631,13 +668,10 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     fetchSessions().then(async (items) => {
       if (cancelled) return;
       if (!items?.length) {
-        const category = ["video", "image", "audio"].includes(seed?.type) ? seed.type : "video";
-        const created = await createSession({ title: "新建创作", category });
-        if (cancelled) return;
-        setSessions([{ ...makeInitialSession(), id: created.id, title: created.title, generationType: created.category || category }]);
-        setActiveSessionId(created.id);
-        activeSessionIdRef.current = created.id;
-        if (seed) queueCreationSeed(seed, created.id);
+        setSessions([makeInitialSession()]);
+        setActiveSessionId(DEFAULT_SESSION_ID);
+        activeSessionIdRef.current = DEFAULT_SESSION_ID;
+        if (seed) queueCreationSeed(seed, DEFAULT_SESSION_ID);
         return;
       }
       const mapped = items.map((item) => ({
@@ -795,6 +829,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
       setSessions((items) => [next, ...items.filter((item) => item.id !== DEFAULT_SESSION_ID)]);
       setActiveSessionId(created.id);
       setPrompt("");
+      onRequestCollapseSidebar?.();
     }).catch((error) => setSubmitError(error.message || "无法新建会话"));
   }
 
@@ -821,10 +856,8 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
       const remaining = sessions.filter((item) => item.id !== session.id);
       setDeleteSessionTarget(null);
       if (!remaining.length) {
-        const created = await createSession({ title: "未命名创作", category: generationType });
-        const next = { id: created.id, title: created.title || "未命名创作", generationType, updated: "刚刚", messages: [] };
-        setSessions([next]);
-        setActiveSessionId(created.id);
+        setSessions([makeInitialSession()]);
+        setActiveSessionId(DEFAULT_SESSION_ID);
         setPrompt("");
         return;
       }
@@ -1003,6 +1036,10 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
       setSubmitError(blocked);
       return;
     }
+    if (activeCopies < 1 || activeCopies > maxCopies) {
+      setSubmitError(`当前模型每次最多生成 ${maxCopies} 个`);
+      return;
+    }
     const displayText = text || (framesReadyNow ? FRAMES_EMPTY_PROMPT_LABEL : "");
     setSubmitError("");
     setInsufficientCredits(false);
@@ -1046,7 +1083,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         resolution,
         quality,
         durationSec: currentType === "video" ? duration : null,
-        copies: copiesLimited ? 1 : copies,
+        copies: activeCopies,
         voiceId: currentType === "audio" ? voiceId : "",
         speed: currentType === "audio" ? speed : null,
         audioFormat: currentType === "audio" ? audioFormat : "",
@@ -1062,6 +1099,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         const created = await createSession({ title: text.slice(0, 12) || displayText.slice(0, 12) || "未命名创作", category: currentType });
         sessionId = created.id;
         setActiveSessionId(created.id);
+        onRequestCollapseSidebar?.();
         setSessions((items) => [{
           id: created.id,
           title: created.title,
@@ -1103,7 +1141,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         voiceId: currentType === "audio" ? voiceId : undefined,
         speed: currentType === "audio" ? speed : undefined,
         audioFormat: currentType === "audio" ? audioFormat : undefined,
-        copies: copiesLimited ? 1 : copies,
+        copies: activeCopies,
         references: useFrames ? undefined : references.map((item) => ({
           type: item.type,
           storageKey: item.storageKey,
@@ -1188,7 +1226,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     if (reuse.resolution) setResolution(reuse.resolution);
     if (reuse.quality) setQuality(reuse.quality);
     if (reuse.durationSec) setDuration(reuse.durationSec);
-    if (reuse.copies) setCopies(Math.min(4, Math.max(1, reuse.copies)));
+    if (reuse.copies) setCopies(Math.min(maxCopies, Math.max(1, reuse.copies)));
     if (category === "audio") {
       if (reuse.voiceId) setVoiceId(reuse.voiceId);
       if (reuse.speed) setSpeed(reuse.speed);
@@ -1268,9 +1306,25 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const presets = creationPresets[generationType] || [];
   const paramButtonIcon = generationType === "audio" ? <AudioLines size={14} /> : <Maximize2 size={14} />;
 
+  function renderCreationTypeSwitch() {
+    return (
+      <div className="creation-type-switch" role="group" aria-label="创作类型">
+        <button type="button" className={`creation-type-button ${generationType === "video" ? "active" : ""}`} aria-pressed={generationType === "video"} onClick={() => changeType("video")}>
+          <WorksTypeIcon type="video" /><span>视频</span>
+        </button>
+        <button type="button" className={`creation-type-button ${generationType === "image" ? "active" : ""}`} aria-pressed={generationType === "image"} onClick={() => changeType("image")}>
+          <WorksTypeIcon type="image" /><span>图片</span>
+        </button>
+        <button type="button" className={`creation-type-button ${generationType === "audio" ? "active" : ""}`} aria-pressed={generationType === "audio"} onClick={() => changeType("audio")}>
+          <WorksTypeIcon type="audio" /><span>语音</span>
+        </button>
+      </div>
+    );
+  }
+
   function renderCreationPanel() {
     return (
-      <section className="quick-creation-panel" aria-label="创作输入">
+      <>
         <input ref={referenceInputRef} aria-label="上传参考素材" className="visually-hidden" type="file"
           accept={generationType === "video" && !imageOnlyRefs(selectedModel) ? `image/*,video/*${supportsAudioReference ? ",audio/*,.mp3,.wav,.m4a,.aac" : ""}` : "image/*"}
           multiple
@@ -1282,23 +1336,11 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         <input ref={lastFrameInputRef} aria-label="上传视频尾帧" className="visually-hidden" type="file" accept="image/*"
           disabled={!supportsFrames || sessionGenerating}
           onChange={(event) => { setFrame(event.target.files?.[0], setLastFrame); event.target.value = ""; }} />
-        <div className="quick-panel-head">
-          <div className="creation-type-switch" role="group" aria-label="创作类型">
-            <button type="button" className={`creation-type-button ${generationType === "video" ? "active" : ""}`} aria-pressed={generationType === "video"} onClick={() => changeType("video")}>
-              <WorksTypeIcon type="video" /><span>视频</span>
-            </button>
-            <button type="button" className={`creation-type-button ${generationType === "image" ? "active" : ""}`} aria-pressed={generationType === "image"} onClick={() => changeType("image")}>
-              <WorksTypeIcon type="image" /><span>图片</span>
-            </button>
-            <button type="button" className={`creation-type-button ${generationType === "audio" ? "active" : ""}`} aria-pressed={generationType === "audio"} onClick={() => changeType("audio")}>
-              <WorksTypeIcon type="audio" /><span>语音</span>
-            </button>
-          </div>
-          <span className="quick-draft-status">内容自动保存</span>
-        </div>
 
-        <div className="quick-reference-row">
-          <div className="quick-reference-list">
+        {!hasConversationHistory && renderCreationTypeSwitch()}
+
+        <div className="quick-creation-shell">
+          <div className="quick-reference-toolbar">
             {generationType === "video" && videoMode === "frames" ? (
               <>
                 {firstFrame && (
@@ -1327,23 +1369,38 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
               </>
             ) : supportsLibrary ? (
               <>
-                {referenceImages.map((ref, index) => (
-                  <div key={ref.storageKey || ref.id || `${ref.url}-${index}`} className="quick-reference" style={{ "--reference-art": refArt(ref) }}>
-                    <span>{ref.type === "video" ? "视频" : ref.type === "audio" ? "音频" : "图片"}</span>
-                    <button type="button" aria-label={`删除参考素材 ${ref.name || `参考 ${index + 1}`}`} onClick={() => setReferenceImages((items) => items.filter((_, idx) => idx !== index))}>×</button>
-                  </div>
-                ))}
                 {referenceImages.length < MAX_REFERENCE_ASSETS && (
                   <button type="button" className="quick-add-reference" onClick={() => referenceInputRef.current?.click()}>
                     <span aria-hidden="true">＋</span>
-                    <strong>参考图片</strong>
-                    <small>{generationType === "video" ? (imageOnlyRefs(selectedModel) ? "图片" : supportsAudioReference ? `图片/视频/音频` : `图片/视频`) : "支持多选"}</small>
+                    <strong>参考素材</strong>
+                    <small>支持多选</small>
                   </button>
+                )}
+                {referenceImages.length > 0 && (
+                  <div className="quick-reference-list">
+                    {referenceImages.map((ref, index) => (
+                      <div key={ref.storageKey || ref.id || `${ref.url}-${index}`} className="quick-reference" style={{ "--reference-art": refArt(ref) }}>
+                        <span>{ref.type === "video" ? "视频" : ref.type === "audio" ? "音频" : "图片"}</span>
+                        <button type="button" aria-label={`删除参考素材 ${ref.name || `参考 ${index + 1}`}`} onClick={() => setReferenceImages((items) => items.filter((_, idx) => idx !== index))}>×</button>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </>
             ) : null}
           </div>
-        </div>
+
+          <section className="quick-creation-panel" aria-label="创作输入">
+            <div className="quick-ambient" aria-hidden="true">
+              <i className="quick-glow quick-glow-blue" />
+              <i className="quick-glow quick-glow-violet" />
+              <i className="quick-glow quick-glow-pink" />
+              <i className="quick-glow quick-glow-white" />
+            </div>
+            <div className={`quick-panel-head${hasConversationHistory ? " has-type-switch" : ""}`}>
+              {hasConversationHistory && renderCreationTypeSwitch()}
+              <span className="quick-draft-status">内容自动保存</span>
+            </div>
 
         <div className="quick-prompt-wrap">
           <textarea
@@ -1605,13 +1662,11 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
           </div>
 
           <div className="quick-submit-group">
-            {!copiesLimited && (
-              <div className="quick-quantity">
-                <button type="button" onClick={() => setCopies((c) => Math.max(1, c - 1))} aria-label="减少生成数量">−</button>
-                <span>生成 {copies} 个</span>
-                <button type="button" onClick={() => setCopies((c) => Math.min(4, c + 1))} aria-label="增加生成数量">＋</button>
-              </div>
-            )}
+            <div className="quick-quantity" title={maxCopies === 1 ? "当前模型每次生成 1 个" : `当前模型最多生成 ${maxCopies} 个`}>
+              <button type="button" disabled={activeCopies <= 1} onClick={() => setCopies(activeCopies - 1)} aria-label="减少生成数量">−</button>
+              <span>生成 {activeCopies} 个</span>
+              <button type="button" disabled={activeCopies >= maxCopies} onClick={() => setCopies(activeCopies + 1)} aria-label="增加生成数量">＋</button>
+            </div>
             <span className={`quick-points ${creditShortage ? "is-insufficient" : ""}`} title={selectedModel ? "根据模型售价、参数与副本数计算" : "暂无可用模型"}>
               ✦ {selectedModel ? `${creditCost} 积分` : "--"}
             </span>
@@ -1625,12 +1680,14 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
           </div>
         </div>
       </section>
+        </div>
+      </>
     );
   }
 
   return (
-    <div className={`creator-page ${sessions.length > 0 ? "has-conversations" : "no-conversations"}`}>
-      {sessions.length > 0 && (
+    <div className={`creator-page ${showConversationRail ? "has-conversations" : "no-conversations"}`}>
+      {showConversationRail && (
         <aside className="conversation-rail" aria-label="创作会话">
         <button className="new-button" type="button" onClick={createSessionLocal}>
           <span aria-hidden="true">＋</span>
@@ -1638,7 +1695,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         </button>
         <div className="rail-label">
           <span>会话历史</span>
-          <span>{sessions.length}</span>
+          <span>{conversationSessions.length}</span>
         </div>
         <div className="conversation-list">
           {sessions.map((session) => {
@@ -1693,6 +1750,14 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
       </aside>
       )}
       <section className={`creator-workspace ${activeSession.messages.length ? "has-history" : ""}`}>
+        {!showConversationRail && (
+          <div className="workspace-new-action">
+            <button className="new-button" type="button" onClick={createSessionLocal}>
+              <span aria-hidden="true">＋</span>
+              <span>新建创作</span>
+            </button>
+          </div>
+        )}
         <div className={`quick-content ${activeSession.messages.length ? "has-history" : ""}`}>
           {activeSession.messages.length > 0 && (
             <section className="quick-conversation" aria-label="会话消息">
