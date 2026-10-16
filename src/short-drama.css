@@ -3346,6 +3346,17 @@
   border-color: rgba(255,255,255,.12);
   background: #1d1d24;
 }
+.drama-workspace .drama-script__toolbar .youxi-shot-model .demo-select { min-width: 132px; }
+.drama-workspace .drama-script__toolbar .youxi-shot-model .demo-select .select-trigger {
+  width: auto;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: #f4f4f7;
+  border-color: rgba(255,255,255,.12);
+  background: #1d1d24;
+}
+.drama-workspace .drama-script__toolbar .youxi-shot-model .demo-select .select-value { color: #f4f4f7; font-size: 12px; }
 .drama-script__lock {
   height: 24px;
   padding: 0 8px;
@@ -3508,6 +3519,8 @@
 .asset-toolbar { padding: 16px 0 14px; }
 .asset-model-control { display: flex; align-items: center; gap: 10px; color: #c8c8ce; font-size: 13px; }
 .asset-model-control select { width: min(280px, 36vw); height: 40px; padding: 0 12px; border: 1px solid rgba(255,255,255,.12); border-radius: 10px; color: #f4f4f7; background: #202126; font-size: 13px; }
+.asset-model-control .demo-select { flex: 1; min-width: 0; max-width: min(280px, 36vw); }
+.asset-model-control .demo-select .select-trigger { height: 40px; font-size: 13px; }
 .asset-toolbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 .asset-primary-button { border: 1px solid rgba(168,154,255,.4); color: #fff; background: linear-gradient(135deg, #6557e7, #7769f2); }
 .asset-secondary-button { border: 1px solid rgba(255,255,255,.12); color: #e4e4e8; background: #24252a; }

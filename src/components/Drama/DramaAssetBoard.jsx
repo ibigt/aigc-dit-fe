@@ -42,6 +42,7 @@ import {
 import { MEDIA_THUMB_WIDTH, mediaUrl, retryMediaOnce } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
+import { DemoSelect } from "../DemoSelect.jsx";
 import { GenerationHistoryPanel, SwitchFinalModal } from "./GenerationHistoryPanel.jsx";
 
 const TYPES = [
@@ -329,6 +330,8 @@ function SubjectCreateDialog({ type, pending, error, onClose, onCreate }) {
 
 function ImageModelSelect({
   imageModels,
+  imageModelsLoading,
+  imageModelsError,
   imageModelId,
   seriesImageModelId,
   seriesImageModelName,
@@ -338,22 +341,26 @@ function ImageModelSelect({
   return (
     <label className="asset-model-control">
       图像模型
-      <select
+      <DemoSelect
         aria-label="全局图片生成模型"
         value={imageModelId}
         disabled={disabled}
-        onChange={(event) => onBindModel(event.target.value)}
-      >
-        <option value="">{imageModels.length ? "请选择图像模型" : "暂无已启用图像模型"}</option>
-        {seriesImageModelId && !imageModels.some((item) => String(item.id) === String(seriesImageModelId)) && (
-          <option value={seriesImageModelId}>{seriesImageModelName || "已绑定（当前已停用）"}</option>
-        )}
-        {imageModels.map((item) => (
-          <option key={item.id} value={item.id}>
-            {item.name}{item.provider ? ` · ${item.provider}` : ""}
-          </option>
-        ))}
-      </select>
+        onChange={onBindModel}
+        options={[
+          ...(imageModelsLoading ? [{ value: "", label: "正在加载图像模型…", disabled: true }] : []),
+          ...(imageModelsError ? [{ value: "", label: "图像模型加载失败", disabled: true }] : []),
+          ...(!imageModelsLoading && !imageModelsError && imageModels.length === 0
+            ? [{ value: "", label: "暂无已启用图像模型", disabled: true }]
+            : []),
+          ...(seriesImageModelId && !imageModels.some((item) => String(item.id) === String(seriesImageModelId))
+            ? [{ value: seriesImageModelId, label: seriesImageModelName || "已绑定（当前已停用）" }]
+            : []),
+          ...imageModels.map((item) => ({
+            value: String(item.id),
+            label: `${item.name}${item.provider ? ` · ${item.provider}` : ""}`,
+          })),
+        ]}
+      />
     </label>
   );
 }
@@ -913,6 +920,8 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
         <div className="asset-toolbar">
           <ImageModelSelect
             imageModels={imageModels}
+            imageModelsLoading={imageModelsQuery.isLoading}
+            imageModelsError={imageModelsQuery.isError}
             imageModelId={imageModelId}
             seriesImageModelId={series?.imageModelId}
             seriesImageModelName={series?.imageModelName}
@@ -1187,6 +1196,8 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                   <div className="asset-modal-parameter-grid">
                     <ImageModelSelect
                       imageModels={imageModels}
+                      imageModelsLoading={imageModelsQuery.isLoading}
+                      imageModelsError={imageModelsQuery.isError}
                       imageModelId={imageModelId}
                       seriesImageModelId={series?.imageModelId}
                       seriesImageModelName={series?.imageModelName}

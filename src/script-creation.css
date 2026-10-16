@@ -15,7 +15,8 @@
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: 238px minmax(520px, 1fr) 420px;
+  /* 始终两列：sidebar + 内容（library/preview 直接放这里，chat/document 走 .script-workspace 内部再分） */
+  grid-template-columns: 238px minmax(0, 1fr);
   overflow: hidden;
   background: var(--bg-page);
   color: var(--text-body);
@@ -26,6 +27,9 @@
 .script-creation textarea { font: inherit; }
 .script-creation button { cursor: pointer; }
 .script-creation button:disabled { cursor: not-allowed; }
+
+/* chat 模式用 .script-workspace 容器内部再分 chat + document */
+.script-workspace { min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 420px; overflow: hidden; }
 
 .script-history,
 .script-document {
@@ -197,6 +201,20 @@
   font-size: 11px;
   outline: none;
 }
+.script-launch-options .demo-select,
+.script-model-select .demo-select { width: auto; min-width: 88px; }
+.script-launch-options .demo-select .select-trigger,
+.script-model-select .demo-select .select-trigger {
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  color: var(--text-body);
+  background: #242424;
+  font-size: 11px;
+}
+.script-launch-options .demo-select .select-value,
+.script-model-select .demo-select .select-value { font-size: 11px; color: var(--text-body); }
 .script-launch-options select:focus-visible,
 .script-launch-options input:focus-visible,
 .script-model-select select:focus-visible { outline: 2px solid var(--brand-primary); outline-offset: 2px; }
@@ -338,7 +356,7 @@
 .script-library__filters button { height: 32px; padding: 0 12px; border: 1px solid transparent; border-radius: 10px; color: var(--text-secondary); background: transparent; cursor: pointer; font-size: 12px; }
 .script-library__filters button:hover { color: var(--text-primary); background: var(--bg-hover); }
 .script-library__filters button.active { color: var(--text-primary); border-color: var(--border-hover); background: var(--bg-selected); font-weight: 650; }
-.script-library__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.script-library__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 16px; }
 .script-library__grid article { min-height: 212px; padding: 14px; border: 1px solid var(--script-border); border-radius: 14px; display: grid; grid-template-columns: 94px minmax(0, 1fr); gap: 14px; background: var(--script-surface); }
 .script-library__cover { height: 130px; border-radius: 10px; display: grid; place-items: center; align-content: center; gap: 9px; color: var(--brand-highlight); background: linear-gradient(145deg, rgba(118,104,255,.18), rgba(255,255,255,.04)); }
 .script-library__cover span { padding: 3px 6px; border: 1px solid rgba(146,123,255,.24); border-radius: var(--radius-pill); font-size: 10px; }
@@ -385,7 +403,10 @@
   .script-message-actions button.is-copied,
   .script-preview-tabs button.is-copied { animation: none; }
 }
-@media (max-width: 1100px) { .script-creation { grid-template-columns: 205px minmax(380px, 1fr) 320px; } }
+@media (max-width: 1100px) {
+  .script-creation { grid-template-columns: 205px minmax(0, 1fr); }
+  .script-workspace { grid-template-columns: minmax(0, 1fr) 320px; }
+}
 @media (max-width: 820px) {
   .script-creation { display: block; overflow: auto; }
   .script-history, .script-document { display: none; }

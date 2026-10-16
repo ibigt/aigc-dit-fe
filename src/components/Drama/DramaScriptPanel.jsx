@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, CircleCheck, Plus, Sparkles, Trash2 } from "lucide-react";
 import { analyzeDramaScript, bindDramaTextModel, fetchDramaTextModels } from "../../api/drama.js";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
+import { DemoSelect } from "../DemoSelect.jsx";
 
 const ANALYSIS_STAGES = [
   { label: "读取剧本", detail: "正在识别人物、场景和剧情结构…", progress: 18 },
@@ -188,19 +189,25 @@ export function DramaScriptPanel({
         <div className="drama-script__toolbar">
           <div>
             <label className="youxi-shot-model">
-              文本模型
-              <select
+              <span className="youxi-shot-model-label">文本模型</span>
+              <DemoSelect
                 aria-label="剧本分析文本模型"
                 value={textModelId}
                 disabled={!series?.id || analyzing || textModelLocked || bindTextModel.isPending}
                 title={textModelLocked ? "分析完成后不能再更换文本模型" : undefined}
-                onChange={(event) => bindTextModel.mutate(event.target.value)}
-              >
-                <option value="">{textModels.length ? "请选择文本模型" : "暂无已启用文本模型"}</option>
-                {textModels.map((item) => (
-                  <option key={item.id} value={item.id}>{item.name}{item.provider ? ` · ${item.provider}` : ""}</option>
-                ))}
-              </select>
+                onChange={(value) => bindTextModel.mutate(value)}
+                options={[
+                  ...(textModelsQuery.isLoading ? [{ value: "", label: "正在加载文本模型…", disabled: true }] : []),
+                  ...(textModelsQuery.isError ? [{ value: "", label: "文本模型加载失败", disabled: true }] : []),
+                  ...(!textModelsQuery.isLoading && !textModelsQuery.isError && textModels.length === 0
+                    ? [{ value: "", label: "暂无已启用文本模型", disabled: true }]
+                    : []),
+                  ...textModels.map((item) => ({
+                    value: String(item.id),
+                    label: `${item.name}${item.provider ? ` · ${item.provider}` : ""}`,
+                  })),
+                ]}
+              />
             </label>
             {textModelLocked && <span className="drama-script__lock">已锁定</span>}
           </div>
