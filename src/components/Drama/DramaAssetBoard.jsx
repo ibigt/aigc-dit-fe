@@ -1288,7 +1288,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                   <div className="asset-modal-section-head">
                     <div>
                       <h3>参考图片</h3>
-                      <p>可上传本地图片，或从当前项目的资产库中选择。选中后会替换当前资产图，并写入生成历史。</p>
+                      <p>可上传本地图片，或从当前项目的素材库中选择。选中后会替换当前资产图，并写入生成历史。</p>
                     </div>
                     <div className="asset-reference-actions">
                       <button type="button" disabled={selectedBusy || selectedGenerating} onClick={() => pickUpload(detailAsset)}>
@@ -1303,7 +1303,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                           setImageLibraryOpen(true);
                         }}
                       >
-                        <Folder size={15} /> 资产库选择
+                        <Folder size={15} /> 素材库选择
                       </button>
                     </div>
                   </div>
