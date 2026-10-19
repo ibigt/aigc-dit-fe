@@ -4236,7 +4236,6 @@ a {
     right: 126px;
     top: 0;
     min-width: 0;
-    max-width: 100px;
     height: 68px;
     display: flex;
     align-items: stretch;
@@ -6638,10 +6637,6 @@ a {
 .quick-content.has-history .quick-config-row {
     min-height: 56px;
     padding: 10px 16px 12px;
-}
-
-.quick-content.has-history .quick-reference-toolbar {
-    top: 12px;
 }
 
 .quick-conversation {
