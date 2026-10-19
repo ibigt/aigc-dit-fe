@@ -332,25 +332,26 @@ function shotPoster(shot) {
 function ShotThumbPreview({ shot, busy, batchLocked = false }) {
   const generating = isShotGenerating(shot, busy, batchLocked);
   const ready = Boolean(shot?.videoKey) && !generating;
-  const poster = shotPoster(shot);
-  const video = mediaUrl(shot?.videoUrl || shot?.videoKey);
-  if (!ready) {
+  if (generating) {
     return (
-      <div className="youxi-shot-thumb__empty">
-        <b>{generating ? "生成中" : "未生成"}</b>
-      </div>
+      <span className="youxi-shot-thumb__mark is-generating">
+        <span className="youxi-shot-thumb__spinner" aria-hidden="true" />
+        <b>生成中</b>
+      </span>
     );
   }
-  if (poster) {
-    return <img src={poster} alt="" />;
-  }
-  if (video) {
-    return <video src={video} muted playsInline preload="metadata" tabIndex={-1} />;
+  if (ready) {
+    return (
+      <span className="youxi-shot-thumb__mark is-ready">
+        <span className="youxi-shot-thumb__play" aria-hidden="true"><Video size={16} /></span>
+      </span>
+    );
   }
   return (
-    <div className="youxi-shot-thumb__empty">
-      <b>已出片</b>
-    </div>
+    <span className="youxi-shot-thumb__mark">
+      <Video size={18} />
+      <b>未生成</b>
+    </span>
   );
 }
 
@@ -591,9 +592,15 @@ function ShotPromptPane({
   return (
     <div className="youxi-shot-editor" ref={barRef}>
       <div className="youxi-shot-editor__controls">
-        <strong className="youxi-shot-editor__title">
-          镜 {selected.shotIndex}{selected.title ? ` · ${selected.title}` : ""}
-        </strong>
+        <div className="youxi-shot-editor__title">
+          <span className="youxi-shot-editor__mark" aria-hidden="true">
+            <Video size={19} />
+          </span>
+          <span>
+            <small>镜头 {String(selected.shotIndex).padStart(2, "0")}</small>
+            <strong>{selected.title?.trim() || "未命名"}</strong>
+          </span>
+        </div>
         <div className="youxi-shot-spec">
           <button
             type="button"
@@ -1112,6 +1119,7 @@ export function DramaStoryboard({ series, episode }) {
   const [compileShotOpen, setCompileShotOpen] = useState(false);
   const [compileNotice, setCompileNotice] = useState("");
   const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [batchSelectMode, setBatchSelectMode] = useState(false);
   const [batchModalOpen, setBatchModalOpen] = useState(false);
   const [batchJob, setBatchJob] = useState(null);
   const [batchToast, setBatchToast] = useState("");
@@ -1137,6 +1145,7 @@ export function DramaStoryboard({ series, episode }) {
     setDraftConfirmOpen(false);
     setCompileConfirmOpen(false);
     setSelectedIds(new Set());
+    setBatchSelectMode(false);
     setBatchModalOpen(false);
     setBatchJob(null);
     setBatchToast("");
@@ -1267,6 +1276,7 @@ export function DramaStoryboard({ series, episode }) {
           } else if (done?.status === "SUCCEEDED") {
             setCompileNotice("批量出片完成");
             setSelectedIds(new Set());
+            setBatchSelectMode(false);
           }
         }
       } catch (error) {
@@ -1282,9 +1292,15 @@ export function DramaStoryboard({ series, episode }) {
     };
   }, [activeEpisodeId, board?.activeBatchJobId]);
 
+  function exitBatchSelect() {
+    setBatchSelectMode(false);
+    setSelectedIds(new Set());
+    setBatchModalOpen(false);
+  }
+
   function toggleShotSelect(shot, event) {
     event?.stopPropagation?.();
-    if (!shot?.id || batchRunning) return;
+    if (!batchSelectMode || !shot?.id || batchRunning) return;
     setSelectedIds((current) => {
       const next = new Set(current);
       if (next.has(shot.id)) {
@@ -1310,6 +1326,8 @@ export function DramaStoryboard({ series, episode }) {
         firstShotAutoStill: config.firstShotAutoStill,
       });
       setBatchModalOpen(false);
+      setBatchSelectMode(false);
+      setSelectedIds(new Set());
       setBatchJob(job);
       queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
       if (job?.status === "RUNNING" || job?.status === "PENDING") {
@@ -1326,6 +1344,7 @@ export function DramaStoryboard({ series, episode }) {
         } else if (done?.status === "SUCCEEDED") {
           setCompileNotice("批量出片完成");
           setSelectedIds(new Set());
+          setBatchSelectMode(false);
         }
       }
     } catch (error) {
@@ -1747,7 +1766,12 @@ export function DramaStoryboard({ series, episode }) {
   const generating = Boolean(selected && isShotGenerating(selected, busy, selectedBatchLocked));
   const drafting = autoDrafting || draftMutation.isPending;
   const frozenByRecompile = recompiling;
-  const batchButtonDisabled = batchRunning || selectedIds.size === 0 || drafting || frozenByRecompile || !videoModelId;
+  const batchCheckedCount = shots.filter((shot) => selectedIds.has(shot.id)).length;
+  const batchButtonDisabled = batchRunning
+    || drafting
+    || frozenByRecompile
+    || (!batchSelectMode && !shots.length)
+    || (batchSelectMode && batchCheckedCount > 0 && !videoModelId);
   const mentionCount = narrativeMentionCount(selected?.visiblePrompt || "", lockedAssets);
   const imageLimit = imageCap(selectedVideoModel);
   const overImageLimit = imageLimit != null && mentionCount > imageLimit;
@@ -2002,10 +2026,41 @@ export function DramaStoryboard({ series, episode }) {
                 <button
                   type="button"
                   disabled={batchButtonDisabled}
-                  title={batchRunning ? "分镜批量生成中" : selectedIds.size === 0 ? "请先勾选分镜" : "批量生成选中镜头"}
-                  onClick={() => setBatchModalOpen(true)}
+                  title={batchRunning
+                    ? "分镜批量生成中"
+                    : batchSelectMode && !batchCheckedCount
+                      ? "退出批量生成"
+                      : batchSelectMode && !videoModelId
+                        ? "先选择视频模型"
+                        : batchSelectMode
+                          ? "批量生成选中镜头"
+                          : "勾选要生成的分镜"}
+                  onClick={() => {
+                    if (!batchSelectMode) {
+                      setBatchSelectMode(true);
+                      setSelectedIds(new Set());
+                      return;
+                    }
+                    if (!batchCheckedCount) {
+                      exitBatchSelect();
+                      return;
+                    }
+                    setBatchModalOpen(true);
+                  }}
                 >
-                  <Sparkles size={14} /> {batchRunning ? "分镜批量生成中" : "批量生成镜头"}
+                  {batchRunning
+                    ? <Sparkles size={14} />
+                    : batchSelectMode && !batchCheckedCount
+                      ? <X size={14} />
+                      : <Sparkles size={14} />}
+                  {" "}
+                  {batchRunning
+                    ? "分镜批量生成中"
+                    : !batchSelectMode
+                      ? "批量生成镜头"
+                      : batchCheckedCount
+                        ? `批量生成镜头（${batchCheckedCount}）`
+                        : "取消"}
                 </button>
               </div>
             </div>
@@ -2013,8 +2068,6 @@ export function DramaStoryboard({ series, episode }) {
               {shots.map((shot, shotPos) => {
                 const active = selected?.id === shot.id;
                 const batchLocked = batchLockedIds.has(shot.id);
-                const generatingShot = isShotGenerating(shot, busy, batchLocked);
-                const ready = Boolean(shot.videoKey) && !generatingShot;
                 const deleteReason = deleteBlockedReason(shot);
                 const checked = selectedIds.has(shot.id);
                 const addDisabled = createShotMutation.isPending || deleteShotMutation.isPending || drafting || frozenByRecompile || batchRunning;
@@ -2032,16 +2085,18 @@ export function DramaStoryboard({ series, episode }) {
                         <Plus size={14} />
                       </button>
                     )}
-                    <article className={`youxi-shot-thumb ${active ? "active" : ""} ${checked ? "is-batch-selected" : ""} ${batchLocked ? "is-batch-locked" : ""}`}>
-                      <button
-                        type="button"
-                        className={`youxi-shot-thumb__check ${checked ? "is-checked" : ""}`}
-                        disabled={batchRunning}
-                        title={batchRunning ? "批量生成中" : checked ? "取消选择" : "加入批量"}
-                        aria-label={checked ? `取消选择镜 ${shot.shotIndex}` : `选择镜 ${shot.shotIndex}`}
-                        aria-pressed={checked}
-                        onClick={(event) => toggleShotSelect(shot, event)}
-                      />
+                    <article className={`youxi-shot-thumb ${active ? "active" : ""} ${batchSelectMode && checked ? "is-batch-selected" : ""} ${batchLocked ? "is-batch-locked" : ""}`}>
+                      {batchSelectMode && (
+                        <button
+                          type="button"
+                          className={`youxi-shot-thumb__check ${checked ? "is-checked" : ""}`}
+                          disabled={batchRunning}
+                          title={batchRunning ? "批量生成中" : checked ? "取消选择" : "加入批量"}
+                          aria-label={checked ? `取消选择镜 ${shot.shotIndex}` : `选择镜 ${shot.shotIndex}`}
+                          aria-pressed={checked}
+                          onClick={(event) => toggleShotSelect(shot, event)}
+                        />
+                      )}
                       <button
                         type="button"
                         className="youxi-shot-thumb__preview"
@@ -2050,18 +2105,14 @@ export function DramaStoryboard({ series, episode }) {
                           setActionError("");
                         }}
                       >
-                        <span className="youxi-shot-thumb__label">
-                          <b>镜 {shot.shotIndex}</b>
-                          <em title={shot.title || ""}>{shot.title?.trim() || "未命名"}</em>
+                        <span className="youxi-shot-thumb__media">
+                          <ShotThumbPreview shot={shot} busy={busy} batchLocked={batchLocked} />
                         </span>
-                        <ShotThumbPreview shot={shot} busy={busy} batchLocked={batchLocked} />
-                        <small className={ready ? "is-ready" : ""}>
-                          {generatingShot
-                            ? "生成中"
-                            : ready
-                              ? `${shot.durationSec || 5}s · 已生成`
-                              : `${shot.durationSec || 5}s`}
-                        </small>
+                        <span className="youxi-shot-thumb__copy">
+                          <b>镜 {shot.shotIndex}</b>
+                          <strong title={shot.title || ""}>{shot.title?.trim() || "未命名"}</strong>
+                          <small>{shot.durationSec || 5}s</small>
+                        </span>
                       </button>
                       <footer>
                         <button
