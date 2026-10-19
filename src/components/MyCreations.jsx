@@ -570,7 +570,9 @@ export function MyCreations({ onReuse }) {
         eyebrow="我的创作"
         title="删除作品？"
         message={deleteTarget
-          ? `“${creationTitleForDisplay(deleteTarget)}”删除后将无法恢复，请确认是否继续。`
+          ? deleteTarget.projectKind === "drama"
+            ? `“${creationTitleForDisplay(deleteTarget)}”会从我的创作中删除，短剧里的资产图片和分镜视频仍会保留。`
+            : `“${creationTitleForDisplay(deleteTarget)}”删除后将无法恢复，请确认是否继续。`
           : ""}
         confirmLabel="删除"
         busy={deleteMutation.isPending}

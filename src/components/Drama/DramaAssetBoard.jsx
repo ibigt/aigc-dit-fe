@@ -762,6 +762,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
     try {
       await deleteDramaAsset(asset.id);
       if (selectedId === asset.id) setSelectedId(null);
+      queryClient.invalidateQueries({ queryKey: ["creations"] });
       invalidate();
     } finally {
       markBusy(asset.id, "delete", false);
@@ -851,6 +852,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
     try {
       await deleteDramaAssetGeneration(selected.id, record.id);
       setDeleteGenerationTarget(null);
+      queryClient.invalidateQueries({ queryKey: ["creations"] });
       await invalidateAssetHistory(selected.id);
       invalidate();
     } catch (err) {
@@ -1392,7 +1394,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
         open={Boolean(deleteAssetTarget)}
         eyebrow="资产"
         title="删除此资产？"
-        message={deleteAssetTarget ? `将删除「${deleteAssetTarget.name}」。此操作不可撤销。` : ""}
+        message={deleteAssetTarget ? `将删除「${deleteAssetTarget.name}」。此操作不可撤销。已生成并出现在我的创作中的图片也会一并删除。` : ""}
         confirmLabel="删除"
         busy={isBusy(deleteAssetTarget?.id, "delete")}
         busyLabel="删除中…"
@@ -1414,7 +1416,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
         eyebrow="生成记录"
         title="删除生成记录？"
         message={deleteGenerationTarget
-          ? `确定删除「${deleteGenerationTarget.label}」？此操作不可撤销。`
+          ? `确定删除「${deleteGenerationTarget.label}」？此操作不可撤销。若这张图片已在我的创作中，会一并删除。`
           : ""}
         confirmLabel="删除"
         busy={isBusy(selected?.id, "history")}

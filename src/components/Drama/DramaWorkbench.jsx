@@ -279,6 +279,7 @@ export function DramaWorkbench({ seriesId }) {
     onSuccess: (resp, deletedId) => {
       queryClient.setQueryData(["drama-series", id], resp);
       queryClient.invalidateQueries({ queryKey: ["drama-series"] });
+      queryClient.invalidateQueries({ queryKey: ["creations"] });
       const list = resp?.episodes || [];
       setEpisodeId((current) => {
         if (current && list.some((item) => item.id === current)) return current;

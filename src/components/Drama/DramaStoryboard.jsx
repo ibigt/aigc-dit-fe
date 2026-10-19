@@ -1351,6 +1351,7 @@ export function DramaStoryboard({ series, episode }) {
       if (!data?.drafting) {
         queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
         queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
+        queryClient.invalidateQueries({ queryKey: ["creations"] });
         setShotId(data?.chapters?.[0]?.shots?.[0]?.id || null);
       }
       setActionError("");
@@ -1410,6 +1411,7 @@ export function DramaStoryboard({ series, episode }) {
       queryClient.setQueryData(["drama-storyboard", activeEpisodeId], data);
       queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
       queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
+      queryClient.invalidateQueries({ queryKey: ["creations"] });
       const pool = (data?.chapters || []).flatMap((item) => item.shots || []);
       const back = pool.find((item) => item.chapterId === target.chapterId) || pool[0];
       setShotId(back?.id || null);
@@ -1641,6 +1643,7 @@ export function DramaStoryboard({ series, episode }) {
       queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
       queryClient.invalidateQueries({ queryKey: ["drama-shot-generations", selected.id] });
       queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
+      queryClient.invalidateQueries({ queryKey: ["creations"] });
     } catch (error) {
       setActionError(error.message || "删除生成记录失败");
     } finally {
@@ -2131,7 +2134,7 @@ export function DramaStoryboard({ series, episode }) {
         eyebrow="分镜"
         title="删除这一镜？"
         message={deleteTarget
-          ? `确定删除镜 ${deleteTarget.shotIndex}${deleteTarget.title ? `「${deleteTarget.title}」` : ""}？剩余分镜会重新编号。若本集已拼接成片，成片将作废并删除，需重新拼接。不可撤销。`
+          ? `确定删除镜 ${deleteTarget.shotIndex}${deleteTarget.title ? `「${deleteTarget.title}」` : ""}？剩余分镜会重新编号。若本集已拼接成片，成片将作废并删除，需重新拼接。已出片并出现在我的创作中的视频也会一并删除。不可撤销。`
           : ""}
         confirmLabel="删除"
         busy={deleteShotMutation.isPending}
@@ -2143,7 +2146,7 @@ export function DramaStoryboard({ series, episode }) {
         open={draftConfirmOpen}
         eyebrow="分镜"
         title="重新拆镜？"
-        message="重新拆镜会删除本集全部分镜和已出片结果，然后按当前剧本重新拆分。已拼接成片也会作废。此操作不可撤销。"
+        message="重新拆镜会删除本集全部分镜和已出片结果，然后按当前剧本重新拆分。已拼接成片也会作废。已出现在我的创作中的分镜视频也会一并删除。此操作不可撤销。"
         confirmLabel="确认重新拆镜"
         busy={draftMutation.isPending}
         onClose={() => setDraftConfirmOpen(false)}
@@ -2180,7 +2183,7 @@ export function DramaStoryboard({ series, episode }) {
         eyebrow="生成记录"
         title="删除生成记录？"
         message={deleteGenerationTarget
-          ? `确定删除「${deleteGenerationTarget.label}」？此操作不可撤销。`
+          ? `确定删除「${deleteGenerationTarget.label}」？此操作不可撤销。若这段视频已在我的创作中，会一并删除。`
           : ""}
         confirmLabel="删除"
         busy={Boolean(selected && busy[selected.id] === "history")}

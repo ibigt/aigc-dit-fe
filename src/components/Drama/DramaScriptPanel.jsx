@@ -347,7 +347,7 @@ export function DramaScriptPanel({
             eyebrow="剧本"
             title="删除章节？"
             message={deleteEpisodeTarget
-                ? `删除第${deleteEpisodeTarget.episodeNumber ?? 1}章？该集的资产、分镜与成片会一并删除，且不可恢复。`
+                ? `删除第${deleteEpisodeTarget.episodeNumber ?? 1}章？该集的资产、分镜与成片会一并删除，我的创作里对应的图片和视频也会删除，且不可恢复。`
                 : ""}
             confirmLabel="删除"
             busy={Boolean(deleteEpisodeTarget && deletingEpisodeId === deleteEpisodeTarget.id)}

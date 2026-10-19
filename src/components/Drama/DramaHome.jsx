@@ -195,7 +195,10 @@ export function DramaHome() {
 
   const deleteMutation = useMutation({
     mutationFn: deleteDramaSeries,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["drama-series"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["drama-series"] });
+      queryClient.invalidateQueries({ queryKey: ["creations"] });
+    },
     onError: (error) => window.alert(error.message || "删除失败"),
   });
   const createMutation = useMutation({
