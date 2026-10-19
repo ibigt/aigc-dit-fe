@@ -282,9 +282,50 @@ function makeInitialSession() {
   };
 }
 
-function extensionOf(url) {
-  const match = String(url || "").split("?")[0].match(/\.(\w{2,5})$/);
-  return match ? match[1].toLowerCase() : "bin";
+function extensionFromName(value) {
+  const source = String(value || "");
+  let name = source.split("#")[0];
+  try {
+    if (source.includes("key=")) {
+      const key = new URL(source, window.location.origin).searchParams.get("key");
+      if (key) name = key;
+    }
+  } catch {
+    // 地址无法解析时退回路径本身
+  }
+  const match = name.split("?")[0].match(/\.([a-z0-9]{2,5})$/i);
+  return match ? match[1].toLowerCase() : "";
+}
+
+function extensionFromContentType(contentType) {
+  const mime = String(contentType || "").split(";")[0].trim().toLowerCase();
+  const known = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "video/mp4": "mp4",
+    "video/webm": "webm",
+    "video/quicktime": "mov",
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+    "audio/wav": "wav",
+    "audio/mp4": "m4a",
+    "audio/aac": "aac",
+  };
+  return known[mime] || "";
+}
+
+function extensionOf(url, type, contentType) {
+  const fromName = extensionFromName(url);
+  if (fromName && fromName !== "bin") return fromName;
+  const fromType = extensionFromContentType(contentType);
+  if (fromType) return fromType;
+  if (type === "video") return "mp4";
+  if (type === "audio") return "mp3";
+  if (type === "image") return "png";
+  return "bin";
 }
 
 const MAX_REFERENCE_ASSETS = 15;
@@ -388,7 +429,8 @@ function ResultMessage({ message, onReuse, onSave, savedIds = [], savingId }) {
           const href = URL.createObjectURL(blob);
           const link = document.createElement("a");
           link.href = href;
-          link.download = `${message.model || "作品"}${downloadable.length > 1 ? `-${index + 1}` : ""}.${extensionOf(file.src)}`;
+          const ext = extensionOf(file.src, file.type, blob.type || response.headers.get("content-type"));
+          link.download = `${message.model || "作品"}${downloadable.length > 1 ? `-${index + 1}` : ""}.${ext}`;
           document.body.appendChild(link);
           link.click();
           link.remove();
