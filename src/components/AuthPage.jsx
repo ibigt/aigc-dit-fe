@@ -111,9 +111,9 @@ export function AuthPage({ mode }) {
             <span>{submitting ? "正在进入…" : isRegister ? "创建账户" : "进入工作室"}</span>
             <ArrowRight size={19} />
           </button>
-          <p className="auth-footnote">
-            {isRegister ? "注册成功后将自动登录并进入工作室" : "管理员账号为 admin，普通用户使用已注册邮箱登录"}
-          </p>
+          {isRegister && (
+            <p className="auth-footnote">注册成功后将自动登录并进入工作室</p>
+          )}
         </form>
       </section>
     </main>
