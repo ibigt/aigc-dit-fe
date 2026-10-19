@@ -2,6 +2,8 @@
  * 分镜核心正文的 @ 引用解析。
  *
  * 存储约定：叙述里的资产写成 `@名字`。台词段保持普通名字，不解析成芯片。
+ * 「说：」后若紧跟中文引号“”或英文引号""，引号内不算叙述；引号外同一行仍可 @。
+ * 没有收尾引号时，这句仍收到换行为止。旁白、画外音不加引号，仍收到换行。
  * 缩略图只在编辑器里显示，不写回正文。
  */
 
@@ -52,6 +54,31 @@ function labelSpans(source) {
   return spans;
 }
 
+function lineLimit(body, from) {
+  const lineEnd = body.indexOf("\n", from);
+  return lineEnd < 0 ? body.length : lineEnd;
+}
+
+/** 说：后的引号内是台词。没有收尾引号时收到本行末尾。旁白和画外音没有引号，整行都算台词。 */
+function speechRange(body, marker, speechStart) {
+  const limit = lineLimit(body, speechStart);
+  if (!marker.startsWith("说")) {
+    return { dialogueStart: speechStart, dialogueEnd: limit, resume: limit };
+  }
+  let openAt = speechStart;
+  while (openAt < limit && /\s/.test(body.charAt(openAt))) openAt += 1;
+  const open = body.charAt(openAt);
+  if (open !== "“" && open !== "\"") {
+    return { dialogueStart: speechStart, dialogueEnd: limit, resume: limit };
+  }
+  const closeChar = open === "“" ? "”" : "\"";
+  const close = body.indexOf(closeChar, openAt + 1);
+  if (close < 0 || close > limit) {
+    return { dialogueStart: openAt + 1, dialogueEnd: limit, resume: limit };
+  }
+  return { dialogueStart: openAt + 1, dialogueEnd: close, resume: close };
+}
+
 function splitSay(source, start, end) {
   const body = source.slice(start, end);
   const re = new RegExp(SAY_RE.source, "g");
@@ -60,12 +87,15 @@ function splitSay(source, start, end) {
   let match;
   while ((match = re.exec(body)) !== null) {
     const speechStart = match.index + match[0].length;
-    let speechEnd = body.indexOf("\n", speechStart);
-    if (speechEnd < 0) speechEnd = body.length;
-    if (speechStart > cursor) spans.push({ dialogue: false, start: start + cursor, end: start + speechStart });
-    if (speechEnd > speechStart) spans.push({ dialogue: true, start: start + speechStart, end: start + speechEnd });
-    cursor = speechEnd;
-    re.lastIndex = speechEnd;
+    const range = speechRange(body, match[0], speechStart);
+    if (range.dialogueStart > cursor) {
+      spans.push({ dialogue: false, start: start + cursor, end: start + range.dialogueStart });
+    }
+    if (range.dialogueEnd > range.dialogueStart) {
+      spans.push({ dialogue: true, start: start + range.dialogueStart, end: start + range.dialogueEnd });
+    }
+    cursor = range.resume;
+    re.lastIndex = range.resume;
   }
   if (!spans.length) return [{ dialogue: false, start, end }];
   if (cursor < body.length) spans.push({ dialogue: false, start: start + cursor, end });

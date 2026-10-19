@@ -55,6 +55,34 @@ test("weaves speech after 说 and still chips props in the action", () => {
   assert.equal(serializeTokensToPrompt(tokens), text);
 });
 
+test("说：后的引号外侧可以引用资产，引号内保持台词", () => {
+  const text = "@局长 推门走进，说：“张老弟，别睡了。”@澹白 坐下";
+  const tokens = parsePromptToTokens(text, { lockedAssets, referenceAssetIds: [1, 4] });
+  const chips = tokens.filter((token) => token.kind === "chip");
+  assert.deepEqual(chips.map((token) => token.name), ["局长", "澹白"]);
+  assert.equal(caretInDialogue(text, text.indexOf("张老弟")), true);
+  assert.equal(caretInDialogue(text, text.indexOf("“")), false);
+  assert.equal(caretInDialogue(text, text.indexOf("”")), true);
+  assert.equal(caretInDialogue(text, text.indexOf("”") + 1), false);
+  assert.equal(caretInDialogue(text, text.indexOf("@澹白")), false);
+  assert.equal(serializeTokensToPrompt(tokens), text);
+});
+
+test("没有收尾引号时，说：仍收到换行，下一行可以引用", () => {
+  const text = "说：“别睡了。\n@澹白 坐下";
+  const tokens = parsePromptToTokens(text, { lockedAssets });
+  assert.equal(tokens.some((token) => token.kind === "chip" && token.name === "澹白"), true);
+  assert.equal(caretInDialogue(text, text.indexOf("别睡了")), true);
+  assert.equal(caretInDialogue(text, text.indexOf("@澹白")), false);
+});
+
+test("旁白不加引号，整行都算台词", () => {
+  const text = "旁白：夜色已深。@澹白";
+  assert.equal(caretInDialogue(text, text.indexOf("@澹白")), true);
+  const tokens = parsePromptToTokens(text, { lockedAssets });
+  assert.equal(tokens.some((token) => token.kind === "chip"), false);
+});
+
 test("caret inside a dialogue clause does not count as narrative", () => {
   const text = "动作：@澹白回头。\n台词：澹白：我来了。";
   const dialogueAt = text.indexOf("我来了");
