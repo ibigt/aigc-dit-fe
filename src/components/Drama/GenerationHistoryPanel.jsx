@@ -17,7 +17,7 @@ function switchCardMeta(record) {
 
 /**
  * 资产 / 分镜侧栏生成记录区。
- * 缩略图点击仅预览；选用走 SwitchFinalModal。
+ * 缩略图点击仅预览。传入 selecting 时在卡片上直接切换当前项，否则由 onSwitchClick 打开切换框。
  */
 export function GenerationHistoryPanel({
   title = "生成记录",
@@ -30,7 +30,11 @@ export function GenerationHistoryPanel({
   showImport = false,
   busy = false,
   compactActions = false,
+  selecting = false,
+  selectedBadge = "当前选用",
+  itemName = "",
   onSwitchClick,
+  onSelect,
   onPreview,
   onDelete,
   onImport,
@@ -65,12 +69,12 @@ export function GenerationHistoryPanel({
           ) : null}
           <button
             type="button"
-            className="button button--primary youxi-history-switch"
+            className={`button button--primary youxi-history-switch${selecting ? " is-active" : ""}`}
             disabled={locked || busy || records.length === 0}
-            title={locked ? "已锁定，无法切换最终" : switchLabel}
+            title={locked ? "已锁定，无法切换最终" : (selecting ? "完成切换" : switchLabel)}
             onClick={onSwitchClick}
           >
-            {switchLabel}
+            {selecting ? "完成切换" : switchLabel}
           </button>
         </div>
       </header>
@@ -89,10 +93,12 @@ export function GenerationHistoryPanel({
               : null;
             const meta = mediaKind === "video"
               ? sourceMeta(record.source, record)
-              : [record.resolution, sourceMeta(record.source, record)].filter(Boolean).join(" · ");
+              : (itemName
+                ? (record.resolution || sourceMeta(record.source, record))
+                : [record.resolution, sourceMeta(record.source, record)].filter(Boolean).join(" · "));
             return (
               <article className={selected ? "active" : ""} key={record.id}>
-                {selected && <em className="generation-selected-badge">当前选用</em>}
+                {selected && <em className="generation-selected-badge">{selectedBadge}</em>}
                 {canDelete && (
                   <button
                     type="button"
@@ -120,10 +126,23 @@ export function GenerationHistoryPanel({
                   )}
                 </button>
                 <div>
-                  <strong>{record.label}</strong>
+                  <strong>{itemName || record.label}</strong>
                   <span>{meta}</span>
                 </div>
-                {showImport && (
+                {selecting && (
+                  <button
+                    type="button"
+                    className="asset-set-final"
+                    disabled={busy || selected}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (!selected) onSelect?.(record);
+                    }}
+                  >
+                    {selected ? "当前使用中" : "设为当前"}
+                  </button>
+                )}
+                {showImport && !selecting && (
                   <div className="asset-record-actions">
                     <button
                       type="button"

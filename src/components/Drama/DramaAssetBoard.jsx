@@ -40,10 +40,10 @@ import {
   uploadDramaAssetVoiceReference,
   bindDramaAssetVoiceReference,
 } from "../../api/drama.js";
-import { MEDIA_THUMB_WIDTH, mediaUrl, retryMediaOnce } from "../../lib/media.js";
+import { MEDIA_THUMB_WIDTH, formatDateTime, mediaUrl, retryMediaOnce } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
-import { GenerationHistoryPanel, SwitchFinalModal } from "./GenerationHistoryPanel.jsx";
+import { GenerationHistoryPanel } from "./GenerationHistoryPanel.jsx";
 
 const TYPES = [
   { id: "角色", label: "角色", Icon: UsersRound },
@@ -332,6 +332,10 @@ function imageModelLabel(item) {
   return `${item.name}${item.provider ? ` · ${item.provider}` : ""}`;
 }
 
+function historyPreviewDetail(record) {
+  return [record?.modelName, record?.resolution].filter(Boolean).join(" · ");
+}
+
 function ImageModelSelect({
   imageModels,
   imageModelsLoading,
@@ -404,6 +408,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   const [voiceLibraryOpen, setVoiceLibraryOpen] = useState(false);
   const [voiceLibraryError, setVoiceLibraryError] = useState("");
   const [detailId, setDetailId] = useState(null);
+  const [finalSelectMode, setFinalSelectMode] = useState(false);
   const [imageLibraryOpen, setImageLibraryOpen] = useState(false);
   const [imageLibraryError, setImageLibraryError] = useState("");
   const [batchSelectMode, setBatchSelectMode] = useState(false);
@@ -413,7 +418,6 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
   const [preview, setPreview] = useState(null);
-  const [switchFinalOpen, setSwitchFinalOpen] = useState(false);
   const [deleteGenerationTarget, setDeleteGenerationTarget] = useState(null);
   const toastTimer = useRef(0);
 
@@ -826,11 +830,10 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   }
 
   async function selectGeneration(record) {
-    if (!selected?.id || !record?.id) return;
+    if (!selected?.id || !record?.id || record.selected) return;
     markBusy(selected.id, "history", true);
     try {
       await selectDramaAssetGeneration(selected.id, record.id);
-      setSwitchFinalOpen(false);
       await invalidateAssetHistory(selected.id);
       invalidate();
     } catch (err) {
@@ -880,6 +883,10 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   const selectedBusy = isBusy(selected?.id, "lock") || isBusy(selected?.id, "save") || isBusy(selected?.id, "upload");
   const selectedGenerating = Boolean(selected?.generating) || isBusy(selected?.id, "generate");
   const detailAsset = assets.find((item) => item.id === detailId) || null;
+
+  useEffect(() => {
+    setFinalSelectMode(false);
+  }, [detailId]);
 
   function openDetail(asset) {
     setSelectedId(asset.id);
@@ -976,19 +983,24 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
             <button
               className={`asset-secondary-button${batchRunning ? " is-loading" : ""}`}
               type="button"
-              disabled={!filtered.length || batchRunning || extractMutation.isPending || (batchSelectMode && (!checkedCount || !modelBound))}
-              title={!modelBound && batchSelectMode ? "先选择图像模型" : "先进入勾选，再生成已选项"}
+              disabled={batchRunning || (!batchSelectMode && (extractMutation.isPending || !filtered.length)) || (batchSelectMode && checkedCount > 0 && (!modelBound || extractMutation.isPending))}
+              title={batchSelectMode && !checkedCount ? "退出批量生图" : !modelBound && batchSelectMode ? "先选择图像模型" : "先进入勾选，再生成已选项"}
               onClick={() => {
                 if (!batchSelectMode) {
                   setBatchSelectMode(true);
                   setBatchAssetIds(new Set());
                   return;
                 }
+                if (!checkedCount) {
+                  setBatchSelectMode(false);
+                  setBatchAssetIds(new Set());
+                  return;
+                }
                 generateBatch().catch((err) => showToast(err.message));
               }}
             >
-              {batchRunning ? <span className="asset-spinner" /> : <Sparkles size={17} />}
-              <span>{batchRunning ? `正在生成 ${checkedCount} 项…` : batchSelectMode ? `批量生图（${checkedCount}）` : "批量生图"}</span>
+              {batchRunning ? <span className="asset-spinner" /> : batchSelectMode && !checkedCount ? <X size={17} /> : <Sparkles size={17} />}
+              <span>{batchRunning ? `正在生成 ${checkedCount} 项…` : !batchSelectMode ? "批量生图" : checkedCount ? `批量生图（${checkedCount}）` : "取消"}</span>
             </button>
             <button className="asset-primary-button" type="button" disabled={batchRunning} onClick={() => setCreating(true)}>
               <Plus size={17} />
@@ -1363,11 +1375,17 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                   mediaKind="image"
                   showImport
                   compactActions
+                  selecting={finalSelectMode}
+                  selectedBadge="当前选中"
+                  itemName={detailAsset.name}
                   busy={isBusy(detailAsset.id, "history") || generationsQuery.isLoading || selectedGenerating}
-                  onSwitchClick={() => setSwitchFinalOpen(true)}
+                  onSwitchClick={() => setFinalSelectMode((current) => !current)}
+                  onSelect={(record) => selectGeneration(record)}
                   onPreview={(record) => setPreview({
                     src: mediaUrl(record.url || record.storageKey),
                     title: `${detailAsset.name || ""} · ${record.label}`,
+                    time: formatDateTime(record.createdAt),
+                    detail: historyPreviewDetail(record),
                   })}
                   onDelete={requestDeleteGeneration}
                   onImport={importGeneration}
@@ -1378,17 +1396,6 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
         </div>,
         document.body,
       )}
-
-      <SwitchFinalModal
-        open={switchFinalOpen}
-        title="切换最终资产"
-        records={generations}
-        locked={false}
-        mediaKind="image"
-        busy={isBusy(selected?.id, "history")}
-        onClose={() => setSwitchFinalOpen(false)}
-        onConfirm={selectGeneration}
-      />
 
       <ConfirmDialog
         open={Boolean(deleteAssetTarget)}

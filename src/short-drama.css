@@ -2760,6 +2760,62 @@
   box-shadow: 0 26px 78px rgba(0, 0, 0, .45);
   cursor: zoom-out;
 }
+.drama-lightbox--caption { background: rgba(3, 4, 8, .86); backdrop-filter: blur(8px); }
+.drama-lightbox__frame--caption {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: auto;
+  max-width: min(1100px, 92vw);
+  max-height: 92dvh;
+  gap: 0;
+  border: 1px solid #3b3b44;
+  border-radius: 14px;
+  background: #151519;
+  box-shadow: 0 26px 90px rgba(0, 0, 0, .7);
+  overflow: hidden;
+}
+.drama-lightbox__frame--caption > img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: calc(92dvh - 54px);
+  border-radius: 0;
+  box-shadow: none;
+  background: #09090c;
+  cursor: default;
+}
+.drama-lightbox__close {
+  position: absolute;
+  z-index: 1;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 9px;
+  color: #fff;
+  background: rgba(16, 16, 21, .78);
+  cursor: pointer;
+}
+.drama-lightbox__close:hover {
+  color: #fff;
+  background: rgba(16, 16, 21, .78);
+  cursor: pointer;
+}
+.drama-lightbox__frame--caption > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 46px;
+  padding: 0 15px;
+  color: #9997a2;
+  font-size: 12px;
+}
+.drama-lightbox__frame--caption > footer span:last-child { text-align: right; }
 
 /* ===== 短剧后台 4 页统一视觉规范：三栏/两栏容器 + 独立卡片层（置于末尾统一覆盖） ===== */
 .drama-workspace .drama-script-layout,
@@ -3764,6 +3820,10 @@
 .asset-history-panel .youxi-history-hint { max-width: 235px; margin: 5px 0 0; color: #85838e; font-size: 11px; line-height: 1.45; }
 .asset-history-panel .youxi-history-block__actions .youxi-history-switch.button.button--primary { height: 32px; min-height: 32px; padding: 0 10px; border: 1px solid #383840; border-radius: 8px; color: #d9d7e1; background: #24242a; box-shadow: none; font-size: 12px; font-weight: 600; }
 .asset-history-panel .youxi-history-block__actions .youxi-history-switch.button.button--primary:hover:not(:disabled) { border-color: #6155bf; color: #fff; background: #2a2739; }
+.asset-history-panel .youxi-history-block__actions .youxi-history-switch.button.button--primary.is-active { border-color: #8173f4; color: #fff; background: #2a2739; }
+.asset-history-panel .asset-generation-grid article .asset-set-final { width: calc(100% - 12px); height: 29px; margin: 0 6px 7px; border: 1px solid #5e55b1; border-radius: 7px; color: #dcd7ff; background: #28233e; font-size: 11px; font-weight: 600; cursor: pointer; }
+.asset-history-panel .asset-generation-grid article .asset-set-final:hover:not(:disabled) { border-color: #8173f4; color: #fff; background: #332c52; }
+.asset-history-panel .asset-generation-grid article .asset-set-final:disabled { opacity: .55; cursor: default; }
 .asset-history-panel .asset-generation-grid { min-height: 0; flex: 1; align-content: start; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: max-content; gap: 9px; margin-top: 12px; overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.28) transparent; }
 .asset-history-panel .asset-generation-grid article { border-color: #303038; background: #111115; }
 .asset-history-panel .asset-generation-grid article.active { border-color: #8373ff; box-shadow: 0 0 0 2px rgba(131,115,255,.16); }
