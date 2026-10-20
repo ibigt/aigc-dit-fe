@@ -4135,10 +4135,14 @@
   background-color: #151517;
 }
 .youxi-storyboard-layout--board .drama-prompt-chip__name { font-size: 13px; }
-.youxi-storyboard-layout--board .drama-prompt-chip[data-state="broken"] {
+.youxi-storyboard-layout--board .drama-prompt-chip[data-state="broken"],
+.youxi-storyboard-layout--board .drama-prompt-chip[data-state="placeholder"] {
   border-color: rgba(255, 120, 128, .55);
   color: #ffc4c8;
   background: rgba(255, 95, 108, .1);
+}
+.youxi-storyboard-layout--board .drama-prompt-chip[data-state="placeholder"] .drama-prompt-chip__thumb {
+  background: #3a2426;
 }
 .youxi-storyboard-layout--board .youxi-shot-editor__hint {
   margin-top: 6px;
@@ -4618,6 +4622,14 @@
   background-color: #151517;
 }
 .drama-dialog.drama-dialog--prompt .drama-prompt-chip__name { font-size: 14px; }
+.drama-dialog.drama-dialog--prompt .drama-prompt-chip[data-state="placeholder"] {
+  border-color: rgba(255, 120, 128, .55);
+  color: #ffc4c8;
+  background: rgba(255, 95, 108, .1);
+}
+.drama-dialog.drama-dialog--prompt .drama-prompt-chip[data-state="placeholder"] .drama-prompt-chip__thumb {
+  background: #3a2426;
+}
 .drama-dialog.drama-dialog--prompt .drama-dialog__actions {
   justify-content: flex-end;
   padding: 0 22px 18px;

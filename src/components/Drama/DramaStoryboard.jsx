@@ -967,7 +967,7 @@ function ShotPromptPane({
             : "请先设置首帧后再生成。尾帧可以不设。")
           : overLimit
             ? `当前模型最多支持 ${cap} 张`
-            : `叙述里的 @ 会计入参考图，重复引用只算一张。当前 ${mentionCount} 张${cap != null ? `，最多 ${cap} 张` : ""}。`}
+            : `叙述里的 @ 会计入参考图，重复引用只算一张。当前 ${mentionCount} 张${cap != null ? `，当前模型最多 ${cap} 张` : ""}。`}
         {!framesMode && missing.length ? ` 还没有参考图：${missing.join("、")}。` : ""}
       </p>
       <label className="youxi-field">
@@ -1185,6 +1185,7 @@ export function DramaStoryboard({ series, episode }) {
   const chapters = board?.chapters || [];
   const shots = useMemo(() => chapters.flatMap((item) => item.shots || []), [chapters]);
   const lockedAssets = board?.lockedAssets || [];
+  const hasReadyReference = lockedAssets.some((asset) => asset?.imageStorageKey || asset?.imageUrl);
   const selected = shots.find((item) => item.id === shotId) || shots[0];
   const generationsQuery = useQuery({
     queryKey: ["drama-shot-generations", selected?.id],
@@ -1867,7 +1868,7 @@ export function DramaStoryboard({ series, episode }) {
           </div>
         )}
 
-        {scriptLocked && lockedAssets.length === 0 && (
+        {scriptLocked && !hasReadyReference && (
           <div className="drama-asset-gate youxi-story-gate">
             <Lock size={16} />
             <div>

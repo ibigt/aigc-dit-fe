@@ -9180,9 +9180,13 @@ a {
 
 .drama-prompt-chip[data-state="placeholder"] {
     border-style: dashed;
+    border-color: #c0392b;
+    background: #fdecea;
+    color: #8a3a35;
 }
 
 .drama-prompt-chip[data-state="placeholder"] .drama-prompt-chip__thumb {
+    background: #f0d4d2;
     cursor: default;
 }
 
