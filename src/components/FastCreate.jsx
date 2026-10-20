@@ -2,7 +2,7 @@ import { AudioLines, Box, Check, CheckCircle2, Download, Film, Image, Images, Ma
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchAssets } from "../api/assets.js";
-import { createSession, deleteSession, fetchSession, fetchSessions, saveCreationToAsset } from "../api/creations.js";
+import { createSession, deleteSession, fetchSession, fetchSessions, renameSession, saveCreationToAsset } from "../api/creations.js";
 import { IMAGE_POLL_TIMEOUT_MS, pollGenerateTask, submitGenerate, VIDEO_POLL_TIMEOUT_MS } from "../api/generate.js";
 import { friendlyGenerateError, FRAMES_EMPTY_PROMPT_LABEL, materialToAsset, promptForDisplay, promptForResult, tasksToMessages, taskToResultMessage } from "../lib/createFlow.js";
 import { formatDateTime, mediaUrl, storageKeyOf } from "../lib/media.js";
@@ -1302,10 +1302,20 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     setEditingSessionId(session.id);
   }
 
-  function commitRenameSession(session, nextTitle) {
+  async function commitRenameSession(session, nextTitle) {
     const title = String(nextTitle || "").trim().slice(0, 30) || "未命名创作";
+    const previous = session.title;
     setSessions((items) => items.map((item) => item.id === session.id ? { ...item, title } : item));
     setEditingSessionId(null);
+    if (!persistedSessionId(session.id) || title === previous) return;
+    try {
+      const updated = await renameSession(session.id, title);
+      const saved = updated?.title || title;
+      setSessions((items) => items.map((item) => item.id === session.id ? { ...item, title: saved } : item));
+    } catch (error) {
+      setSessions((items) => items.map((item) => item.id === session.id ? { ...item, title: previous } : item));
+      setSubmitError(error.message || "重命名失败");
+    }
   }
 
   function promptPlaceholder() {

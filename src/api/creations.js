@@ -12,6 +12,10 @@ export function createSession(payload) {
   return api.post("/sessions", payload);
 }
 
+export function renameSession(id, title) {
+  return api.put(`/sessions/${id}`, { title });
+}
+
 export function deleteSession(id) {
   return api.delete(`/sessions/${id}`);
 }
