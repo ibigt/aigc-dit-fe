@@ -7,6 +7,7 @@ import { formatDateTime, MEDIA_THUMB_WIDTH, mediaUrl } from "../lib/media.js";
 import { validateAssetFile } from "../lib/assetUpload.js";
 import { formatMediaMeta, runBatchDelete } from "../lib/assetBatch.js";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
+import { DemoSelect } from "./DemoSelect.jsx";
 import { AudioPreview } from "./AudioPreview.jsx";
 import { WorksTypeIcon } from "./WorksTypeIcon.jsx";
 
@@ -310,9 +311,7 @@ export function AssetLibrary() {
           )}
           <label className="works-select">
             <span className="visually-hidden">素材排序</span>
-            <select value={orderBy} onChange={(event) => setOrderBy(event.target.value)} aria-label="素材排序">
-              {ORDER_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
+            <DemoSelect ariaLabel="素材排序" value={orderBy} onChange={setOrderBy} options={ORDER_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} />
           </label>
           <label className="works-search">
             <Search size={17} aria-hidden="true" />

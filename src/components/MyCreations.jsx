@@ -8,6 +8,7 @@ import { MediaCover } from "../lib/MediaCover.jsx";
 import { formatDateTime, MEDIA_THUMB_WIDTH, mediaUrl } from "../lib/media.js";
 import { zipStore } from "../lib/zipStore.js";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
+import { DemoSelect } from "./DemoSelect.jsx";
 import { AudioPreview, WorkWaveform } from "./AudioPreview.jsx";
 import { WorksTypeIcon } from "./WorksTypeIcon.jsx";
 
@@ -365,15 +366,11 @@ export function MyCreations({ onReuse }) {
         <div className="works-filter-group">
           <label className="works-select">
             <span className="visually-hidden">时间范围</span>
-            <select aria-label="时间范围" value={timeRange} onChange={(event) => setTimeRange(event.target.value)}>
-              {TIME_RANGES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-            </select>
+            <DemoSelect ariaLabel="时间范围" value={timeRange} onChange={setTimeRange} options={TIME_RANGES.map((item) => ({ value: item.id, label: item.label }))} />
           </label>
           <label className="works-select">
             <span className="visually-hidden">所属项目</span>
-            <select aria-label="所属项目" value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}>
-              {PROJECT_FILTERS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-            </select>
+            <DemoSelect ariaLabel="所属项目" value={projectFilter} onChange={setProjectFilter} options={PROJECT_FILTERS.map((item) => ({ value: item.id, label: item.label }))} />
           </label>
           <label className="works-search">
             <Search size={17} aria-hidden="true" />
