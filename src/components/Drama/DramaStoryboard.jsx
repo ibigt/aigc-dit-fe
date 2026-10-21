@@ -1313,6 +1313,12 @@ export function DramaStoryboard({ series, episode }) {
     });
   }
 
+  function toggleSelectAllShots() {
+    if (batchRunning || !shots.length) return;
+    const allSelected = shots.every((shot) => selectedIds.has(shot.id));
+    setSelectedIds(allSelected ? new Set() : new Set(shots.map((shot) => shot.id)));
+  }
+
   async function confirmBatchGenerate(config) {
     if (!activeEpisodeId || !selectedIds.size || batchRunning) return;
     setBatchSubmitting(true);
@@ -1768,6 +1774,7 @@ export function DramaStoryboard({ series, episode }) {
   const drafting = autoDrafting || draftMutation.isPending;
   const frozenByRecompile = recompiling;
   const batchCheckedCount = shots.filter((shot) => selectedIds.has(shot.id)).length;
+  const allShotsSelected = batchCheckedCount > 0 && batchCheckedCount === shots.length;
   const batchButtonDisabled = batchRunning
     || drafting
     || frozenByRecompile
@@ -2024,6 +2031,15 @@ export function DramaStoryboard({ series, episode }) {
                 >
                   <Wand2 size={14} /> {drafting ? "拆镜中…" : "重新拆镜"}
                 </button>
+                {batchSelectMode && !batchRunning && (
+                  <button
+                    type="button"
+                    title={allShotsSelected ? "取消勾选全部分镜" : "勾选全部分镜"}
+                    onClick={toggleSelectAllShots}
+                  >
+                    {allShotsSelected ? <X size={14} /> : <Check size={14} />} {allShotsSelected ? "取消全选" : "全选"}
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={batchButtonDisabled}
@@ -2047,6 +2063,7 @@ export function DramaStoryboard({ series, episode }) {
                       return;
                     }
                     setBatchModalOpen(true);
+                    setActionError("");
                   }}
                 >
                   {batchRunning
@@ -2261,6 +2278,7 @@ export function DramaStoryboard({ series, episode }) {
         supportsR2v={selectedVideoModel?.supportsR2v !== false}
         supportsI2v={supportsI2v}
         selectionHasFirstInChapter={selectionHasFirstInChapter}
+        error={actionError}
         busy={batchSubmitting}
       />
       <ImageLightbox preview={preview} onClose={() => setPreview(null)} />

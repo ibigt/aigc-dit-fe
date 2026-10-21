@@ -12,6 +12,7 @@ export function BatchGenerateModal({
   supportsR2v = true,
   supportsI2v,
   selectionHasFirstInChapter,
+  error = "",
   busy = false,
 }) {
   const [mode, setMode] = useState("r2v");
@@ -130,6 +131,7 @@ export function BatchGenerateModal({
               )}
             </>
           )}
+          {error && <p className="drama-form-error">{error}</p>}
         </div>
         <footer className="drama-dialog__actions">
           <button type="button" disabled={busy} onClick={onClose}>取消</button>
