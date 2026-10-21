@@ -11,3 +11,15 @@ export function fetchCreditLedger(params = {}) {
 export function rechargeCredits(payload) {
   return api.post("/credits/recharge", payload);
 }
+
+export function createRechargeOrder(payload) {
+  return api.post("/credits/recharge/orders", payload);
+}
+
+export function fetchRechargeOrder(orderNo) {
+  return api.get(`/credits/recharge/orders/${orderNo}`);
+}
+
+export function mockPayRechargeOrder(orderNo) {
+  return api.post(`/credits/recharge/orders/${orderNo}/mock-pay`);
+}

@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { fetchEnabledModels } from "../api/models.js";
 import { managedModelCatalog } from "../lib/modelCatalog.js";
-import { rechargeCredits } from "../api/credits.js";
 import { CreditsModal } from "./CreditsModal.jsx";
 import { ProfileModal } from "./ProfileModal.jsx";
 import { ChevronIcon, CollapseIcon, ExpandIcon, FilmIcon, GridIcon, ImageIcon, LogoMark, ScriptIcon, ShieldIcon, SparkIcon } from "./icons/sidebarIcons.jsx";
@@ -265,9 +264,7 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
         user={user}
         recentTransactions={recentTransactions}
         onClose={() => setCreditsOpen(false)}
-        onRecharge={async (amountYuan, payment, requestId) => {
-          const profile = await rechargeCredits({ amountYuan, payment, requestId });
-          onUserUpdate(profile);
+        onPaid={() => {
           queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
           queryClient.invalidateQueries({ queryKey: ["credits"] });
         }}
