@@ -53,6 +53,7 @@ const TYPES = [
 const RESOLUTIONS = ["1K", "2K"];
 // 并发数与后端 DramaContract.MAX_ASSET_GENERATE 对齐：一次点击滚动跑完所有勾选资产。
 const BATCH_CONCURRENCY = 16;
+const EMPTY_BATCH_IDS = new Set();
 const emptyCreate = { name: "", meta: "" };
 
 function sameAssetId(a, b) {
@@ -411,9 +412,10 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   const [finalSelectMode, setFinalSelectMode] = useState(false);
   const [imageLibraryOpen, setImageLibraryOpen] = useState(false);
   const [imageLibraryError, setImageLibraryError] = useState("");
-  const [batchSelectMode, setBatchSelectMode] = useState(false);
-  const [batchRunning, setBatchRunning] = useState(false);
-  const [batchAssetIds, setBatchAssetIds] = useState(() => new Set());
+  // 批量生图状态按资产类型分开记，角色/场景/道具三个 tab 可同时各跑一批。
+  const [batchModes, setBatchModes] = useState({});
+  const [batchRuns, setBatchRuns] = useState({});
+  const [batchChecked, setBatchChecked] = useState({});
   const [deleteAssetTarget, setDeleteAssetTarget] = useState(null);
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
@@ -472,6 +474,11 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
     }
     return byType;
   }, [assets]);
+
+  const batchSelectMode = Boolean(batchModes[type]);
+  const batchRunning = Boolean(batchRuns[type]);
+  const batchAssetIds = batchChecked[type] || EMPTY_BATCH_IDS;
+  const anyBatchRunning = TYPES.some((item) => batchRuns[item.id]);
 
   const selected = filtered.find((item) => item.id === selectedId) || filtered[0] || null;
   const checkedCount = filtered.filter((item) => batchAssetIds.has(String(item.id))).length;
@@ -723,41 +730,43 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
         }
       }
     };
-    setBatchRunning(true);
+    const batchType = type;
+    setBatchRuns((current) => ({ ...current, [batchType]: true }));
     try {
       await Promise.all(Array.from({ length: Math.min(BATCH_CONCURRENCY, queue.length) }, () => runQueued()));
-      setBatchSelectMode(false);
-      setBatchAssetIds(new Set());
+      setBatchModes((current) => ({ ...current, [batchType]: false }));
+      setBatchChecked((current) => ({ ...current, [batchType]: new Set() }));
       if (failures.length) {
         showToast(`批量生图完成，${failures.length} 个失败：${failures.join("；")}`);
       } else if (skipped) {
         showToast(`批量生图完成：成功 ${queuedCount} 项，跳过 ${skipped} 项`);
       }
     } finally {
-      setBatchRunning(false);
+      setBatchRuns((current) => ({ ...current, [batchType]: false }));
     }
   }
 
   function toggleBatchAsset(id) {
-    setBatchAssetIds((current) => {
-      const next = new Set(current);
+    setBatchChecked((current) => {
+      const next = new Set(current[type] || []);
       const key = String(id);
       if (next.has(key)) next.delete(key);
       else next.add(key);
-      return next;
+      return { ...current, [type]: next };
     });
   }
 
   function toggleAllBatchAssets() {
-    setBatchAssetIds((current) => {
-      const next = new Set(current);
-      const shouldClear = filtered.every((item) => current.has(String(item.id)));
+    setBatchChecked((current) => {
+      const checked = current[type] || EMPTY_BATCH_IDS;
+      const next = new Set(checked);
+      const shouldClear = filtered.every((item) => checked.has(String(item.id)));
       if (shouldClear) {
         filtered.forEach((item) => next.delete(String(item.id)));
       } else {
         filtered.forEach((item) => next.add(String(item.id)));
       }
-      return next;
+      return { ...current, [type]: next };
     });
   }
 
@@ -916,11 +925,8 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                 role="tab"
                 aria-selected={type === item.id}
                 className={`asset-category-tab${type === item.id ? " is-active" : ""}`}
-                disabled={batchRunning}
                 onClick={() => {
                   setType(item.id);
-                  setBatchSelectMode(false);
-                  setBatchAssetIds(new Set());
                   setDetailId(null);
                   const first = assets.find((asset) => asset.type === item.id);
                   setSelectedId(first?.id || null);
@@ -929,13 +935,14 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                 <item.Icon size={18} />
                 <span>{item.label}</span>
                 <strong>{counts[item.id] || 0}</strong>
+                {batchRuns[item.id] && <span className="asset-spinner" aria-label="批量生图中" />}
               </button>
             ))}
           </div>
           <button
             className={`asset-extract-button${extractMutation.isPending ? " is-loading" : ""}`}
             type="button"
-            disabled={!scriptLocked || !episodeId || extractMutation.isPending || !canUseTextModel || batchRunning}
+            disabled={!scriptLocked || !episodeId || extractMutation.isPending || !canUseTextModel || anyBatchRunning}
             title={scriptLocked
               ? (!canUseTextModel ? "请先在剧本页绑定可用文本模型" : "按当前剧本重新提取资产")
               : "请先回剧本页完成一键分析"}
@@ -954,7 +961,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
             imageModelId={imageModelId}
             seriesImageModelId={series?.imageModelId}
             seriesImageModelName={series?.imageModelName}
-            disabled={bindMutation.isPending || batchRunning}
+            disabled={bindMutation.isPending || anyBatchRunning}
             onBindModel={(value) => {
               setImageModelId(value);
               if (value) bindMutation.mutate(value);
@@ -987,13 +994,13 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
               title={batchSelectMode && !checkedCount ? "退出批量生图" : !modelBound && batchSelectMode ? "先选择图像模型" : "先进入勾选，再生成已选项"}
               onClick={() => {
                 if (!batchSelectMode) {
-                  setBatchSelectMode(true);
-                  setBatchAssetIds(new Set());
+                  setBatchModes((current) => ({ ...current, [type]: true }));
+                  setBatchChecked((current) => ({ ...current, [type]: new Set() }));
                   return;
                 }
                 if (!checkedCount) {
-                  setBatchSelectMode(false);
-                  setBatchAssetIds(new Set());
+                  setBatchModes((current) => ({ ...current, [type]: false }));
+                  setBatchChecked((current) => ({ ...current, [type]: new Set() }));
                   return;
                 }
                 generateBatch().catch((err) => showToast(err.message));
