@@ -15,13 +15,15 @@ import {
   nextTokenId,
   parsePromptToTokens,
   serializeTokensToPrompt,
+  speechHighlightRanges,
 } from "../../lib/promptChips.js";
 
 /**
  * 分镜视频提示词富文本编辑器。
  *
  * 存储约定：叙述里的资产是 `@名字`。台词段不生成芯片，`@` 按普通字符保留。
- * 「说：」后的“”或""里面是台词；引号外面同一行仍可弹出资产栏。
+ * 冒号紧挨“”或""时，引号里是台词；引号外面同一行仍可弹出资产栏。
+ * 引号和引号里的字用暖色底标出，底色不写回正文。
  * 芯片显示为小缩略图加 `@资产名`，缩略图不写回正文。
  *
  * DOM ↔ token 模型约定：
@@ -127,7 +129,14 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
           const hasRawNl = Array.from(child.childNodes).some(
             (c) => c.nodeType === Node.TEXT_NODE && (c.textContent || "").indexOf("\n") !== -1,
           );
-          if (hasRawNl || readSpanValue(child) !== (t.value || "")) {
+          const speechStale = !speechMarkupMatches(child, t.value || "");
+          if (speechStale) {
+            const offset = selectionOffsetInSpan(child);
+            if (offset != null && !pendingCaretRef.current) {
+              pendingCaretRef.current = { tokenId: t.id, offset };
+            }
+          }
+          if (hasRawNl || readSpanValue(child) !== (t.value || "") || speechStale) {
             renderTextIntoSpan(child, t.value || "");
           } else {
             syncSpanDom(child, t.value || "");
@@ -667,39 +676,101 @@ function hasFollowingContent(span) {
   return !!next;
 }
 
-/** 按 value 重建 span 的子节点（文本段 + <br>，尾随换行补伪 br）。 */
+function isSpeechMark(node) {
+  return !!(node && node.nodeType === Node.ELEMENT_NODE && node.classList && node.classList.contains("drama-prompt-speech"));
+}
+
+function nodeWeight(node) {
+  if (!node) return 0;
+  if (node.nodeType === Node.TEXT_NODE) return (node.textContent || "").length;
+  if (node.tagName === "BR") return node.dataset && node.dataset.bogus ? 0 : 1;
+  return (node.textContent || "").length;
+}
+
+/** 高亮层里的文字必须刚好是引号区间。闭引号后继续打字会落进这一层，正文没变也不会触发重建。 */
+function speechMarkupMatches(span, value) {
+  const text = String(value == null ? "" : value);
+  const ranges = speechHighlightRanges(text);
+  const marks = Array.from(span.children).filter((node) => isSpeechMark(node));
+  if (marks.length !== ranges.length) return false;
+  return marks.every((mark, index) => (mark.textContent || "") === text.slice(ranges[index].start, ranges[index].end));
+}
+
+function selectionOffsetInSpan(span) {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return null;
+  const range = sel.getRangeAt(0);
+  if (!span.contains(range.startContainer)) return null;
+  return caretOffsetInSpan(span, range.startContainer, range.startOffset);
+}
+
+/** 按 value 重建 span 的子节点（文本段 + 台词暖色底 + <br>，尾随换行补伪 br）。底色不写入正文。 */
 function renderTextIntoSpan(span, value) {
   while (span.firstChild) span.removeChild(span.firstChild);
-  const segments = String(value == null ? "" : value).split("\n");
+  const text = String(value == null ? "" : value);
+  const ranges = speechHighlightRanges(text);
+  const segments = text.split("\n");
+  let offset = 0;
+  let rangeIndex = 0;
   for (let i = 0; i < segments.length; i += 1) {
-    if (i > 0) span.appendChild(document.createElement("br"));
-    if (segments[i]) span.appendChild(document.createTextNode(segments[i]));
+    if (i > 0) {
+      span.appendChild(document.createElement("br"));
+      offset += 1;
+    }
+    const lineEnd = offset + segments[i].length;
+    let local = offset;
+    while (rangeIndex < ranges.length && ranges[rangeIndex].end <= local) rangeIndex += 1;
+    let r = rangeIndex;
+    while (r < ranges.length && ranges[r].start < lineEnd) {
+      const start = Math.max(ranges[r].start, local);
+      const end = Math.min(ranges[r].end, lineEnd);
+      if (start > local) span.appendChild(document.createTextNode(text.slice(local, start)));
+      if (end > start) {
+        const mark = document.createElement("span");
+        mark.className = "drama-prompt-speech";
+        mark.textContent = text.slice(start, end);
+        span.appendChild(mark);
+      }
+      local = end;
+      if (ranges[r].end <= lineEnd) r += 1;
+      else break;
+    }
+    if (local < lineEnd) span.appendChild(document.createTextNode(text.slice(local, lineEnd)));
+    offset = lineEnd;
+    rangeIndex = r;
   }
   syncSpanDom(span, value);
 }
 
-/** 把 span 内的光标位置（startContainer 可能是文本子节点或 span 自身）折算成 token 值内偏移。 */
-function caretOffsetInSpan(span, startContainer, startOffset) {
-  const weight = (c) => {
-    if (c.nodeType === Node.TEXT_NODE) return (c.textContent || "").length;
-    if (c.tagName === "BR") return c.dataset && c.dataset.bogus ? 0 : 1;
-    return (c.textContent || "").length;
-  };
-  if (startContainer === span) {
-    // offset 是子节点序号：折算成「第 offset 个子节点之前」的值偏移
-    let v = 0;
-    const kids = span.childNodes;
-    for (let i = 0; i < startOffset && i < kids.length; i += 1) v += weight(kids[i]);
-    return v;
+/** 光标落在台词暖色层内部时，按这一层的文本继续折算，不把样式节点算进正文。 */
+function offsetWithin(root, container, offset) {
+  if (container === root) {
+    if (root.nodeType === Node.TEXT_NODE) return offset;
+    let value = 0;
+    const kids = root.childNodes;
+    for (let i = 0; i < offset && i < kids.length; i += 1) value += nodeWeight(kids[i]);
+    return value;
   }
   let acc = 0;
-  for (const child of span.childNodes) {
-    if (child === startContainer) {
-      return acc + startOffset;
+  for (const child of root.childNodes) {
+    if (child === container || (child.contains && child.contains(container))) {
+      return acc + offsetWithin(child, container, offset);
     }
-    acc += weight(child);
+    acc += nodeWeight(child);
   }
   return null;
+}
+
+/** 把 span 内的光标位置（startContainer 可能是文本子节点、台词层或 span 自身）折算成 token 值内偏移。 */
+function caretOffsetInSpan(span, startContainer, startOffset) {
+  return offsetWithin(span, startContainer, startOffset);
+}
+
+function placeInSpeech(mark, offset) {
+  const textNode = mark.firstChild && mark.firstChild.nodeType === Node.TEXT_NODE ? mark.firstChild : null;
+  if (!textNode) return { node: mark, offset: 0 };
+  const len = (textNode.textContent || "").length;
+  return { node: textNode, offset: Math.max(0, Math.min(offset, len)) };
 }
 
 /** 按 token 值内偏移把光标放进 span：返回 {node,offset}（文本节点内）
@@ -717,12 +788,17 @@ function setCaretInSpan(span, offset) {
       if (child.dataset && child.dataset.bogus) continue; // 伪 br 不占值
       if (o === 0) return { node: span, childIndex: i };
       o -= 1;
+    } else if (isSpeechMark(child)) {
+      const len = (child.textContent || "").length;
+      if (o <= len) return placeInSpeech(child, o);
+      o -= len;
     }
   }
   const last = kids[kids.length - 1];
   if (last && last.nodeType === Node.TEXT_NODE) {
     return { node: last, offset: (last.textContent || "").length };
   }
+  if (last && isSpeechMark(last)) return placeInSpeech(last, (last.textContent || "").length);
   return { node: span, childIndex: Math.max(0, kids.length - 1) };
 }
 
