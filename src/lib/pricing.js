@@ -2,7 +2,7 @@ const DEFAULT_UNIT_PRICE = { image: 2, video: 12, audio: 3, text: 0 };
 
 export const PRICING_UNITS = {
   image: ["张"],
-  video: ["秒", "次"],
+  video: ["秒"],
   audio: ["千字符", "万字符"],
   text: ["千Token", "百万Token"],
 };
