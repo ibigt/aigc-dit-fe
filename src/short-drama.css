@@ -1729,6 +1729,22 @@
 }
 .drama-empty { min-height: 220px; display: grid; place-items: center; color: #7a8492; font-size: 13px; }
 .drama-empty p { margin: 0 0 12px; }
+/* 报错页返回按钮：覆盖浅色主题的 button--ghost，对齐工作台主操作按钮 */
+.drama-empty .button--ghost {
+  height: 40px;
+  padding: 0 20px;
+  border: 1px solid rgba(168,154,255,.4);
+  border-radius: 10px;
+  color: #fff;
+  background: linear-gradient(135deg, #6557e7, #7769f2);
+  box-shadow: 0 8px 24px rgba(75,59,190,.24);
+  font-size: 14px;
+}
+.drama-empty .button--ghost:hover {
+  border-color: rgba(168,154,255,.55);
+  background: linear-gradient(135deg, #7163ed, #8375f7);
+  box-shadow: 0 11px 30px rgba(75,59,190,.34);
+}
 .drama-library .drama-form-error { margin: 0 18px 12px; }
 .console-content:has(.drama-library), .console-content:has(.drama-workspace) { overflow: hidden; }
 

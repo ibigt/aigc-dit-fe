@@ -9104,6 +9104,12 @@ a {
     width: min(880px, calc(100vw - 32px));
 }
 
+/* 编辑模型弹框整体下移，避开顶部遮挡；高度上限同步收窄防止底部出视口 */
+.model-dialog {
+    position: relative;
+    top: 30px;
+}
+
 .model-dialog > header {
     position: sticky;
     top: 0;
@@ -9176,8 +9182,11 @@ a {
     color: var(--text-secondary);
     font-size: 12px;
 }
+.model-form-grid .model-cap-chip {
+    flex-direction: row;
+}
 
-.model-form-grid input {
+.model-form-grid input:not([type="checkbox"]) {
     height: 40px;
     padding: 0 12px;
     border: 1px solid var(--border-default);
@@ -9270,6 +9279,15 @@ a {
     background: var(--bg-surface-2);
     color: var(--text-body);
     font-size: 12px;
+    cursor: pointer;
+}
+
+.model-cap-chip input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 auto;
+    margin: 0;
+    accent-color: var(--brand-primary);
     cursor: pointer;
 }
 
