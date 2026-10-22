@@ -36,7 +36,7 @@ import { isRetryableRequestError } from "../../api/client.js";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
 import { BatchGenerateModal } from "./BatchGenerateModal.jsx";
 import { PromptChipEditor } from "./PromptChipEditor.jsx";
-import { narrativeMentionCount, parsePromptToTokens, referenceIdsOf, stripMentionMarks } from "../../lib/promptChips.js";
+import { narrativeMentionCount, parsePromptToTokens, referenceIdsOf } from "../../lib/promptChips.js";
 import { GenerationHistoryPanel, SwitchFinalModal } from "./GenerationHistoryPanel.jsx";
 import { VideoLightbox } from "./VideoLightbox.jsx";
 import { DRAMA_ASPECT_RATIOS, preferredResolution, resolutionOptionsFor } from "./dramaSpecs.js";
@@ -970,22 +970,6 @@ function ShotPromptPane({
             : `叙述里的 @ 会计入参考图，重复引用只算一张。当前 ${mentionCount} 张${cap != null ? `，当前模型最多 ${cap} 张` : ""}。`}
         {!framesMode && missing.length ? ` 还没有参考图：${missing.join("、")}。` : ""}
       </p>
-      <label className="youxi-field">
-        <span>台词</span>
-        <textarea
-          rows={4}
-          disabled={frozen}
-          defaultValue={selected.dialogue || ""}
-          key={`${selected.id}:dialogue:${selected.dialogue || ""}`}
-          onBlur={(event) => {
-            const value = stripMentionMarks(event.target.value);
-            if (value !== event.target.value) event.target.value = value;
-            if (value === (selected.dialogue || "")) return;
-            onSave(selected, { dialogue: value }).catch(() => {});
-          }}
-          placeholder={"局长（愤怒）：你给我站住！\n旁白：夜色渐深。"}
-        />
-      </label>
       <div className="youxi-shot-editor__actions">
         <button
           className="youxi-shot-recompile"

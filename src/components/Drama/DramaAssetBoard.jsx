@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchAssets } from "../../api/assets.js";
 import { DemoSelect } from "../DemoSelect.jsx";
 import {
@@ -40,6 +40,7 @@ import {
   uploadDramaAssetVoiceReference,
   bindDramaAssetVoiceReference,
 } from "../../api/drama.js";
+import { assetIdentityKey, mergeEpisodeAssets, siblingAssets } from "../../lib/dramaAssets.js";
 import { MEDIA_THUMB_WIDTH, formatDateTime, mediaUrl, retryMediaOnce } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
@@ -436,12 +437,17 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
     queryKey: ["drama-image-models"],
     queryFn: fetchDramaImageModels,
   });
-  const assetsQuery = useQuery({
-    queryKey: ["drama-assets", episodeId],
-    queryFn: () => fetchDramaAssets(episodeId),
-    enabled: Boolean(episodeId),
-    // 仅分析进行中才轮询；分析已结束后骨架空话不等于“还在补全”。
-    refetchInterval: episode?.analyzing ? 2500 : false,
+  const episodeList = series?.episodes?.length ? series.episodes : (episode ? [episode] : []);
+  const episodeIds = episodeList.map((item) => item.id).filter(Boolean);
+  const anyAnalyzing = episodeList.some((item) => item.analyzing);
+  const assetQueries = useQueries({
+    queries: episodeIds.map((id) => ({
+      queryKey: ["drama-assets", id],
+      queryFn: () => fetchDramaAssets(id),
+      enabled: Boolean(id),
+      // 仅分析进行中才轮询；分析已结束后骨架空话不等于“还在补全”。
+      refetchInterval: anyAnalyzing ? 2500 : false,
+    })),
   });
   const imageLibraryQuery = useQuery({
     queryKey: ["assets", "image", ""],
@@ -455,7 +461,8 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   });
 
   const imageModels = imageModelsQuery.data || [];
-  const assets = assetsQuery.data || [];
+  const allAssets = assetQueries.flatMap((query) => query.data || []);
+  const assets = mergeEpisodeAssets(assetQueries.map((query) => query.data));
   const scriptLocked = episode?.status === "已锁定";
   const canUseTextModel = episode?.canGenerate !== false;
 
@@ -524,17 +531,17 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   }
 
   const invalidate = () => Promise.all([
-    queryClient.invalidateQueries({ queryKey: ["drama-assets", episodeId] }),
+    queryClient.invalidateQueries({ queryKey: ["drama-assets"] }),
     queryClient.invalidateQueries({ queryKey: ["drama-asset-generations", selected?.id] }),
     queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] }),
-    queryClient.invalidateQueries({ queryKey: ["drama-storyboard", episodeId] }),
+    queryClient.invalidateQueries({ queryKey: ["drama-storyboard"] }),
   ]);
 
   const invalidateAssetHistory = (assetId) => Promise.all([
-    queryClient.invalidateQueries({ queryKey: ["drama-assets", episodeId] }),
+    queryClient.invalidateQueries({ queryKey: ["drama-assets"] }),
     queryClient.invalidateQueries({ queryKey: ["drama-asset-generations", assetId] }),
     queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] }),
-    queryClient.invalidateQueries({ queryKey: ["drama-storyboard", episodeId] }),
+    queryClient.invalidateQueries({ queryKey: ["drama-storyboard"] }),
   ]);
 
   const markBusy = (id, action, on) => {
@@ -562,12 +569,18 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
     onError: (err) => showToast(err.message),
   });
   const createMutation = useMutation({
-    mutationFn: (form) => createDramaAsset(episodeId, {
-      name: form.name.trim(),
-      type,
-      description: form.meta.trim() || undefined,
-      identityInvariants: form.meta.trim() || undefined,
-    }),
+    mutationFn: (form) => {
+      const name = form.name.trim();
+      if (assets.some((item) => assetIdentityKey(item) === assetIdentityKey({ type, name }))) {
+        throw new Error(`该${type}已经存在`);
+      }
+      return createDramaAsset(episodeId, {
+        name,
+        type,
+        description: form.meta.trim() || undefined,
+        identityInvariants: form.meta.trim() || undefined,
+      });
+    },
     onSuccess: (created) => {
       setCreating(false);
       if (created?.id) setSelectedId(created.id);
@@ -580,7 +593,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
     if (extra.name != null) payload.name = extra.name.trim();
     if (extra.identityInvariants != null) payload.identityInvariants = extra.identityInvariants.trim();
     if (!Object.keys(payload).length) return;
-    await updateDramaAsset(asset.id, payload);
+    await Promise.all(siblingAssets(asset, allAssets).map((item) => updateDramaAsset(item.id, payload)));
     if (extra.identityInvariants != null) {
       setPromptDrafts((current) => {
         if (!Object.prototype.hasOwnProperty.call(current, asset.id)) return current;
@@ -606,8 +619,11 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
     if (!asset || !voiceDirtyOf(asset)) return;
     markBusy(asset.id, "voice", true);
     try {
-      const updated = await updateDramaAsset(asset.id, { voiceLock: voiceDraftOf(asset).trim() });
-      rememberAsset(updated);
+      const voiceLock = voiceDraftOf(asset).trim();
+      const updatedList = await Promise.all(
+        siblingAssets(asset, allAssets).map((item) => updateDramaAsset(item.id, { voiceLock })),
+      );
+      updatedList.forEach(rememberAsset);
       setVoiceDrafts((current) => {
         const next = { ...current };
         delete next[asset.id];
@@ -773,8 +789,9 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   async function remove(asset) {
     markBusy(asset.id, "delete", true);
     try {
-      await deleteDramaAsset(asset.id);
-      if (selectedId === asset.id) setSelectedId(null);
+      const targets = siblingAssets(asset, allAssets);
+      await Promise.all(targets.map((item) => deleteDramaAsset(item.id)));
+      if (targets.some((item) => item.id === selectedId)) setSelectedId(null);
       queryClient.invalidateQueries({ queryKey: ["creations"] });
       invalidate();
     } finally {
@@ -784,10 +801,12 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
 
   function rememberAsset(updated) {
     if (!updated?.id) return;
-    queryClient.setQueryData(["drama-assets", episodeId], (current) => {
-      if (!Array.isArray(current)) return current;
-      return current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item));
-    });
+    for (const id of episodeIds) {
+      queryClient.setQueryData(["drama-assets", id], (current) => {
+        if (!Array.isArray(current) || !current.some((item) => item.id === updated.id)) return current;
+        return current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item));
+      });
+    }
   }
 
   async function onUploadFiles(files) {

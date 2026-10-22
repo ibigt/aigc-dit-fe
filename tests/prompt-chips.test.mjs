@@ -7,6 +7,7 @@ import {
   plainTextLength,
   referenceIdsOf,
   serializeTokensToPrompt,
+  speechHighlightRanges,
   stripMentionMarks,
 } from "../src/lib/promptChips.js";
 
@@ -76,6 +77,44 @@ test("没有收尾引号时，说：仍收到换行，下一行可以引用", ()
   assert.equal(caretInDialogue(text, text.indexOf("@澹白")), false);
 });
 
+test("冒号紧挨引号即台词，说话动作留在引号外", () => {
+  const text = "@澹白 低头合十，平静回应：“弟子，谨遵佛旨。”@夜灯";
+  const tokens = parsePromptToTokens(text, { lockedAssets, referenceAssetIds: [1, 3] });
+  const chips = tokens.filter((token) => token.kind === "chip");
+  assert.deepEqual(chips.map((token) => token.name), ["澹白", "夜灯"]);
+  assert.equal(caretInDialogue(text, text.indexOf("弟子")), true);
+  assert.equal(caretInDialogue(text, text.indexOf("“")), false);
+  assert.equal(caretInDialogue(text, text.indexOf("平静回应")), false);
+  assert.equal(caretInDialogue(text, text.indexOf("”")), true);
+  assert.equal(serializeTokensToPrompt(tokens), text);
+});
+
+test("同一行多句冒号引号各算一句", () => {
+  const text = "@澹白 问：“第一句。”@夜灯 答：“第二句。”";
+  const tokens = parsePromptToTokens(text, { lockedAssets, referenceAssetIds: [1, 3] });
+  const chips = tokens.filter((token) => token.kind === "chip");
+  assert.deepEqual(chips.map((token) => token.name), ["澹白", "夜灯"]);
+  assert.equal(caretInDialogue(text, text.indexOf("第一句")), true);
+  assert.equal(caretInDialogue(text, text.indexOf("第二句")), true);
+  assert.equal(caretInDialogue(text, text.indexOf("@夜灯")), false);
+});
+
+test("场景和镜头标签的冒号不是台词", () => {
+  const text = "场景：@幻梦侦探社\n镜头1：中景。";
+  assert.equal(caretInDialogue(text, text.indexOf("幻梦侦探社")), false);
+  assert.equal(caretInDialogue(text, text.indexOf("中景")), false);
+  const tokens = parsePromptToTokens(text, { lockedAssets, referenceAssetIds: [2] });
+  assert.equal(tokens.some((token) => token.kind === "chip" && token.name === "幻梦侦探社"), true);
+});
+
+test("引号没关上时收到行尾，下一行可以引用", () => {
+  const text = "平静回应：“弟子\n@澹白 坐下";
+  assert.equal(caretInDialogue(text, text.indexOf("弟子")), true);
+  assert.equal(caretInDialogue(text, text.indexOf("@澹白")), false);
+  const tokens = parsePromptToTokens(text, { lockedAssets });
+  assert.equal(tokens.some((token) => token.kind === "chip" && token.name === "澹白"), true);
+});
+
 test("旁白不加引号，整行都算台词", () => {
   const text = "旁白：夜色已深。@澹白";
   assert.equal(caretInDialogue(text, text.indexOf("@澹白")), true);
@@ -106,4 +145,25 @@ test("plainTextLength ignores chips", () => {
 
 test("stripMentionMarks keeps the name", () => {
   assert.equal(stripMentionMarks("@澹白：我来了。"), "澹白：我来了。");
+});
+
+test("引号内台词连引号一起上色，标签和说话动作不上色", () => {
+  const quoted = "平静回应：“弟子，谨遵佛旨。”";
+  const quotedRanges = speechHighlightRanges(quoted);
+  assert.equal(quotedRanges.length, 1);
+  assert.equal(quoted.slice(quotedRanges[0].start, quotedRanges[0].end), "“弟子，谨遵佛旨。”");
+
+  const legacy = "说：夜灯还亮着。";
+  const legacyRanges = speechHighlightRanges(legacy);
+  assert.equal(legacy.slice(legacyRanges[0].start, legacyRanges[0].end), "夜灯还亮着。");
+
+  const narration = "旁白：夜色已深。";
+  const narrationRanges = speechHighlightRanges(narration);
+  assert.equal(narration.slice(narrationRanges[0].start, narrationRanges[0].end), "夜色已深。");
+
+  assert.equal(speechHighlightRanges("场景：客厅\n镜头1：中景。").length, 0);
+
+  const english = '低声问："别睡了。"';
+  const englishRanges = speechHighlightRanges(english);
+  assert.equal(english.slice(englishRanges[0].start, englishRanges[0].end), '"别睡了。"');
 });

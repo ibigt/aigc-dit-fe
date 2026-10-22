@@ -2,13 +2,14 @@
  * 分镜核心正文的 @ 引用解析。
  *
  * 存储约定：叙述里的资产写成 `@名字`。台词段保持普通名字，不解析成芯片。
- * 「说：」后若紧跟中文引号“”或英文引号""，引号内不算叙述；引号外同一行仍可 @。
- * 没有收尾引号时，这句仍收到换行为止。旁白、画外音不加引号，仍收到换行。
+ * 冒号后只允许空白、紧接着“或"时，引号内不算叙述；引号外同一行仍可 @。
+ * 引号没关上时，这句收到本行末尾。旧稿仍认没有引号的「说：」，以及「旁白：」「（画外音）：」。
+ * 场景、镜头、站位这类冒号后面没有引号，不当台词。
  * 缩略图只在编辑器里显示，不写回正文。
  */
 
 const LABEL_RE = /(站位|镜头\d+|景别|动作|接续|台词|场景|运镜|环境声)\s*[:：]/g;
-const SAY_RE = /说\s*[:：]|旁白\s*[:：]|（画外音）\s*[:：]/g;
+const LEGACY_SPEECH_RE = /说\s*[:：]|旁白\s*[:：]|（画外音）\s*[:：]/g;
 
 let _tokenId = 0;
 export function nextTokenId() {
@@ -59,47 +60,127 @@ function lineLimit(body, from) {
   return lineEnd < 0 ? body.length : lineEnd;
 }
 
-/** 说：后的引号内是台词。没有收尾引号时收到本行末尾。旁白和画外音没有引号，整行都算台词。 */
-function speechRange(body, marker, speechStart) {
-  const limit = lineLimit(body, speechStart);
-  if (!marker.startsWith("说")) {
-    return { dialogueStart: speechStart, dialogueEnd: limit, resume: limit };
+function colonBeforeQuote(body, from) {
+  for (let i = from; i < body.length; i += 1) {
+    const value = body.charAt(i);
+    if (value !== "：" && value !== ":") continue;
+    let openAt = i + 1;
+    while (openAt < body.length && (body.charAt(openAt) === " " || body.charAt(openAt) === "\t")) openAt += 1;
+    const open = body.charAt(openAt);
+    if (open === "“" || open === "\"") return { colon: i, openAt, open };
   }
-  let openAt = speechStart;
-  while (openAt < limit && /\s/.test(body.charAt(openAt))) openAt += 1;
+  return null;
+}
+
+function nextSpeechHit(body, from) {
+  const legacyRe = new RegExp(LEGACY_SPEECH_RE.source, "g");
+  legacyRe.lastIndex = from;
+  const legacy = legacyRe.exec(body);
+  const colon = colonBeforeQuote(body, from);
+  if (legacy && (!colon || legacy.index <= colon.colon)) {
+    const marker = legacy[0];
+    const offScreen = marker.startsWith("旁白") || marker.includes("画外音");
+    const speechStart = legacy.index + marker.length;
+    const limit = lineLimit(body, speechStart);
+    if (offScreen) {
+      return {
+        markerStart: legacy.index,
+        quoteOpen: -1,
+        contentStart: speechStart,
+        contentEnd: limit,
+        resume: limit,
+      };
+    }
+    let openAt = speechStart;
+    while (openAt < limit && (body.charAt(openAt) === " " || body.charAt(openAt) === "\t")) openAt += 1;
+    const open = body.charAt(openAt);
+    if (open === "“" || open === "\"") {
+      return quoteSpeechHit(body, legacy.index, openAt, limit);
+    }
+    return {
+      markerStart: legacy.index,
+      quoteOpen: -1,
+      contentStart: speechStart,
+      contentEnd: limit,
+      resume: limit,
+    };
+  }
+  if (!colon) return null;
+  const limit = lineLimit(body, colon.colon);
+  return quoteSpeechHit(body, colon.colon, colon.openAt, limit);
+}
+
+function quoteSpeechHit(body, markerStart, openAt, limit) {
   const open = body.charAt(openAt);
-  if (open !== "“" && open !== "\"") {
-    return { dialogueStart: speechStart, dialogueEnd: limit, resume: limit };
-  }
   const closeChar = open === "“" ? "”" : "\"";
   const close = body.indexOf(closeChar, openAt + 1);
   if (close < 0 || close > limit) {
-    return { dialogueStart: openAt + 1, dialogueEnd: limit, resume: limit };
+    return {
+      markerStart,
+      quoteOpen: openAt,
+      contentStart: openAt + 1,
+      contentEnd: limit,
+      resume: limit,
+    };
   }
-  return { dialogueStart: openAt + 1, dialogueEnd: close, resume: close };
+  return {
+    markerStart,
+    quoteOpen: openAt,
+    contentStart: openAt + 1,
+    contentEnd: close,
+    resume: close + 1,
+  };
+}
+
+function speechHits(body) {
+  const hits = [];
+  let from = 0;
+  while (from < body.length) {
+    const hit = nextSpeechHit(body, from);
+    if (!hit) break;
+    hits.push(hit);
+    const next = Math.max(hit.resume, hit.markerStart + 1);
+    if (next <= from) break;
+    from = next;
+  }
+  return hits;
 }
 
 function splitSay(source, start, end) {
   const body = source.slice(start, end);
-  const re = new RegExp(SAY_RE.source, "g");
+  const hits = speechHits(body);
+  if (!hits.length) return [{ dialogue: false, start, end }];
   const spans = [];
   let cursor = 0;
-  let match;
-  while ((match = re.exec(body)) !== null) {
-    const speechStart = match.index + match[0].length;
-    const range = speechRange(body, match[0], speechStart);
-    if (range.dialogueStart > cursor) {
-      spans.push({ dialogue: false, start: start + cursor, end: start + range.dialogueStart });
+  for (const hit of hits) {
+    if (hit.contentStart > cursor) {
+      spans.push({ dialogue: false, start: start + cursor, end: start + hit.contentStart });
     }
-    if (range.dialogueEnd > range.dialogueStart) {
-      spans.push({ dialogue: true, start: start + range.dialogueStart, end: start + range.dialogueEnd });
+    if (hit.contentEnd > hit.contentStart) {
+      spans.push({ dialogue: true, start: start + hit.contentStart, end: start + hit.contentEnd });
     }
-    cursor = range.resume;
-    re.lastIndex = range.resume;
+    cursor = hit.contentEnd;
   }
-  if (!spans.length) return [{ dialogue: false, start, end }];
   if (cursor < body.length) spans.push({ dialogue: false, start: start + cursor, end });
   return spans;
+}
+
+/** 编辑器暖色底的区间。引号和引号里的字一起上色；旧的无引号口播从冒号后涂到行尾。 */
+export function speechHighlightRanges(text) {
+  const source = text == null ? "" : String(text);
+  const ranges = [];
+  for (const span of labelSpans(source)) {
+    if (span.dialogue) continue;
+    const body = source.slice(span.start, span.end);
+    for (const hit of speechHits(body)) {
+      const paintStart = hit.quoteOpen >= 0 ? hit.quoteOpen : hit.contentStart;
+      const paintEnd = hit.quoteOpen >= 0 ? hit.resume : hit.contentEnd;
+      if (paintEnd > paintStart) {
+        ranges.push({ start: span.start + paintStart, end: span.start + paintEnd });
+      }
+    }
+  }
+  return ranges;
 }
 
 function spansOf(text) {

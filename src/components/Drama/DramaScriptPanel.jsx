@@ -235,7 +235,7 @@ export function DramaScriptPanel({
                     value={raw}
                     rows={8}
                     disabled={analyzing}
-                    placeholder={"第一场 幻梦侦探社 日 内\n人物：洛白、夏安、局长\n道具：古铜怀表\n洛白：开始了。"}
+                    placeholder="请输入剧本内容"
                     onChange={(event) => setRaw(event.target.value)}
                 />
               </div>

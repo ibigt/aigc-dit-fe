@@ -9582,6 +9582,16 @@ a {
     pointer-events: none;
 }
 
+.drama-prompt-speech {
+    color: inherit;
+    background: rgba(212, 168, 92, .16);
+    border: 1px solid rgba(212, 168, 92, .42);
+    border-radius: 6px;
+    padding: 0 5px;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+}
+
 .drama-prompt-chip {
     display: inline-flex;
     align-items: center;
