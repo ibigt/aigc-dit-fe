@@ -4208,7 +4208,7 @@ a {
 
 .quick-reference-toolbar {
     position: absolute;
-    z-index: 5;
+    z-index: 11;
     left: 16px;
     right: 126px;
     top: 0;
