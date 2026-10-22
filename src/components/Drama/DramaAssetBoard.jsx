@@ -54,7 +54,6 @@ const TYPES = [
 const RESOLUTIONS = ["1K", "2K"];
 // 并发数与后端 DramaContract.MAX_ASSET_GENERATE 对齐：一次点击滚动跑完所有勾选资产。
 const BATCH_CONCURRENCY = 16;
-const EMPTY_BATCH_IDS = new Set();
 const emptyCreate = { name: "", meta: "" };
 
 function sameAssetId(a, b) {
@@ -413,10 +412,10 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   const [finalSelectMode, setFinalSelectMode] = useState(false);
   const [imageLibraryOpen, setImageLibraryOpen] = useState(false);
   const [imageLibraryError, setImageLibraryError] = useState("");
-  // 批量生图状态按资产类型分开记，角色/场景/道具三个 tab 可同时各跑一批。
-  const [batchModes, setBatchModes] = useState({});
-  const [batchRuns, setBatchRuns] = useState({});
-  const [batchChecked, setBatchChecked] = useState({});
+  // 批量生图为整页全局：切 tab 不退出勾选、不清空已选；一次单队列滚动执行。
+  const [batchSelectMode, setBatchSelectMode] = useState(false);
+  const [batchRunning, setBatchRunning] = useState(false);
+  const [batchChecked, setBatchChecked] = useState(() => new Set());
   const [deleteAssetTarget, setDeleteAssetTarget] = useState(null);
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
@@ -482,14 +481,13 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
     return byType;
   }, [assets]);
 
-  const batchSelectMode = Boolean(batchModes[type]);
-  const batchRunning = Boolean(batchRuns[type]);
-  const batchAssetIds = batchChecked[type] || EMPTY_BATCH_IDS;
-  const anyBatchRunning = TYPES.some((item) => batchRuns[item.id]);
-
   const selected = filtered.find((item) => item.id === selectedId) || filtered[0] || null;
-  const checkedCount = filtered.filter((item) => batchAssetIds.has(String(item.id))).length;
-  const allChecked = filtered.length > 0 && checkedCount === filtered.length;
+  const checkedCount = assets.filter((item) => batchChecked.has(String(item.id))).length;
+  const allAssetsChecked = assets.length > 0 && checkedCount === assets.length;
+  const allAssetsIndeterminate = checkedCount > 0 && !allAssetsChecked;
+  const typeCheckedCount = filtered.filter((item) => batchChecked.has(String(item.id))).length;
+  const allTypeChecked = filtered.length > 0 && typeCheckedCount === filtered.length;
+  const typeIndeterminate = typeCheckedCount > 0 && !allTypeChecked;
 
   const historyAssetId = detailId || selected?.id;
   const generationsQuery = useQuery({
@@ -713,7 +711,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   }
 
   async function generateBatch() {
-    const checkedAssets = filtered.filter((item) => batchAssetIds.has(String(item.id)));
+    const checkedAssets = assets.filter((item) => batchChecked.has(String(item.id)));
     if (!checkedAssets.length) {
       showToast("请先勾选要生成的资产");
       return;
@@ -746,43 +744,55 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
         }
       }
     };
-    const batchType = type;
-    setBatchRuns((current) => ({ ...current, [batchType]: true }));
+    setBatchRunning(true);
     try {
       await Promise.all(Array.from({ length: Math.min(BATCH_CONCURRENCY, queue.length) }, () => runQueued()));
-      setBatchModes((current) => ({ ...current, [batchType]: false }));
-      setBatchChecked((current) => ({ ...current, [batchType]: new Set() }));
+      setBatchSelectMode(false);
+      setBatchChecked(new Set());
       if (failures.length) {
         showToast(`批量生图完成，${failures.length} 个失败：${failures.join("；")}`);
       } else if (skipped) {
         showToast(`批量生图完成：成功 ${queuedCount} 项，跳过 ${skipped} 项`);
       }
     } finally {
-      setBatchRuns((current) => ({ ...current, [batchType]: false }));
+      setBatchRunning(false);
     }
+  }
+
+  function exitBatchSelectMode() {
+    setBatchSelectMode(false);
+    setBatchChecked(new Set());
   }
 
   function toggleBatchAsset(id) {
     setBatchChecked((current) => {
-      const next = new Set(current[type] || []);
+      const next = new Set(current);
       const key = String(id);
       if (next.has(key)) next.delete(key);
       else next.add(key);
-      return { ...current, [type]: next };
+      return next;
     });
   }
 
-  function toggleAllBatchAssets() {
+  function toggleSelectAllAssets() {
     setBatchChecked((current) => {
-      const checked = current[type] || EMPTY_BATCH_IDS;
-      const next = new Set(checked);
-      const shouldClear = filtered.every((item) => checked.has(String(item.id)));
-      if (shouldClear) {
-        filtered.forEach((item) => next.delete(String(item.id)));
+      const allSelected = assets.length > 0 && assets.every((item) => current.has(String(item.id)));
+      if (allSelected) return new Set();
+      return new Set(assets.map((item) => String(item.id)));
+    });
+  }
+
+  function toggleSelectAllInType() {
+    setBatchChecked((current) => {
+      const next = new Set(current);
+      const typeItems = assets.filter((item) => item.type === type);
+      const allSelected = typeItems.length > 0 && typeItems.every((item) => next.has(String(item.id)));
+      if (allSelected) {
+        typeItems.forEach((item) => next.delete(String(item.id)));
       } else {
-        filtered.forEach((item) => next.add(String(item.id)));
+        typeItems.forEach((item) => next.add(String(item.id)));
       }
-      return { ...current, [type]: next };
+      return next;
     });
   }
 
@@ -937,39 +947,81 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
       <section className="asset-workbench">
         <header className="asset-category-row">
           <div className="asset-category-tabs" role="tablist" aria-label="资产分类">
-            {TYPES.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                role="tab"
-                aria-selected={type === item.id}
-                className={`asset-category-tab${type === item.id ? " is-active" : ""}`}
-                onClick={() => {
-                  setType(item.id);
-                  setDetailId(null);
-                  const first = assets.find((asset) => asset.type === item.id);
-                  setSelectedId(first?.id || null);
-                }}
-              >
-                <item.Icon size={18} />
-                <span>{item.label}</span>
-                <strong>{counts[item.id] || 0}</strong>
-                {batchRuns[item.id] && <span className="asset-spinner" aria-label="批量生图中" />}
-              </button>
-            ))}
+            {TYPES.map((item) => {
+              const typeHasChecked = batchRunning && assets.some(
+                (asset) => asset.type === item.id && batchChecked.has(String(asset.id)),
+              );
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={type === item.id}
+                  className={`asset-category-tab${type === item.id ? " is-active" : ""}`}
+                  onClick={() => {
+                    setType(item.id);
+                    setDetailId(null);
+                    const first = assets.find((asset) => asset.type === item.id);
+                    setSelectedId(first?.id || null);
+                  }}
+                >
+                  <item.Icon size={18} />
+                  <span>{item.label}</span>
+                  <strong>{counts[item.id] || 0}</strong>
+                  {typeHasChecked && <span className="asset-spinner" aria-label="批量生图中" />}
+                </button>
+              );
+            })}
           </div>
-          <button
-            className={`asset-extract-button${extractMutation.isPending ? " is-loading" : ""}`}
-            type="button"
-            disabled={!scriptLocked || !episodeId || extractMutation.isPending || !canUseTextModel || anyBatchRunning}
-            title={scriptLocked
-              ? (!canUseTextModel ? "请先在剧本页绑定可用文本模型" : "按当前剧本重新提取资产")
-              : "请先回剧本页完成一键分析"}
-            onClick={() => extractMutation.mutate()}
-          >
-            {extractMutation.isPending ? <span className="asset-spinner" /> : <Sparkles size={17} />}
-            <span>{extractMutation.isPending ? "正在重新提取中" : "从剧本提取"}</span>
-          </button>
+          <div className="asset-category-actions">
+            {!batchSelectMode ? (
+              <button
+                className="asset-secondary-button"
+                type="button"
+                disabled={!assets.length || extractMutation.isPending || batchRunning}
+                title="进入勾选，再生成已选项"
+                onClick={() => setBatchSelectMode(true)}
+              >
+                <Sparkles size={17} />
+                <span>批量生图</span>
+              </button>
+            ) : (
+              <>
+                <button
+                  className={`asset-secondary-button${batchRunning ? " is-loading" : ""}`}
+                  type="button"
+                  disabled={checkedCount === 0 || !modelBound || batchRunning || extractMutation.isPending}
+                  title={!modelBound ? "先选择图像模型" : checkedCount ? `生成已选 ${checkedCount} 项` : "请先勾选资产"}
+                  onClick={() => generateBatch().catch((err) => showToast(err.message))}
+                >
+                  {batchRunning ? <span className="asset-spinner" /> : <Sparkles size={17} />}
+                  <span>{batchRunning ? `正在生成 ${checkedCount} 项…` : checkedCount ? `批量生图（${checkedCount}）` : "批量生图"}</span>
+                </button>
+                <button
+                  className="asset-secondary-button"
+                  type="button"
+                  disabled={batchRunning}
+                  title="退出批量勾选"
+                  onClick={exitBatchSelectMode}
+                >
+                  <X size={17} />
+                  <span>取消</span>
+                </button>
+              </>
+            )}
+            <button
+              className={`asset-extract-button${extractMutation.isPending ? " is-loading" : ""}`}
+              type="button"
+              disabled={!scriptLocked || !episodeId || extractMutation.isPending || !canUseTextModel || batchRunning}
+              title={scriptLocked
+                ? (!canUseTextModel ? "请先在剧本页绑定可用文本模型" : "按当前剧本重新提取资产")
+                : "请先回剧本页完成一键分析"}
+              onClick={() => extractMutation.mutate()}
+            >
+              {extractMutation.isPending ? <span className="asset-spinner" /> : <Sparkles size={17} />}
+              <span>{extractMutation.isPending ? "正在重新提取中" : "从剧本提取"}</span>
+            </button>
+          </div>
         </header>
         {!scriptLocked && <p className="drama-asset-analyze-hint">请先回到剧本页，完成一键分析后再提取。</p>}
         <div className="asset-toolbar">
@@ -980,7 +1032,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
             imageModelId={imageModelId}
             seriesImageModelId={series?.imageModelId}
             seriesImageModelName={series?.imageModelName}
-            disabled={bindMutation.isPending || anyBatchRunning}
+            disabled={bindMutation.isPending || batchRunning}
             onBindModel={(value) => {
               setImageModelId(value);
               if (value) bindMutation.mutate(value);
@@ -989,45 +1041,37 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
           <div className="asset-toolbar-actions">
             {batchSelectMode && (
               <>
-                <label className="asset-select-all">
+                <label className={`asset-select-all${allAssetsIndeterminate ? " is-indeterminate" : ""}`}>
                   <input
                     type="checkbox"
-                    checked={allChecked}
-                    disabled={!filtered.length || batchRunning}
-                    aria-label={`全选当前${type}`}
+                    checked={allAssetsChecked}
+                    disabled={!assets.length || batchRunning}
+                    aria-label="一键全选全部资产"
                     ref={(node) => {
-                      if (node) node.indeterminate = checkedCount > 0 && !allChecked;
+                      if (node) node.indeterminate = allAssetsIndeterminate;
                     }}
-                    onChange={toggleAllBatchAssets}
+                    onChange={toggleSelectAllAssets}
                   />
                   <span className="asset-checkbox" aria-hidden="true"><Check size={12} /></span>
                   <span>一键全选</span>
                 </label>
+                <label className={`asset-select-all${typeIndeterminate ? " is-indeterminate" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={allTypeChecked}
+                    disabled={!filtered.length || batchRunning}
+                    aria-label={`一键全选${type}`}
+                    ref={(node) => {
+                      if (node) node.indeterminate = typeIndeterminate;
+                    }}
+                    onChange={toggleSelectAllInType}
+                  />
+                  <span className="asset-checkbox" aria-hidden="true"><Check size={12} /></span>
+                  <span>一键全选{type}</span>
+                </label>
                 <span className="asset-selected-count">已选 <strong>{checkedCount}</strong> 项</span>
               </>
             )}
-            <button
-              className={`asset-secondary-button${batchRunning ? " is-loading" : ""}`}
-              type="button"
-              disabled={batchRunning || (!batchSelectMode && (extractMutation.isPending || !filtered.length)) || (batchSelectMode && checkedCount > 0 && (!modelBound || extractMutation.isPending))}
-              title={batchSelectMode && !checkedCount ? "退出批量生图" : !modelBound && batchSelectMode ? "先选择图像模型" : "先进入勾选，再生成已选项"}
-              onClick={() => {
-                if (!batchSelectMode) {
-                  setBatchModes((current) => ({ ...current, [type]: true }));
-                  setBatchChecked((current) => ({ ...current, [type]: new Set() }));
-                  return;
-                }
-                if (!checkedCount) {
-                  setBatchModes((current) => ({ ...current, [type]: false }));
-                  setBatchChecked((current) => ({ ...current, [type]: new Set() }));
-                  return;
-                }
-                generateBatch().catch((err) => showToast(err.message));
-              }}
-            >
-              {batchRunning ? <span className="asset-spinner" /> : batchSelectMode && !checkedCount ? <X size={17} /> : <Sparkles size={17} />}
-              <span>{batchRunning ? `正在生成 ${checkedCount} 项…` : !batchSelectMode ? "批量生图" : checkedCount ? `批量生图（${checkedCount}）` : "取消"}</span>
-            </button>
             <button className="asset-primary-button" type="button" disabled={batchRunning} onClick={() => setCreating(true)}>
               <Plus size={17} />
               <span>新增{type}</span>
@@ -1053,7 +1097,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                 const generating = Boolean(item.generating) || isBusy(item.id, "generate");
                 const uploading = isBusy(item.id, "upload");
                 const busyCard = generating || uploading || batchRunning;
-                const selectedCard = batchAssetIds.has(String(item.id));
+                const selectedCard = batchChecked.has(String(item.id));
                 const promptDirty = dirtyOf(item);
                 const promptSaving = isBusy(item.id, "summary");
                 return (
