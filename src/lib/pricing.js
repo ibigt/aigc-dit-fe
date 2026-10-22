@@ -71,7 +71,7 @@ export function calculateCreditEstimate({ pricing, category, resolution, quality
   const unitPrice = configured == null ? (DEFAULT_UNIT_PRICE[category] || 0) : Math.max(0, configured);
   let multiplier = 1;
   if (category === "video") {
-    multiplier = ({ "480P": 0.5, "720P": 0.75, "1080P": 1, "2K": 1.5, "4K": 2.5 })[String(resolution || "").toUpperCase()] || 1;
+    multiplier = ({ "480P": 0.5, "768P": 0.5, "720P": 0.75, "1080P": 1, "2K": 1.5, "4K": 2.5 })[String(resolution || "").toUpperCase()] || 1;
   } else if (category === "image") {
     const resolutionMultiplier = ({ "2K": 2, "4K": 4 })[String(resolution || "").toUpperCase()] || 1;
     const qualityMultiplier = ({ MEDIUM: 1.5, HIGH: 2 })[String(quality || "LOW").toUpperCase()] || 1;
