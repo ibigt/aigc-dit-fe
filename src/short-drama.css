@@ -3665,6 +3665,7 @@
 .asset-category-row, .asset-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .asset-category-row { padding-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,.08); }
 .asset-category-tabs { min-width: 0; display: flex; align-items: center; gap: 6px; }
+.asset-category-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; }
 .asset-category-tab { min-width: 108px; height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px; border: 1px solid transparent; border-radius: 10px; color: #9c9ca6; background: transparent; cursor: pointer; font-size: 14px; }
 .asset-category-tab strong { min-width: 21px; height: 21px; display: grid; place-items: center; padding: 0 6px; border-radius: 999px; color: #a8a8b0; background: rgba(255,255,255,.06); font-size: 11px; font-weight: 650; }
 .asset-category-tab:hover { color: #fff; background: rgba(255,255,255,.045); }
@@ -3697,14 +3698,29 @@
 .asset-card-select, .asset-select-all { position: relative; display: inline-flex; align-items: center; gap: 7px; color: #d0d0d6; cursor: pointer; }
 .asset-card-select { width: 30px; height: 30px; justify-content: center; }
 .asset-card-select input, .asset-select-all input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-.asset-checkbox { width: 19px; height: 19px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.24); border-radius: 5px; color: #fff; background: rgba(255,255,255,.025); }
+.asset-checkbox { position: relative; width: 19px; height: 19px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.24); border-radius: 5px; color: #fff; background: rgba(255,255,255,.025); }
 .asset-checkbox svg { opacity: 0; }
 .asset-card-select input:checked + .asset-checkbox,
 .asset-select-all input:checked + .asset-checkbox,
+.asset-select-all.is-indeterminate .asset-checkbox,
 .asset-select-all input:indeterminate + .asset-checkbox { border-color: #7668ff; background: #7668ff; }
 .asset-card-select input:checked + .asset-checkbox svg,
-.asset-select-all input:checked + .asset-checkbox svg,
-.asset-select-all input:indeterminate + .asset-checkbox svg { opacity: 1; }
+.asset-select-all input:checked:not(:indeterminate) + .asset-checkbox svg { opacity: 1; }
+/* 半选：同色底，√ 换成居中横杠（绝对定位，避免被隐藏的 svg 顶下去） */
+.asset-select-all.is-indeterminate .asset-checkbox svg,
+.asset-select-all input:indeterminate + .asset-checkbox svg { opacity: 0; }
+.asset-select-all.is-indeterminate .asset-checkbox::after,
+.asset-select-all input:indeterminate + .asset-checkbox::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 2px;
+  border-radius: 1px;
+  background: #fff;
+  transform: translate(-50%, -50%);
+}
 .asset-select-all { min-height: 40px; font-size: 13px; white-space: nowrap; }
 .asset-selected-count { color: #96969f; font-size: 12px; white-space: nowrap; }
 .asset-selected-count strong { color: #d7d2ff; }
