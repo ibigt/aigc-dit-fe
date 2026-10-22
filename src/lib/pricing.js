@@ -125,6 +125,49 @@ export function normalizePricing(category, pricing) {
   return normalized;
 }
 
+// 字符单位互转时的换算系数（1 千字符 = 10 个单位；万字符为 10 个千字符）
+const CHAR_UNIT_SCALE = { 千字符: 1, 万字符: 10 };
+
+// 切换计费单位时保持实际单价不变：千字符 ↔ 万字符 按 10 倍换算售价与成本，
+// 避免只改单位导致同一段文字的实际价格瞬间相差 10 倍。
+export function convertPricingUnit(pricing, category, nextUnit) {
+  const previousUnit = normalizePricingUnit(category, pricing?.unit);
+  const next = { ...(pricing || {}) };
+  if (previousUnit === nextUnit) return { ...next, unit: nextUnit };
+  const from = CHAR_UNIT_SCALE[previousUnit];
+  const to = CHAR_UNIT_SCALE[nextUnit];
+  if (!from || !to || from === to) return { ...next, unit: nextUnit };
+  const factor = to / from;
+  for (const side of ["sale", "cost"]) {
+    const values = { ...(next[side] || {}) };
+    const amount = configuredPricingAmount(values.output);
+    if (amount == null) continue;
+    const scaled = formatCreditAmount(amount * factor);
+    values.output = side === "sale" ? `${scaled} 积分` : `¥${scaled}`;
+    next[side] = values;
+  }
+  return { ...next, unit: nextUnit };
+}
+
+// 语音计费字符数：与供应商口径一致——汉字（CJK）算 2 个字符，英文字母/数字/标点/空格各算 1。
+// 后端 CreditCalculator.billableCharacters 使用同一规则，避免前后端估价与实扣不一致。
+export function billableCharacters(text) {
+  const value = String(text ?? "");
+  let total = 0;
+  for (const char of value) {
+    total += isCjk(char) ? 2 : 1;
+  }
+  return total;
+}
+
+function isCjk(char) {
+  // 仅汉字表意文字算 2；标点（含全角标点）、字母、数字、空格等一律算 1
+  const code = char.codePointAt(0);
+  return (code >= 0x4e00 && code <= 0x9fff)      // CJK 统一表意文字
+    || (code >= 0x3400 && code <= 0x4dbf)      // 扩展 A
+    || (code >= 0xf900 && code <= 0xfaff);     // 兼容表意文字
+}
+
 export function calculateCreditEstimate({ pricing, category, resolution, quality, durationSec, characterCount, copies = 1 }) {
   const configured = configuredPricingAmount(pricing?.sale?.output ?? pricing?.sale);
   const unitPrice = configured == null ? (DEFAULT_UNIT_PRICE[category] || 0) : Math.max(0, configured);

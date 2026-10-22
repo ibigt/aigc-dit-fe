@@ -62,7 +62,7 @@ import {
   updateAdminUser,
 } from "../api/admin.js";
 import { adapterSpecificFields, adaptersMatchingProvider, audioFormatsForAdapter, providerChoicesForAdapters, sanitizeAdapterSpecificConfig, textReasoningEnabled, withTextReasoning } from "./adminModelConfig.js";
-import { BASE_TIER, defaultPricing, normalizePricing, normalizePricingUnit, pricingUnits, pricingValidationError, tierUnits } from "../lib/pricing.js";
+import { BASE_TIER, convertPricingUnit, defaultPricing, normalizePricing, normalizePricingUnit, pricingUnits, pricingValidationError, tierUnits } from "../lib/pricing.js";
 import { textUsageOperationLabel, textUsageOperations, textUsageReconciliationLabel } from "../lib/textUsage.js";
 import { healthLevel, observabilityCategoryLabel } from "../lib/modelObservability.js";
 
@@ -1205,7 +1205,7 @@ function ModelDialog({ model, onClose, onSave, saving }) {
           ))}
           {!isText && draft.provider === "RunningHub" && <><label>实例类型<input value={draft.instanceType || ""} onChange={(event) => update("instanceType", event.target.value)} placeholder="可选，如 48G" /></label><label>并发限制<input type="number" min="1" max="10" value={draft.concurrentLimit || 1} onChange={(event) => update("concurrentLimit", Number(event.target.value))} /></label></>}
           <label className="model-form-wide">能力说明<input value={draft.description || ""} onChange={(event) => update("description", event.target.value)} placeholder="简要说明适用场景" /></label>
-          <label>计费单位<DemoSelect ariaLabel="计费单位" value={normalizePricingUnit(draft.category, draft.pricing?.unit)} onChange={(value) => { setPricingError(""); setDraft((current) => ({ ...current, pricing: { ...(current.pricing || emptyPricing), unit: value } })); }} options={pricingUnits(draft.category).map((unit) => ({ value: unit, label: unit }))} /></label>
+          <label>计费单位<DemoSelect ariaLabel="计费单位" value={normalizePricingUnit(draft.category, draft.pricing?.unit)} onChange={(value) => { setPricingError(""); setDraft((current) => ({ ...current, pricing: convertPricingUnit(current.pricing || emptyPricing, current.category, value) })); }} options={pricingUnits(draft.category).map((unit) => ({ value: unit, label: unit }))} /></label>
           {tierUnits(draft.category)
             ? <label>分辨率定价<DemoSelect ariaLabel="分辨率定价" value={tier || BASE_TIER[draft.category]} onChange={setTier} options={tierUnits(draft.category).map((unit) => ({ value: unit, label: unit }))} /></label>
             : <div />}

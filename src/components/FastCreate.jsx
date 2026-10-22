@@ -6,7 +6,7 @@ import { createSession, deleteSession, fetchSession, fetchSessions, renameSessio
 import { IMAGE_POLL_TIMEOUT_MS, pollGenerateTask, submitGenerate, VIDEO_POLL_TIMEOUT_MS } from "../api/generate.js";
 import { friendlyGenerateError, FRAMES_EMPTY_PROMPT_LABEL, materialToAsset, promptForDisplay, promptForResult, tasksToMessages, taskToResultMessage } from "../lib/createFlow.js";
 import { formatDateTime, mediaUrl, storageKeyOf } from "../lib/media.js";
-import { calculateCreditEstimate } from "../lib/pricing.js";
+import { billableCharacters, calculateCreditEstimate } from "../lib/pricing.js";
 import { modelCatalogMessage } from "../lib/modelCatalog.js";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { AssetPickerDialog } from "./AssetPickerDialog.jsx";
@@ -660,7 +660,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     resolution,
     quality,
     durationSec: duration,
-    characterCount: prompt.length,
+    characterCount: generationType === "audio" ? billableCharacters(prompt) : prompt.length,
     copies: activeCopies,
   }) : 0;
   const balanceCredits = Number(credits);
