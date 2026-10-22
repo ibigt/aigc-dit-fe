@@ -404,7 +404,7 @@ export function DramaHome() {
                   </div>
                 )}
                 <p>{item.synopsis || (item.textModelName ? `文本模型 · ${item.textModelName}` : (item.latestEpisode?.name || "新的短剧项目"))}</p>
-                <footer><span>{formatDateTime(item.updatedAt)}</span></footer>
+                <footer><span>{formatDateTime(item.createdAt)}</span></footer>
               </div>
             </article>
           );

@@ -1394,7 +1394,13 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                 <GenerationHistoryPanel
                   title="生成历史"
                   countLabel={`${generations.length}`}
-                  hint="“当前选中”即页面资产卡片正在使用的图片。"
+                  hint={(
+                    <>
+                      “当前选中”即页面正在使用的图片。
+                      <br />
+                      点击缩略图可看大图、生成时间与模型来源。
+                    </>
+                  )}
                   switchLabel="切换当前资产"
                   records={generations}
                   locked={false}
