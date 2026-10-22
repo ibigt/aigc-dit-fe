@@ -62,7 +62,7 @@ import {
   updateAdminUser,
 } from "../api/admin.js";
 import { adapterSpecificFields, adaptersMatchingProvider, audioFormatsForAdapter, providerChoicesForAdapters, sanitizeAdapterSpecificConfig, textReasoningEnabled, withTextReasoning } from "./adminModelConfig.js";
-import { defaultPricing, normalizePricing, normalizePricingUnit, pricingUnits, pricingValidationError } from "../lib/pricing.js";
+import { BASE_TIER, defaultPricing, normalizePricing, normalizePricingUnit, pricingUnits, pricingValidationError, tierUnits } from "../lib/pricing.js";
 import { textUsageOperationLabel, textUsageOperations, textUsageReconciliationLabel } from "../lib/textUsage.js";
 import { healthLevel, observabilityCategoryLabel } from "../lib/modelObservability.js";
 
@@ -935,6 +935,7 @@ function ModelDialog({ model, onClose, onSave, saving }) {
           : normalizeProviderSource(adapterOf(adapterKey)?.provider || model.provider)));
     return {
       ...model,
+      pricing: normalizePricing(model.category || "image", model.pricing),
       adapterKey,
       provider,
       capabilities: filterCapsForAdapter(model.capabilities, model.category || "image", adapterKey),
@@ -952,6 +953,8 @@ function ModelDialog({ model, onClose, onSave, saving }) {
       logo: modelLogoSrc(model),
     };
   });
+  // 分辨率分档定价：当前正在编辑的档位（视频/图片），文本/语音为 null
+  const [tier, setTier] = useState(() => (tierUnits(draft.category) ? BASE_TIER[draft.category] : null));
   const update = (key, value) => setDraft((current) => ({ ...current, [key]: value }));
   const updateIdentity = (patch) => setDraft((current) => {
     const next = { ...current, ...patch };
@@ -1031,6 +1034,7 @@ function ModelDialog({ model, onClose, onSave, saving }) {
   const changeAdapter = (adapterKey) => setDraft((current) => applyAdapter(current, adapterKey));
   const changeCategory = (category) => {
     setPricingError("");
+    setTier(tierUnits(category) ? BASE_TIER[category] : null);
     setDraft((current) => {
       const next = applyAdapter(current, defaultAdapterKey(category), category);
       return { ...next, pricing: normalizePricing(category, current.pricing) };
@@ -1077,6 +1081,21 @@ function ModelDialog({ model, onClose, onSave, saving }) {
   const updatePrice = (side, key, value) => {
     setPricingError("");
     setDraft((current) => ({ ...current, pricing: { ...(current.pricing || emptyPricing), [side]: { ...(current.pricing?.[side] || emptyPricing[side]), [key]: value } } }));
+  };
+  // 分档价编辑：写入当前档位；改基准档时同步 output（卡片展示与缺档兜底都以基准价为准）
+  const updateTierPrice = (side, key, value) => {
+    if (!tier || key !== "output") {
+      updatePrice(side, key, value);
+      return;
+    }
+    setPricingError("");
+    setDraft((current) => {
+      const pricing = current.pricing || emptyPricing;
+      const sideValues = { ...(pricing[side] || emptyPricing[side]) };
+      sideValues.tiers = { ...(sideValues.tiers || {}), [tier]: value };
+      if (tier === BASE_TIER[current.category]) sideValues.output = value;
+      return { ...current, pricing: { ...pricing, [side]: sideValues } };
+    });
   };
   const adapter = adapterOf(draft.adapterKey);
   const sourceProviders = providersForCategory(draft.category);
@@ -1187,9 +1206,12 @@ function ModelDialog({ model, onClose, onSave, saving }) {
           {!isText && draft.provider === "RunningHub" && <><label>实例类型<input value={draft.instanceType || ""} onChange={(event) => update("instanceType", event.target.value)} placeholder="可选，如 48G" /></label><label>并发限制<input type="number" min="1" max="10" value={draft.concurrentLimit || 1} onChange={(event) => update("concurrentLimit", Number(event.target.value))} /></label></>}
           <label className="model-form-wide">能力说明<input value={draft.description || ""} onChange={(event) => update("description", event.target.value)} placeholder="简要说明适用场景" /></label>
           <label>计费单位<DemoSelect ariaLabel="计费单位" value={normalizePricingUnit(draft.category, draft.pricing?.unit)} onChange={(value) => { setPricingError(""); setDraft((current) => ({ ...current, pricing: { ...(current.pricing || emptyPricing), unit: value } })); }} options={pricingUnits(draft.category).map((unit) => ({ value: unit, label: unit }))} /></label>
-          <div />
-          <PriceEditor title="售价" category={draft.category} values={draft.pricing?.sale || emptyPricing.sale} onChange={(key, value) => updatePrice("sale", key, value)} />
-          <PriceEditor title="成本" category={draft.category} values={draft.pricing?.cost || emptyPricing.cost} onChange={(key, value) => updatePrice("cost", key, value)} />
+          {tierUnits(draft.category)
+            ? <label>分辨率定价<DemoSelect ariaLabel="分辨率定价" value={tier || BASE_TIER[draft.category]} onChange={setTier} options={tierUnits(draft.category).map((unit) => ({ value: unit, label: unit }))} /></label>
+            : <div />}
+          <PriceEditor title={tier ? `售价 · ${tier}` : "售价"} category={draft.category} values={tier ? { output: draft.pricing?.sale?.tiers?.[tier] ?? draft.pricing?.sale?.output ?? "0" } : (draft.pricing?.sale || emptyPricing.sale)} onChange={(key, value) => updateTierPrice("sale", key, value)} />
+          <PriceEditor title={tier ? `成本 · ${tier}` : "成本"} category={draft.category} values={tier ? { output: draft.pricing?.cost?.tiers?.[tier] ?? draft.pricing?.cost?.output ?? "0" } : (draft.pricing?.cost || emptyPricing.cost)} onChange={(key, value) => updateTierPrice("cost", key, value)} />
+          {tier && <small className="model-logo-hint model-form-wide">各档独立定价：切换分辨率分别填写售价/成本。基准档（{BASE_TIER[draft.category]}）同时作为卡片展示价与缺档兜底；图片清晰度倍率（中 ×1.5 / 高 ×2）在所选档价上叠加。首次打开已按基准价 × 全局倍率生成各档初值。</small>}
           {pricingError && <div className="admin-notice admin-notice--error model-form-wide" role="alert">{pricingError}</div>}
         </div>
         <footer>
@@ -1208,13 +1230,14 @@ function ModelDialog({ model, onClose, onSave, saving }) {
   </div>;
 }
 
-function PriceCell({ title, pricing, side }) {
+function PriceCell({ title, pricing, side, category }) {
   const values = pricing?.[side] || {};
-  return <div className={`price-cell price-cell--${side}`}><strong>{title} · {values.output || "0"}/{pricing?.unit || "次"}</strong><small>输入 {values.input || "0"} · 缓存 {values.cache || "0"}</small></div>;
+  // 输入/缓存价只有文本模型（按 Token 三价计费）有意义，其他类型不展示
+  return <div className={`price-cell price-cell--${side}`}><strong>{title} · {values.output || "0"}/{pricing?.unit || "次"}</strong>{category === "text" && <small>输入 {values.input || "0"} · 缓存 {values.cache || "0"}</small>}</div>;
 }
 
 function ModelCard({ model, onToggle, onEdit, onRemove }) {
-  return <article className="model-card"><header><span className="model-logo"><img src={modelLogoSrc(model)} alt="" /></span><div><strong>{model.name}</strong><small>{model.modelKey}</small></div><label className="toggle-switch"><input aria-label={`${model.name} 创作端可用`} type="checkbox" checked={model.enabled !== false} onChange={(event) => onToggle(event.target.checked)} /><span /></label></header><p>{model.description}</p><div className="model-card-meta"><span>{categoryLabels[model.category] || model.category}</span><span>{model.provider}</span><span><i />{model.hasApiKey ? "密钥已配置" : "未配置密钥"}</span>{(model.category === "video" || model.category === "audio") && <span><AudioLines size={12} />{audioModelLabel(model)}</span>}</div><div className="model-card-pricing"><PriceCell title="售价" pricing={model.pricing} side="sale" /><PriceCell title="成本" pricing={model.pricing} side="cost" /></div><footer><span>{model.category === "text" ? "用于漫剧文本" : "同步至创作端"}</span><div><button aria-label={`编辑模型：${model.name}`} onClick={onEdit}><Pencil size={14} /> 编辑</button><button className="danger" aria-label={`删除模型：${model.name}`} onClick={onRemove}><Trash2 size={14} /></button></div></footer></article>;
+  return <article className="model-card"><header><span className="model-logo"><img src={modelLogoSrc(model)} alt="" /></span><div><strong>{model.name}</strong><small>{model.modelKey}</small></div><label className="toggle-switch"><input aria-label={`${model.name} 创作端可用`} type="checkbox" checked={model.enabled !== false} onChange={(event) => onToggle(event.target.checked)} /><span /></label></header><p>{model.description}</p><div className="model-card-meta"><span>{categoryLabels[model.category] || model.category}</span><span>{model.provider}</span><span><i />{model.hasApiKey ? "密钥已配置" : "未配置密钥"}</span>{(model.category === "video" || model.category === "audio") && <span><AudioLines size={12} />{audioModelLabel(model)}</span>}</div><div className="model-card-pricing"><PriceCell title="售价" pricing={model.pricing} side="sale" category={model.category} /><PriceCell title="成本" pricing={model.pricing} side="cost" category={model.category} /></div><footer><span>{model.category === "text" ? "用于漫剧文本" : "同步至创作端"}</span><div><button aria-label={`编辑模型：${model.name}`} onClick={onEdit}><Pencil size={14} /> 编辑</button><button className="danger" aria-label={`删除模型：${model.name}`} onClick={onRemove}><Trash2 size={14} /></button></div></footer></article>;
 }
 
 function toModelPayload(draft) {
@@ -1367,7 +1390,7 @@ function ModelsPage() {
     <div className="model-category-tabs" role="tablist" aria-label="模型类型">{categoryTabs.map((tab) => <button role="tab" aria-selected={category === tab.id} className={category === tab.id ? "active" : ""} key={tab.id} onClick={() => setCategory(tab.id)}>{tab.label}<span>{tab.id === "all" ? modelItems.length : modelItems.filter((item) => item.category === tab.id).length}</span></button>)}</div>
     <div className="model-summary"><span><Server size={17} /><b>{modelItems.filter((item) => item.provider === "ComfyUI").length}</b> ComfyUI</span><span><CloudCog size={17} /><b>{modelItems.filter((item) => item.provider === "RunningHub").length}</b> RunningHub</span><span><Globe size={17} /><b>{modelItems.filter((item) => String(item.provider || "").startsWith("官方API")).length}</b> 官方API</span><span><Cpu size={17} /><b>{modelItems.filter((item) => item.provider === "自定义配置" || item.provider === "手动配置").length}</b> 自定义配置</span><em>已启用 {modelItems.filter((item) => item.enabled !== false).length} / {modelItems.length}</em></div>
     <div className="model-toolbar"><label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索模型名称或标识" /></label><DemoSelect ariaLabel="筛选接入来源" value={provider} onChange={setProvider} options={providerOptions.map((item) => ({ value: item, label: item }))} /><div className="view-switch" role="group" aria-label="视图模式"><button className={view === "cards" ? "active" : ""} aria-label="卡片模式" onClick={() => setView("cards")}><Grid2X2 size={15} /></button><button className={view === "list" ? "active" : ""} aria-label="列表模式" onClick={() => setView("list")}><List size={15} /></button></div></div>
-    {view === "cards" ? <div className="model-card-grid">{visible.map((model) => <ModelCard key={model.id} model={model} onToggle={(enabled) => toggleMutation.mutate({ id: model.id, enabled })} onEdit={() => setEditing({ ...model, apiKey: "" })} onRemove={() => setDeleteModelTarget(model)} />)}</div> : <div className="admin-table-card model-table"><div className="admin-table-scroll"><table><thead><tr><th>模型</th><th>类型</th><th>接入来源</th><th>语音能力</th><th>售价</th><th>成本</th><th>服务状态</th><th>创作端可用</th><th>操作</th></tr></thead><tbody>{visible.map((model) => <tr key={model.id}><td><span className="table-model-logo"><img src={modelLogoSrc(model)} alt="" /></span><span><strong>{model.name}</strong><small>{model.modelKey}</small></span></td><td><span className="category-chip">{categoryLabels[model.category]}</span></td><td>{model.provider}</td><td>{audioModelLabel(model)}</td><td><PriceCell title="售价" pricing={model.pricing} side="sale" /></td><td><PriceCell title="成本" pricing={model.pricing} side="cost" /></td><td><span className="service-ok"><i />{model.hasApiKey ? "密钥已配置" : "未配置密钥"}</span></td><td><label className="toggle-switch"><input aria-label={`${model.name} 创作端可用`} type="checkbox" checked={model.enabled !== false} onChange={(event) => toggleMutation.mutate({ id: model.id, enabled: event.target.checked })} /><span /></label></td><td><div className="table-actions"><button aria-label={`编辑模型：${model.name}`} onClick={() => setEditing({ ...model, apiKey: "" })}><Pencil size={14} /></button><button className="danger" aria-label={`删除模型：${model.name}`} onClick={() => { setDeleteModelTarget(model); }}><Trash2 size={14} /></button></div></td></tr>)}</tbody></table></div></div>}
+    {view === "cards" ? <div className="model-card-grid">{visible.map((model) => <ModelCard key={model.id} model={model} onToggle={(enabled) => toggleMutation.mutate({ id: model.id, enabled })} onEdit={() => setEditing({ ...model, apiKey: "" })} onRemove={() => setDeleteModelTarget(model)} />)}</div> : <div className="admin-table-card model-table"><div className="admin-table-scroll"><table><thead><tr><th>模型</th><th>类型</th><th>接入来源</th><th>语音能力</th><th>售价</th><th>成本</th><th>服务状态</th><th>创作端可用</th><th>操作</th></tr></thead><tbody>{visible.map((model) => <tr key={model.id}><td><span className="table-model-logo"><img src={modelLogoSrc(model)} alt="" /></span><span><strong>{model.name}</strong><small>{model.modelKey}</small></span></td><td><span className="category-chip">{categoryLabels[model.category]}</span></td><td>{model.provider}</td><td>{audioModelLabel(model)}</td><td><PriceCell title="售价" pricing={model.pricing} side="sale" category={model.category} /></td><td><PriceCell title="成本" pricing={model.pricing} side="cost" category={model.category} /></td><td><span className="service-ok"><i />{model.hasApiKey ? "密钥已配置" : "未配置密钥"}</span></td><td><label className="toggle-switch"><input aria-label={`${model.name} 创作端可用`} type="checkbox" checked={model.enabled !== false} onChange={(event) => toggleMutation.mutate({ id: model.id, enabled: event.target.checked })} /><span /></label></td><td><div className="table-actions"><button aria-label={`编辑模型：${model.name}`} onClick={() => setEditing({ ...model, apiKey: "" })}><Pencil size={14} /></button><button className="danger" aria-label={`删除模型：${model.name}`} onClick={() => { setDeleteModelTarget(model); }}><Trash2 size={14} /></button></div></td></tr>)}</tbody></table></div></div>}
     {!visible.length && <div className="admin-empty"><Bot size={22} /><strong>没有匹配的模型</strong><span>接入模型或调整类型、来源、关键词后重试。</span></div>}
     {deleteModelTarget && <ConfirmDialog
       open
