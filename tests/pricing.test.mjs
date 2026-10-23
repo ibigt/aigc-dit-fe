@@ -1,11 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { billableCharacters, calculateCreditEstimate, characterRuleText, configuredPricingAmount, normalizePricing, normalizePricingUnit, parsePricingAmount, pricingUnits, pricingValidationError, resolveCjkWeight } from "../src/lib/pricing.js";
+import { billableCharacters, calculateCreditEstimate, characterRuleText, configuredPricingAmount, convertPricingUnit, normalizePricing, normalizePricingUnit, parsePricingAmount, pricingUnits, pricingValidationError, resolveCjkWeight } from "../src/lib/pricing.js";
 
 test("pricing units are constrained by model category", () => {
-  assert.deepEqual(pricingUnits("image"), ["张", "次"]);
-  assert.deepEqual(pricingUnits("video"), ["秒", "次"]);
-  assert.deepEqual(pricingUnits("audio"), ["千字符", "万字符", "次"]);
+  // 2026-10-22 起「次」已从所有类型移除（视频秒/图片张/语音字符/文本Token）
+  assert.deepEqual(pricingUnits("image"), ["张"]);
+  assert.deepEqual(pricingUnits("video"), ["秒"]);
+  assert.deepEqual(pricingUnits("audio"), ["千字符", "万字符"]);
+  assert.deepEqual(pricingUnits("text"), ["千Token", "百万Token"]);
   assert.equal(normalizePricingUnit("video", "张"), "秒");
 });
 
@@ -100,4 +102,29 @@ test("character weight outside 1 or 2 is rejected", () => {
   const valid = { unit: "千字符", sale: { output: "3 积分" }, cost: { output: "¥0.2" } };
   assert.equal(pricingValidationError(valid, "audio"), "");
   assert.match(pricingValidationError({ ...valid, cjkWeight: 3 }, "audio"), /1 或 2/);
+});
+
+test("switching token units scales all text dimensions by 1000x", () => {
+  // 百万Token → 千Token：三个维度同比例 ÷1000，实际单价不变
+  const pricing = {
+    unit: "百万Token",
+    sale: { input: "26 积分", output: "104 积分", cache: "0.5 积分" },
+    cost: { input: "¥2", output: "¥8", cache: "¥0.04" },
+  };
+  const toThousand = convertPricingUnit(pricing, "text", "千Token");
+  assert.equal(toThousand.unit, "千Token");
+  assert.deepEqual(toThousand.sale, { input: "0.026 积分", output: "0.104 积分", cache: "0.0005 积分" });
+  assert.deepEqual(toThousand.cost, { input: "¥0.002", output: "¥0.008", cache: "¥0.00004" });
+  // 千Token → 百万Token：×1000 精确换回，往返无损失
+  const back = convertPricingUnit(toThousand, "text", "百万Token");
+  assert.deepEqual(back.sale, { input: "26 积分", output: "104 积分", cache: "0.5 积分" });
+  assert.deepEqual(back.cost, { input: "¥2", output: "¥8", cache: "¥0.04" });
+  // 音频的零值维度不重写，输出维度仍按 10 倍换算
+  const audio = convertPricingUnit(
+    { unit: "千字符", sale: { input: "0", output: "3 积分", cache: "0" }, cost: { input: "0", output: "¥0.2", cache: "0" } },
+    "audio", "万字符",
+  );
+  assert.equal(audio.sale.input, "0");
+  assert.equal(audio.sale.output, "30 积分");
+  assert.equal(audio.cost.output, "¥2");
 });

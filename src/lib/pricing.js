@@ -129,28 +129,38 @@ export function normalizePricing(category, pricing) {
   return normalized;
 }
 
-// 字符单位互转时的换算系数（1 千字符 = 10 个单位；万字符为 10 个千字符）
-const CHAR_UNIT_SCALE = { 千字符: 1, 万字符: 10 };
+// 同类计费单位互转时的换算系数（字符：1 万字符 = 10 千字符；Token：1 百万Token = 1000 千Token）
+const UNIT_SCALE = { 千字符: 1, 万字符: 10, 千Token: 1, 百万Token: 1000 };
 
-// 切换计费单位时保持实际单价不变：千字符 ↔ 万字符 按 10 倍换算售价与成本，
-// 避免只改单位导致同一段文字的实际价格瞬间相差 10 倍。
+// 切换计费单位时保持实际单价不变：按换算系数同步缩放售价与成本，
+// 避免只改单位导致同一次生成的实际价格瞬间相差 10 倍（字符）或 1000 倍（Token）。
+// 文本模型输入/输出/缓存三个维度同比例换算；恒为 0 的维度保持原样不重写。
 export function convertPricingUnit(pricing, category, nextUnit) {
   const previousUnit = normalizePricingUnit(category, pricing?.unit);
   const next = { ...(pricing || {}) };
   if (previousUnit === nextUnit) return { ...next, unit: nextUnit };
-  const from = CHAR_UNIT_SCALE[previousUnit];
-  const to = CHAR_UNIT_SCALE[nextUnit];
+  const from = UNIT_SCALE[previousUnit];
+  const to = UNIT_SCALE[nextUnit];
   if (!from || !to || from === to) return { ...next, unit: nextUnit };
   const factor = to / from;
   for (const side of ["sale", "cost"]) {
     const values = { ...(next[side] || {}) };
-    const amount = configuredPricingAmount(values.output);
-    if (amount == null) continue;
-    const scaled = formatCreditAmount(amount * factor);
-    values.output = side === "sale" ? `${scaled} 积分` : `¥${scaled}`;
-    next[side] = values;
+    let changed = false;
+    for (const dimension of ["input", "output", "cache"]) {
+      const amount = configuredPricingAmount(values[dimension]);
+      if (amount == null || amount === 0) continue;
+      values[dimension] = side === "sale" ? `${formatExactAmount(amount * factor)} 积分` : `¥${formatExactAmount(amount * factor)}`;
+      changed = true;
+    }
+    if (changed) next[side] = values;
   }
   return { ...next, unit: nextUnit };
+}
+
+// 单位换算专用格式化：÷1000 会产生 3~5 位小数，保留 6 位并去尾零，保证换算后实际单价分毫不差
+function formatExactAmount(value) {
+  const rounded = Math.round(value * 1e6) / 1e6;
+  return String(parseFloat(rounded.toFixed(6)));
 }
 
 // 语音计费字符数的默认汉字权重：MiniMax 口径 1 汉字 = 2 字符。
