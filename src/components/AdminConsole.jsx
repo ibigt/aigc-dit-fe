@@ -62,7 +62,7 @@ import {
   updateAdminUser,
 } from "../api/admin.js";
 import { adapterSpecificFields, adaptersMatchingProvider, audioFormatsForAdapter, providerChoicesForAdapters, sanitizeAdapterSpecificConfig, textReasoningEnabled, withTextReasoning } from "./adminModelConfig.js";
-import { BASE_TIER, convertPricingUnit, defaultPricing, normalizePricing, normalizePricingUnit, pricingUnits, pricingValidationError, tierUnits } from "../lib/pricing.js";
+import { BASE_TIER, characterRuleText, convertPricingUnit, defaultPricing, normalizePricing, normalizePricingUnit, pricingUnits, pricingValidationError, resolveCjkWeight, tierUnits } from "../lib/pricing.js";
 import { textUsageOperationLabel, textUsageOperations, textUsageReconciliationLabel } from "../lib/textUsage.js";
 import { healthLevel, observabilityCategoryLabel } from "../lib/modelObservability.js";
 
@@ -203,6 +203,28 @@ function isMiniMaxH3(adapterKey) {
 
 function isMiniMaxSpeech(adapterKey) {
   return adapterKey === "minimax-speech";
+}
+
+function supportedTiers(model) {
+  const all = tierUnits(model?.category);
+  if (!all) return null;
+  const adapter = String(model?.adapterKey || "").toLowerCase();
+  const key = String(model?.modelKey || "").toLowerCase();
+  const provider = String(model?.provider || "").toLowerCase();
+  if (model?.category !== "video") return all;
+  if (adapter.includes("agnes")) return all.filter((t) => t === "720P");
+  if (adapter === "minimax-h3") {
+    if (/comfy/i.test(provider)) return all;
+    if (key.includes("h3-max") || key.includes("h3_max")) return all.filter((t) => t === "480P" || t === "768P");
+    return all.filter((t) => t === "768P" || t === "2K");
+  }
+  if (adapter === "seedance-2.5") return all.filter((t) => t === "480P" || t === "720P");
+  if (adapter === "seedance-2.0") {
+    if (key.includes("fast") || key.includes("mini")) return all.filter((t) => t === "480P" || t === "720P");
+    return all.filter((t) => t === "480P" || t === "720P" || t === "1080P");
+  }
+  if (adapter === "wan3") return all.filter((t) => t === "480P" || t === "720P" || t === "1080P");
+  return all;
 }
 
 function audioCapabilityOf(model) {
@@ -955,6 +977,11 @@ function ModelDialog({ model, onClose, onSave, saving }) {
   });
   // 分辨率分档定价：当前正在编辑的档位（视频/图片），文本/语音为 null
   const [tier, setTier] = useState(() => (tierUnits(draft.category) ? BASE_TIER[draft.category] : null));
+  useEffect(() => {
+    const options = supportedTiers(draft);
+    if (!options) return;
+    if (!options.includes(tier)) setTier(options.includes(BASE_TIER[draft.category]) ? BASE_TIER[draft.category] : options[0]);
+  }, [draft.adapterKey, draft.modelKey, draft.category, draft.provider, tier]);
   const update = (key, value) => setDraft((current) => ({ ...current, [key]: value }));
   const updateIdentity = (patch) => setDraft((current) => {
     const next = { ...current, ...patch };
@@ -986,6 +1013,11 @@ function ModelDialog({ model, onClose, onSave, saving }) {
     }
     if (category === "audio" && current.adapterKey !== adapter.key) {
       const minimaxSpeech = isMiniMaxSpeech(adapter.key);
+      // 换语音适配协议时清掉旧的汉字计费口径，按新供应商默认推断（MiniMax=2，火山/Ark=1）
+      if (current.pricing?.cjkWeight != null) {
+        const { cjkWeight, ...restPricing } = current.pricing;
+        next.pricing = restPricing;
+      }
       next.defaultVoice = minimaxSpeech ? "male-qn-qingse" : "alloy";
       next.voicesText = minimaxSpeech
         ? "male-qn-qingse, male-qn-jingying, male-qn-badao, male-qn-daxuesheng, female-shaonv, female-yujie, female-chengshu, female-tianmei"
@@ -1101,7 +1133,14 @@ function ModelDialog({ model, onClose, onSave, saving }) {
   const sourceProviders = providersForCategory(draft.category);
   const sourceAdapters = adaptersForCategoryAndProvider(draft.category, draft.provider);
   const isText = draft.category === "text";
+  // 计费规则行的字段数（计费单位 + 汉字口径 + 分辨率定价）：奇数时补一个空位，
+  // 让后面的售价/成本两个 PriceEditor 始终落在同一行，不会被顶歪
+  const pricingRowFields = 1
+    + (draft.category === "audio" && ["千字符", "万字符"].includes(draft.pricing?.unit) ? 1 : 0)
+    + (tierUnits(draft.category) ? 1 : 0);
   const isAudio = draft.category === "audio";
+  // 汉字计费口径由后端内置规则表下发（pricing.cjkWeight / cjkWeightLabel / cjkWeightSource），只读展示不可编辑
+  const characterRule = characterRuleText(draft.pricing, draft.adapterKey);
   const isMiniMaxAudio = isMiniMaxSpeech(draft.adapterKey);
   const audioFormats = audioFormatsForAdapter(draft.adapterKey);
   const specificFields = new Set(adapterSpecificFields(draft.adapterKey, draft.provider));
@@ -1206,12 +1245,14 @@ function ModelDialog({ model, onClose, onSave, saving }) {
           {!isText && draft.provider === "RunningHub" && <><label>实例类型<input value={draft.instanceType || ""} onChange={(event) => update("instanceType", event.target.value)} placeholder="可选，如 48G" /></label><label>并发限制<input type="number" min="1" max="10" value={draft.concurrentLimit || 1} onChange={(event) => update("concurrentLimit", Number(event.target.value))} /></label></>}
           <label className="model-form-wide">能力说明<input value={draft.description || ""} onChange={(event) => update("description", event.target.value)} placeholder="简要说明适用场景" /></label>
           <label>计费单位<DemoSelect ariaLabel="计费单位" value={normalizePricingUnit(draft.category, draft.pricing?.unit)} onChange={(value) => { setPricingError(""); setDraft((current) => ({ ...current, pricing: convertPricingUnit(current.pricing || emptyPricing, current.category, value) })); }} options={pricingUnits(draft.category).map((unit) => ({ value: unit, label: unit }))} /></label>
+          {isAudio && ["千字符", "万字符"].includes(draft.pricing?.unit) && <label className="model-form-readonly">汉字计费口径<span className="readonly-value">{characterRule.label}<small>{characterRule.source}</small></span></label>}
           {tierUnits(draft.category)
-            ? <label>分辨率定价<DemoSelect ariaLabel="分辨率定价" value={tier || BASE_TIER[draft.category]} onChange={setTier} options={tierUnits(draft.category).map((unit) => ({ value: unit, label: unit }))} /></label>
-            : <div />}
+            && <label>分辨率定价<DemoSelect ariaLabel="分辨率定价" value={tier || BASE_TIER[draft.category]} onChange={setTier} options={(supportedTiers(draft) || tierUnits(draft.category)).map((unit) => ({ value: unit, label: unit }))} /></label>}
+          {pricingRowFields % 2 === 1 && <div />}
           <PriceEditor title={tier ? `售价 · ${tier}` : "售价"} category={draft.category} values={tier ? { output: draft.pricing?.sale?.tiers?.[tier] ?? draft.pricing?.sale?.output ?? "0" } : (draft.pricing?.sale || emptyPricing.sale)} onChange={(key, value) => updateTierPrice("sale", key, value)} />
           <PriceEditor title={tier ? `成本 · ${tier}` : "成本"} category={draft.category} values={tier ? { output: draft.pricing?.cost?.tiers?.[tier] ?? draft.pricing?.cost?.output ?? "0" } : (draft.pricing?.cost || emptyPricing.cost)} onChange={(key, value) => updateTierPrice("cost", key, value)} />
           {tier && <small className="model-logo-hint model-form-wide">各档独立定价：切换分辨率分别填写售价/成本。基准档（{BASE_TIER[draft.category]}）同时作为卡片展示价与缺档兜底；图片清晰度倍率（中 ×1.5 / 高 ×2）在所选档价上叠加。首次打开已按基准价 × 全局倍率生成各档初值。</small>}
+          {isAudio && ["千字符", "万字符"].includes(draft.pricing?.unit) && <small className="model-logo-hint model-form-wide">字符计数口径由供应商官方计费规则内置，不可手动修改：{characterRule.label}（{characterRule.source}）。若该供应商的计费规则有变，请在接入前核对官方文档并更新服务端规则表。</small>}
           {pricingError && <div className="admin-notice admin-notice--error model-form-wide" role="alert">{pricingError}</div>}
         </div>
         <footer>
@@ -1268,6 +1309,14 @@ function toModelPayload(draft) {
     adapterConfig.minSpeed = Number(draft.minSpeed || 0.25);
     adapterConfig.maxSpeed = Number(draft.maxSpeed || 4);
   }
+  // 语音按字符计费的模型总是把汉字口径写成显式配置，让 pricing 自身成为真相来源，
+  // 计费不再依赖「adapterKey 字符串是否含 minimax-speech」这类推断；换协议时由 applyAdapter 清除后重新推断。
+  const pricing = { ...(draft.pricing || defaultPricing(category)) };
+  if (category === "audio" && ["千字符", "万字符"].includes(pricing.unit)) {
+    pricing.cjkWeight = resolveCjkWeight(pricing, adapterKey);
+  } else {
+    delete pricing.cjkWeight;
+  }
   return {
     name: draft.name,
     modelKey: draft.modelKey,
@@ -1278,7 +1327,7 @@ function toModelPayload(draft) {
     category,
     capabilities: category === "text" ? ["text"] : caps,
     adapterConfig,
-    pricing: draft.pricing,
+    pricing,
     enabled: draft.enabled !== false,
     description: draft.description,
     badge: draft.badge || categoryBadge(category),

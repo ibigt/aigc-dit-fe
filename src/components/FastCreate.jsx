@@ -6,7 +6,7 @@ import { createSession, deleteSession, fetchSession, fetchSessions, renameSessio
 import { IMAGE_POLL_TIMEOUT_MS, pollGenerateTask, submitGenerate, VIDEO_POLL_TIMEOUT_MS } from "../api/generate.js";
 import { friendlyGenerateError, FRAMES_EMPTY_PROMPT_LABEL, materialToAsset, promptForDisplay, promptForResult, tasksToMessages, taskToResultMessage } from "../lib/createFlow.js";
 import { formatDateTime, mediaUrl, storageKeyOf } from "../lib/media.js";
-import { billableCharacters, calculateCreditEstimate } from "../lib/pricing.js";
+import { billableCharacters, calculateCreditEstimate, resolveCjkWeight } from "../lib/pricing.js";
 import { modelCatalogMessage } from "../lib/modelCatalog.js";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { AssetPickerDialog } from "./AssetPickerDialog.jsx";
@@ -95,6 +95,9 @@ function isSeedanceOfficial(model) {
 function isSeedanceFast(model) {
   return String(model?.modelKey || "").toLowerCase().includes("fast");
 }
+function isSeedanceMini(model) {
+  return String(model?.modelKey || "").toLowerCase().includes("mini");
+}
 function imageOnlyRefs(model) {
   return isAgnes(model);
 }
@@ -114,8 +117,12 @@ function videoResolutionsFor(model) {
   if (isMiniMaxH3Max(model) && isMiniMaxOfficial(model)) return ["480P", "768P"];
   if (isMiniMaxOfficial(model)) return ["768P", "2K"];
   if (isMiniMaxComfy(model)) return videoResolutions;
-  if (isSeedance25(model) || (isSeedance20Official(model) && isSeedanceFast(model))) return ["480P", "720P"];
+  // Seedance fast 与 mini 官方仅支持 480P / 720P
+  if (isSeedance25(model) || (isSeedance20Official(model) && (isSeedanceFast(model) || isSeedanceMini(model)))) return ["480P", "720P"];
   if (isSeedance20Official(model)) return ["480P", "720P", "1080P"];
+  // Wan 3.0 官方接口只支持 480P / 720P / 1080P，其余档位会被服务端静默降级成 720P，
+  // 展示出来会导致按高档位收费却只生成 720P
+  if (isWan3Model(model)) return ["480P", "720P", "1080P"];
   return videoResolutions;
 }
 function clampDurationForModel(model, duration) {
@@ -660,7 +667,9 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     resolution,
     quality,
     durationSec: duration,
-    characterCount: generationType === "audio" ? billableCharacters(prompt) : prompt.length,
+    characterCount: generationType === "audio"
+      ? billableCharacters(prompt, resolveCjkWeight(selectedModel?.pricing, selectedModel?.adapterKey))
+      : prompt.length,
     copies: activeCopies,
   }) : 0;
   const balanceCredits = Number(credits);

@@ -40,6 +40,10 @@ export function configuredPricingAmount(value) {
 export function pricingValidationError(pricing, category) {
   const unit = pricing?.unit;
   if (!pricingUnits(category).includes(unit)) return "请选择与模型类型匹配的计费单位";
+  const cjkWeight = pricing?.cjkWeight;
+  if (cjkWeight != null && String(cjkWeight).trim() !== "" && Number(cjkWeight) !== 1 && Number(cjkWeight) !== 2) {
+    return "汉字计费口径必须是 1 或 2";
+  }
   const dimensions = category === "text" ? ["input", "output", "cache"] : ["output"];
   const labels = { input: "输入", output: category === "text" ? "输出" : "单价", cache: "缓存命中" };
   for (const [side, sideLabel] of [["sale", "售价"], ["cost", "成本"]]) {
@@ -149,13 +153,46 @@ export function convertPricingUnit(pricing, category, nextUnit) {
   return { ...next, unit: nextUnit };
 }
 
-// 语音计费字符数：与供应商口径一致——汉字（CJK）算 2 个字符，英文字母/数字/标点/空格各算 1。
+// 语音计费字符数的默认汉字权重：MiniMax 口径 1 汉字 = 2 字符。
+export const DEFAULT_CJK_WEIGHT = 2;
+
+// 供应商计费口径内置表镜像——仅用于「新建模型」时预览口径（服务端尚未下发生效值）。
+// 已保存模型的生效口径由服务端从内置规则表解析后写进 pricing.cjkWeight，前端直接读取，不在此处推断。
+const BUILTIN_CHARACTER_RULES = {
+  "minimax-speech": { weight: 2, label: "1 汉字 = 2 字符", source: "MiniMax 官方计费规则：按输入文本的字符数计费，1 个汉字算 2 个字符" },
+  "openai-speech": { weight: 1, label: "1 字 = 1 字符", source: "按输入文本的字符数计费，1 字算 1 字符" },
+};
+
+// 汉字计费口径：1 = 1 字 = 1 字符，2 = 1 汉字 = 2 字符。
+// 优先读服务端下发的生效值 pricing.cjkWeight；未下发时才按内置表镜像兜底。
+export function resolveCjkWeight(pricing, adapterKey) {
+  const configured = Number(pricing?.cjkWeight);
+  if (configured === 1 || configured === 2) return configured;
+  return BUILTIN_CHARACTER_RULES[String(adapterKey || "")]?.weight ?? DEFAULT_CJK_WEIGHT;
+}
+
+// 口径的展示文案（说明 + 官方依据）；服务端已下发时直接用其口径，未下发时按内置表镜像兜底。
+export function characterRuleText(pricing, adapterKey) {
+  const label = pricing?.cjkWeightLabel;
+  const source = pricing?.cjkWeightSource;
+  if (label) return { label, source: source || "" };
+  const builtin = BUILTIN_CHARACTER_RULES[String(adapterKey || "")];
+  if (builtin) return { label: builtin.label, source: builtin.source };
+  const weight = resolveCjkWeight(pricing, adapterKey);
+  return {
+    label: weight === 1 ? "1 字 = 1 字符" : "1 汉字 = 2 字符",
+    source: "未登记供应商，按默认口径处理；请核对官方计费规则",
+  };
+}
+
+// 语音计费字符数：汉字（CJK）按 cjkWeight 计，其余字母/数字/标点/空格各算 1。
 // 后端 CreditCalculator.billableCharacters 使用同一规则，避免前后端估价与实扣不一致。
-export function billableCharacters(text) {
+export function billableCharacters(text, cjkWeight = DEFAULT_CJK_WEIGHT) {
   const value = String(text ?? "");
+  const weight = Number(cjkWeight) === 1 ? 1 : 2;
   let total = 0;
   for (const char of value) {
-    total += isCjk(char) ? 2 : 1;
+    total += isCjk(char) ? weight : 1;
   }
   return total;
 }
