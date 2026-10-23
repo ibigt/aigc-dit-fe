@@ -65,6 +65,7 @@ import { adapterSpecificFields, adaptersMatchingProvider, audioFormatsForAdapter
 import { BASE_TIER, characterRuleText, convertPricingUnit, defaultPricing, normalizePricing, normalizePricingUnit, pricingUnits, pricingValidationError, resolveCjkWeight, tierUnits } from "../lib/pricing.js";
 import { textUsageOperationLabel, textUsageOperations, textUsageReconciliationLabel } from "../lib/textUsage.js";
 import { healthLevel, observabilityCategoryLabel } from "../lib/modelObservability.js";
+import { FALLBACK_LOGO, MODEL_LOGO_CATALOG, matchModelLogo, modelLogoSrc } from "../lib/modelLogos.js";
 
 const adminMenus = [
   { id: "dashboard", label: "仪表盘", icon: LayoutDashboard },
@@ -360,56 +361,6 @@ function inferAdapterKey(model) {
   }
   if (key.includes("gpt-image") || (provider.includes("running") && category === "image")) return "gpt-image-2";
   return defaultAdapterKey(category);
-}
-
-const MODEL_LOGO_CATALOG = [
-  { file: "/model-logos/agnes.svg", label: "Agnes AI", keys: ["agnes"] },
-  { file: "/model-logos/deepseek.svg", label: "DeepSeek", keys: ["deepseek", "深度求索"] },
-  { file: "/model-logos/xiaomi-color.svg", label: "小米 / MiMo", keys: ["mimo", "xiaomi", "小米"] },
-  { file: "/model-logos/zhipu-color.svg", label: "智谱 / GLM", keys: ["zhipu", "智谱", "质谱", "glm", "chatglm", "cogvideo", "清影"] },
-  { file: "/model-logos/kimi.svg", label: "Kimi / 月之暗面", keys: ["kimi", "moonshot", "月之暗面"] },
-  { file: "/model-logos/openai.svg", label: "OpenAI / GPT", keys: ["gpt-image", "gpt", "openai", "dall-e", "dalle", "sora"] },
-  { file: "/model-logos/bytedance-color.svg", label: "字节 / Seedance", keys: ["seedance", "seedream", "bytedance"] },
-  { file: "/model-logos/doubao-color.svg", label: "豆包", keys: ["doubao", "豆包"] },
-  { file: "/model-logos/midjourney.svg", label: "Midjourney / Niji", keys: ["midjourney", "niji"] },
-  { file: "/model-logos/qwen-color.svg", label: "通义千问", keys: ["qwen", "tongyi", "千问"] },
-  { file: "/model-logos/kling-color.svg", label: "可灵", keys: ["kling", "可灵"] },
-  { file: "/model-logos/alibabacloud-color.svg", label: "阿里 / 万相", keys: ["wan2", "wan3", "wan-", "万相", "alibaba", "aliyun"] },
-  { file: "/model-logos/minimax-color.svg", label: "MiniMax", keys: ["minimax"] },
-  { file: "/model-logos/hailuo-color.svg", label: "海螺", keys: ["hailuo", "海螺"] },
-  { file: "/model-logos/runway.svg", label: "Runway", keys: ["runway", "aleph"] },
-  { file: "/model-logos/google-color.svg", label: "Google", keys: ["google", "gemini", "imagen", "veo", "omni"] },
-  { file: "/model-logos/lightricks.svg", label: "Lightricks / LTX", keys: ["ltx", "lightricks"] },
-  { file: "/model-logos/nanobanana-color.svg", label: "Banana", keys: ["banana"] },
-  { file: "/model-logos/elevenlabs.svg", label: "ElevenLabs", keys: ["eleven"] },
-  { file: "/model-logos/comfyui-color.svg", label: "ComfyUI", keys: ["comfy"] },
-];
-const FALLBACK_LOGO = "/model-logos/comfyui-color.svg";
-
-function matchModelLogo(name, modelKey, provider) {
-  const haystack = `${name || ""} ${modelKey || ""} ${provider || ""}`.toLowerCase();
-  let best = null;
-  let bestLen = 0;
-  for (const item of MODEL_LOGO_CATALOG) {
-    for (const key of item.keys) {
-      if (haystack.includes(key.toLowerCase()) && key.length > bestLen) {
-        best = item.file;
-        bestLen = key.length;
-      }
-    }
-  }
-  if (best) return best;
-  return FALLBACK_LOGO;
-}
-
-function modelLogoSrc(model) {
-  const stored = model?.logo;
-  const matched = matchModelLogo(model?.name, model?.modelKey, model?.provider);
-  if (!stored || stored === FALLBACK_LOGO) return matched;
-  if (stored === "/model-logos/openai.svg" && (matched === "/model-logos/agnes.svg" || matched === "/model-logos/deepseek.svg")) {
-    return matched;
-  }
-  return stored;
 }
 
 function endpointLabel(provider) {
