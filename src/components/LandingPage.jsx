@@ -1,9 +1,16 @@
-import { ArrowRight, ChevronDown, CircleGauge, Film, Images, Layers3, LogOut, Play, Sparkles, UserRound } from "lucide-react";
+import { ArrowRight, ChevronDown, CircleGauge, Film, Images, Layers3, LogOut, Play, UserRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client.js";
 import { Brand } from "./Brand.jsx";
 import { ProfileModal } from "./ProfileModal.jsx";
+
+const HERO_VIDEO_SRC = "/hero-media/video.mp4";
+const HERO_VIDEO_POSTER = "/hero-media/poster.jpg";
+
+function prefersReducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
 export function LandingPage({ config, user, onLogout, onUserUpdate }) {
   const navigate = useNavigate();
@@ -11,7 +18,16 @@ export function LandingPage({ config, user, onLogout, onUserUpdate }) {
   const [userMenu, setUserMenu] = useState(false);
   const [profileMode, setProfileMode] = useState(null);
   const [version, setVersion] = useState("");
+  const [navOpen, setNavOpen] = useState(false);
+  const [navScrolled, setNavScrolled] = useState(false);
   const menuRef = useRef(null);
+
+  useEffect(() => {
+    const update = () => setNavScrolled(window.scrollY > 80);
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    return () => window.removeEventListener("scroll", update);
+  }, []);
 
   useEffect(() => {
     const close = (event) => { if (!menuRef.current?.contains(event.target)) setUserMenu(false); };
@@ -32,9 +48,9 @@ export function LandingPage({ config, user, onLogout, onUserUpdate }) {
 
   return (
     <div className="landing-page">
-      <header className="landing-nav shell-width">
+      <header className={`landing-nav shell-width${navOpen ? " is-menu-open" : ""}${navScrolled ? " is-scrolled" : ""}`}>
         <Brand config={config} showSubtitle={false} onClick={() => navigate("/")} />
-        <nav aria-label="首页导航">
+        <nav id="landing-links" aria-label="首页导航" onClick={() => setNavOpen(false)}>
           <a href="#capabilities">能力</a>
           <a href="#showcase">灵感</a>
           <a href="#workflow">创作</a>
@@ -54,18 +70,26 @@ export function LandingPage({ config, user, onLogout, onUserUpdate }) {
               </div>}
             </div>
           ) : (
-            <>
-              <button className="button button--ghost" type="button" onClick={() => navigate("/login")}>登录</button>
-              <button className="button button--dark" type="button" onClick={() => navigate("/register")}>免费开始</button>
-            </>
+            <button className="button button--dark" type="button" onClick={() => navigate("/register")}>免费开始</button>
           )}
         </div>
+        <button
+          type="button"
+          className="landing-menu-toggle"
+          aria-label={navOpen ? "收起导航" : "展开导航"}
+          aria-expanded={navOpen}
+          aria-controls="landing-links"
+          onClick={() => setNavOpen(!navOpen)}
+          onKeyDown={(event) => { if (event.key === "Escape") setNavOpen(false); }}
+        >
+          {navOpen ? "关闭" : "菜单"}
+        </button>
       </header>
 
       <main>
         <section className="hero shell-width">
           <div className="hero__copy">
-            <h1>让每一束灵感<br /><em>抵达银幕。</em></h1>
+            <h1>让每一束灵感<em>抵达银幕</em></h1>
             <p>{config.description}。从一句想法到完整镜头，在同一个空间里生成与沉淀。</p>
             <div className="hero__actions">
               <button className="button button--primary button--large" type="button" onClick={() => navigate(user ? "/console" : "/register")}>
@@ -82,19 +106,31 @@ export function LandingPage({ config, user, onLogout, onUserUpdate }) {
           </div>
           <div className="hero__visual" aria-label="AI 影像示例">
             <div className="hero-video-wrap">
-              <video src={config.media[0].src} poster={config.media[0].poster} autoPlay muted loop playsInline />
-              <div className="hero-video-label"><span className="status-dot" /> 实时生成 <small>00:08</small></div>
+              <video
+                src={HERO_VIDEO_SRC}
+                poster={HERO_VIDEO_POSTER}
+                autoPlay={!prefersReducedMotion()}
+                muted
+                loop
+                playsInline
+                preload="metadata"
+                aria-label="首页背景视频"
+                onCanPlay={(event) => {
+                  const video = event.currentTarget;
+                  if (!prefersReducedMotion()) {
+                    video.play().catch(() => { video.controls = true; });
+                  }
+                }}
+                onError={(event) => { event.currentTarget.controls = true; }}
+              />
             </div>
-            <div className="floating-card floating-card--top"><Sparkles size={16} /><span><b>光影增强</b><small>正在实时计算</small></span></div>
-            <div className="floating-card floating-card--bottom"><Film size={16} /><span><b>多模型生成</b><small>图与视频随时切换</small></span></div>
           </div>
-        </section>
-
-        <section className="metric-strip shell-width" id="capabilities">
-          <div><strong>{config.models.filter((model) => model.enabled !== false).length}+</strong><span>已接入生成模型</span></div>
-          <div><strong>4K</strong><span>最高输出规格</span></div>
-          <div><strong>1–4</strong><span>一次可出多份副本</span></div>
-          <div><strong>1</strong><span>统一素材空间</span></div>
+          <section className="metric-strip shell-width" id="capabilities">
+            <div><strong>{config.models.filter((model) => model.enabled !== false).length}+</strong><span>已接入生成模型</span></div>
+            <div><strong>4K</strong><span>最高输出规格</span></div>
+            <div><strong>1–4</strong><span>一次可出多份副本</span></div>
+            <div><strong>1</strong><span>统一素材空间</span></div>
+          </section>
         </section>
 
         <section className="showcase shell-width" id="showcase">

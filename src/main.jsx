@@ -5,6 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import { App } from "./App.jsx";
 import { AuthProvider } from "./auth/AuthContext.jsx";
 import "./styles.css";
+import "./landing-dark.css";
 import "./short-drama.css";
 import "./script-creation.css";
 
