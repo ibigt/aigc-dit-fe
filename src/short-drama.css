@@ -3715,6 +3715,9 @@
 .asset-state-name { overflow: hidden; border: 0; padding: 0; color: #dedee2; background: transparent; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .asset-state-generate { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex-shrink: 0; border: 1px solid rgba(153,139,255,.2); border-radius: 8px; color: #aaa1ff; background: rgba(118,104,255,.11); cursor: pointer; }
 .asset-state-generate:disabled { opacity: .45; cursor: default; }
+.asset-state-delete { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex-shrink: 0; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; color: #9aa0ad; background: rgba(255,255,255,.05); cursor: pointer; }
+.asset-state-delete:hover { color: #ff8a93; border-color: rgba(255,120,130,.45); }
+.asset-state-delete:disabled { opacity: .45; cursor: default; }
 .asset-state-check { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; color: #d0d0d6; cursor: pointer; }
 .asset-state-check input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .asset-modal-states { display: flex; flex-wrap: wrap; gap: 6px; }

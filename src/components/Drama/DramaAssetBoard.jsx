@@ -1396,6 +1396,16 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                                 >
                                   {stateGenerating ? <span className="asset-spinner small" /> : <Sparkles size={13} />}
                                 </button>
+                                <button
+                                  type="button"
+                                  className="asset-state-delete"
+                                  disabled={batchRunning || isBusy(state.id, "delete")}
+                                  aria-label={`删除 ${state.name}`}
+                                  title={`删除状态 ${state.name}`}
+                                  onClick={() => setDeleteAssetTarget(state)}
+                                >
+                                  {isBusy(state.id, "delete") ? <span className="asset-spinner small" /> : <Trash2 size={13} />}
+                                </button>
                               </div>
                             </div>
                           );
