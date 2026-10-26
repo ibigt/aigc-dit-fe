@@ -1091,10 +1091,11 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
 
   return (
     <div className="drama-asset-board youxi-subject-layout">
-      {actionError && (
-        <div className="drama-toast drama-toast--error" role="status">
+      {actionError && createPortal(
+        <div className="drama-toast drama-toast--error drama-toast--float" role="status">
           <CircleAlert size={16} />{actionError}
-        </div>
+        </div>,
+        document.body,
       )}
       <section className="asset-workbench">
         <header className="asset-category-row">
@@ -1322,7 +1323,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                         </button>
                       </div>
                     </header>
-                    <div className="asset-image-wrap">
+                    <div className={`asset-image-wrap${card.states.length ? " has-states" : ""}`}>
                       {src ? (
                         <button className="asset-card-image-button" type="button" aria-label={`打开 ${item.name} 的图片生成弹窗`} disabled={busyCard} onClick={() => openDetail(item)}>
                           <img key={src} src={src} alt={item.name} onError={retryMediaOnce} />
@@ -1341,12 +1342,10 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                           <strong>{uploading ? "正在上传…" : "正在生成…"}</strong>
                         </div>
                       )}
-                    </div>
-                    {card.states.length > 0 && (
-                      <div className="asset-state-row">
-                        <span className="asset-state-caption">状态 · {card.states.length}</span>
-                        <div className="asset-state-list" role="list">
-                        {card.states.map((state) => {
+                      {card.states.length > 0 && (
+                        <div className="asset-state-row">
+                          <div className="asset-state-list" role="list">
+                            {card.states.map((state) => {
                           const stateSrc = mediaUrl(state.imageStorageKey || state.imageUrl, { w: MEDIA_THUMB_WIDTH });
                           const stateGenerating = Boolean(state.generating) || isBusy(state.id, "generate");
                           const stateChecked = batchChecked.has(String(state.id));
@@ -1401,9 +1400,10 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                             </div>
                           );
                         })}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                     <div className="asset-prompt-field">
                       <label htmlFor={`prompt-${item.id}`}>{isStateAsset(item) ? "状态外观" : "图片提示词"}</label>
                       <textarea
