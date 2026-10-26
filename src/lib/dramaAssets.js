@@ -1,4 +1,7 @@
-/** 资产页按类型和名称视为同一条，不按章节拆开。 */
+/**
+ * 资产页按类型和名称视为同一条，不按章节拆开。
+ * 状态在名字里（「洛白·湿身」），所以名字相同就是同一条，不再单看状态标签。
+ */
 export function assetIdentityKey(asset) {
   const type = typeof asset?.type === "string" ? asset.type.trim() : "";
   const name = typeof asset?.name === "string" ? asset.name.trim() : "";

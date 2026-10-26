@@ -56,6 +56,32 @@ const RESOLUTIONS = ["1K", "2K"];
 const BATCH_CONCURRENCY = 16;
 const emptyCreate = { name: "", meta: "" };
 
+// 状态标签兜底文案：状态名（后端的 stateLabel）缺省时按标签显示。
+const STATE_TAG_FALLBACK = { base: "基础", dream: "入梦", costume: "换装", wet: "湿身", custom: "特殊" };
+
+/** 状态名 = 资产名「本体名·状态名」的后缀，由后端给出；老数据没有就退回状态标签。 */
+function stateLabel(asset) {
+  const label = typeof asset?.stateLabel === "string" ? asset.stateLabel.trim() : "";
+  if (label) return label;
+  const tag = typeof asset?.stateTag === "string" && asset.stateTag.trim() ? asset.stateTag.trim() : "base";
+  return STATE_TAG_FALLBACK[tag] || tag;
+}
+
+/** 是不是状态资产（本体之外的一个状态）。 */
+function isStateAsset(asset) {
+  if (typeof asset?.stateLabel === "string" && asset.stateLabel.trim()) return true;
+  const tag = typeof asset?.stateTag === "string" ? asset.stateTag.trim() : "";
+  return Boolean(tag) && tag !== "base";
+}
+
+/** 取本体名：「洛白·湿身」→「洛白」。 */
+function baseNameOf(name) {
+  const trimmed = typeof name === "string" ? name.trim() : "";
+  const dot = trimmed.indexOf("·") >= 0 ? trimmed.indexOf("·") : trimmed.indexOf("・");
+  if (dot <= 0) return trimmed;
+  return trimmed.slice(0, dot).trim();
+}
+
 function sameAssetId(a, b) {
   if (a == null || b == null) return false;
   return String(a) === String(b);
@@ -260,6 +286,16 @@ function looksLikeImageTemplate(text) {
 
 /** 设定摘要：只展示真实内容；骨架空话 / 误套角色句一律视为未生成。 */
 function identityOf(asset) {
+  if (isStateAsset(asset)) {
+    // 状态资产编辑的是「状态外观」：相对本体的变化；本体外形由后端继承，不在这里重复。
+    const desc = asset?.description?.trim() || "";
+    if (desc && !looksLikeImageTemplate(desc) && !isSkeletonIdentity({ identityInvariants: desc })) {
+      return desc;
+    }
+    const id = asset?.identityInvariants?.trim() || "";
+    if (id && !isSkeletonIdentity(asset)) return id;
+    return "";
+  }
   const id = asset?.identityInvariants?.trim() || "";
   if (id && !isSkeletonIdentity(asset) && !isCharacterIdentityMisapplied(asset)) return id;
   const desc = asset?.description?.trim() || "";
@@ -316,6 +352,11 @@ function SubjectCreateDialog({ type, pending, error, onClose, onCreate }) {
                   : "例：金属外壳磨损，侧面有划痕，可手持。构图与风格由系统自动附加。"}
             />
           </label>
+          {type === "角色" && (
+            <p className="drama-form-hint">
+              角色的不同状态（换装、湿身、入梦…）请在角色卡片上点「扩展状态」，会另建一条「本体名·状态名」资产。
+            </p>
+          )}
           {error && <p className="drama-form-error">{error}</p>}
           <footer>
             <button type="button" disabled={pending} onClick={onClose}>取消</button>
@@ -417,6 +458,9 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   const [batchRunning, setBatchRunning] = useState(false);
   const [batchChecked, setBatchChecked] = useState(() => new Set());
   const [deleteAssetTarget, setDeleteAssetTarget] = useState(null);
+  const [extendSource, setExtendSource] = useState(null);
+  const [extendStateName, setExtendStateName] = useState("");
+  const [extendDescription, setExtendDescription] = useState("");
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
   const [preview, setPreview] = useState(null);
@@ -428,6 +472,12 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
     setActionError(message);
     window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setActionError(""), 2400);
+  }
+
+  function openExtendDialog(asset) {
+    setExtendSource(asset);
+    setExtendStateName("");
+    setExtendDescription("");
   }
 
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
@@ -585,14 +635,46 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
       invalidate();
     },
   });
+  const extendMutation = useMutation({
+    mutationFn: ({ source, stateName, description }) => {
+      const baseName = baseNameOf(source.name);
+      const label = (stateName || "").trim();
+      if (!label) {
+        throw new Error("请填写状态名");
+      }
+      if (!description.trim()) {
+        throw new Error("请填写状态描述，例如「穿红色晚礼服，头发扎起」");
+      }
+      const composed = `${baseName}·${label}`;
+      if (assets.some((item) => item.type === source.type && (item.name || "").trim() === composed)) {
+        throw new Error(`「${baseName}」的「${label}」状态已经存在`);
+      }
+      // 状态名由后端拼成「本体名·状态名」，本体外形由后端继承，这里不复制。
+      return createDramaAsset(episodeId, {
+        name: baseName,
+        type: source.type,
+        stateName: label,
+        description: description.trim(),
+        mustSplit: true,
+      });
+    },
+    onSuccess: (created) => {
+      setExtendSource(null);
+      setExtendDescription("");
+      if (created?.id) setSelectedId(created.id);
+      invalidate();
+    },
+    onError: (err) => showToast(err.message),
+  });
 
   async function saveFields(asset, extra = {}) {
     const payload = {};
     if (extra.name != null) payload.name = extra.name.trim();
     if (extra.identityInvariants != null) payload.identityInvariants = extra.identityInvariants.trim();
+    if (extra.description != null) payload.description = extra.description.trim();
     if (!Object.keys(payload).length) return;
     await Promise.all(siblingAssets(asset, allAssets).map((item) => updateDramaAsset(item.id, payload)));
-    if (extra.identityInvariants != null) {
+    if (extra.identityInvariants != null || extra.description != null) {
       setPromptDrafts((current) => {
         if (!Object.prototype.hasOwnProperty.call(current, asset.id)) return current;
         const next = { ...current };
@@ -606,7 +688,12 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
     if (!asset || !dirtyOf(asset)) return;
     markBusy(asset.id, "summary", true);
     try {
-      await saveFields(asset, { identityInvariants: draftOf(asset) });
+      // 状态资产存的是「状态外观」（相对本体的变化），本体资产存外形设定。
+      if (isStateAsset(asset)) {
+        await saveFields(asset, { description: draftOf(asset) });
+      } else {
+        await saveFields(asset, { identityInvariants: draftOf(asset) });
+      }
       await invalidate();
     } finally {
       markBusy(asset.id, "summary", false);
@@ -683,6 +770,14 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
     }
     setEditingNameId(null);
     if (name === asset.name) return;
+    // 名字是状态与引用的身份，同系列内不能重名（后端新增时也会拦）。
+    const clash = assets.find((item) => item.type === asset.type
+      && (item.name || "").trim() === name
+      && !siblingAssets(asset, allAssets).some((sibling) => sibling.id === item.id));
+    if (clash) {
+      showToast(`已存在同名${asset.type}「${name}」`);
+      return;
+    }
     markBusy(asset.id, "save", true);
     try {
       await saveFields(asset, { name });
@@ -1137,6 +1232,9 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                             </label>
                           )}
                           <h3 title={item.name}>{item.name}</h3>
+                          {item.type === "角色" && stateLabel(item) !== "基础" && (
+                            <span className="asset-state-chip">{stateLabel(item)}</span>
+                          )}
                           <button
                             className="asset-edit-name"
                             type="button"
@@ -1153,6 +1251,11 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                         </div>
                       )}
                       <div className="asset-card-actions">
+                        {item.type === "角色" && (
+                          <button type="button" aria-label={`扩展 ${item.name} 的状态`} title="扩展状态" disabled={batchRunning} onClick={() => openExtendDialog(item)}>
+                            <Sparkles size={17} />
+                          </button>
+                        )}
                         <button className="danger" type="button" aria-label={`删除 ${item.name}`} title="删除" disabled={batchRunning || isBusy(item.id, "delete")} onClick={() => setDeleteAssetTarget(item)}>
                           <Trash2 size={17} />
                         </button>
@@ -1182,14 +1285,14 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                       )}
                     </div>
                     <div className="asset-prompt-field">
-                      <label htmlFor={`prompt-${item.id}`}>图片提示词</label>
+                      <label htmlFor={`prompt-${item.id}`}>{isStateAsset(item) ? "状态外观" : "图片提示词"}</label>
                       <textarea
                         id={`prompt-${item.id}`}
                         rows={4}
                         maxLength={512}
                         disabled={batchRunning}
                         value={draftOf(item)}
-                        placeholder="输入图片提示词…"
+                        placeholder={isStateAsset(item) ? "写这一状态相对本体的变化，如：穿红色晚礼服，头发扎起" : "输入图片提示词…"}
                         onChange={(event) => {
                           const value = event.target.value;
                           setPromptDrafts((current) => ({ ...current, [item.id]: value }));
@@ -1328,7 +1431,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                     </div>
                   </div>
                   <div className="asset-modal-prompt-head">
-                    <label htmlFor="asset-modal-prompt">图片提示词</label>
+                    <label htmlFor="asset-modal-prompt">{isStateAsset(detailAsset) ? "状态外观" : "图片提示词"}</label>
                     <button
                       type="button"
                       disabled={!dirtyOf(detailAsset) || isBusy(detailAsset.id, "summary") || selectedGenerating}
@@ -1342,7 +1445,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                     className="asset-modal-prompt"
                     maxLength={512}
                     value={draftOf(detailAsset)}
-                    placeholder="输入图片提示词…"
+                    placeholder={isStateAsset(detailAsset) ? "写这一状态相对本体的变化，如：穿红色晚礼服，头发扎起" : "输入图片提示词…"}
                     disabled={selectedGenerating}
                     onChange={(event) => {
                       const value = event.target.value;
@@ -1493,6 +1596,73 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
             .catch((err) => showToast(err.message));
         }}
       />
+
+      {extendSource && createPortal(
+        <div
+          className="drama-dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !extendMutation.isPending) setExtendSource(null);
+          }}
+        >
+          <section className="creation-asset-dialog" role="dialog" aria-modal="true" aria-labelledby="extend-state-title" style={{ maxWidth: 420 }}>
+            <header>
+              <div>
+                <small>角色扩展</small>
+                <h2 id="extend-state-title">为「{baseNameOf(extendSource.name)}」添加状态</h2>
+              </div>
+              <button type="button" aria-label="关闭扩展状态" disabled={extendMutation.isPending} onClick={() => setExtendSource(null)}>
+                <X size={17} />
+              </button>
+            </header>
+            <div className="drama-extend-form">
+              <label>
+                <span>状态名</span>
+                <input
+                  aria-label="状态名"
+                  maxLength={32}
+                  placeholder="如：换装、湿身、入梦、战损"
+                  value={extendStateName}
+                  onChange={(event) => setExtendStateName(event.target.value)}
+                />
+              </label>
+              <label>
+                <span>状态描述（必填）</span>
+                <textarea
+                  rows={3}
+                  maxLength={512}
+                  placeholder="如：穿红色晚礼服，头发扎起，佩戴珍珠耳环…"
+                  value={extendDescription}
+                  onChange={(event) => setExtendDescription(event.target.value)}
+                />
+              </label>
+              <p className="drama-extend-hint">
+                将创建为「{baseNameOf(extendSource.name)}·{extendStateName.trim() || "状态"}」，
+                沿用原角色的脸与发型，只叠加状态描述。
+              </p>
+            </div>
+            <footer>
+              <span>{extendMutation.isPending ? "正在创建…" : ""}</span>
+              <div>
+                <button type="button" disabled={extendMutation.isPending} onClick={() => setExtendSource(null)}>取消</button>
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={extendMutation.isPending}
+                  onClick={() => extendMutation.mutate({
+                    source: extendSource,
+                    stateName: extendStateName,
+                    description: extendDescription,
+                  })}
+                >
+                  创建状态
+                </button>
+              </div>
+            </footer>
+          </section>
+        </div>,
+        document.body,
+      )}
 
       <ConfirmDialog
         open={Boolean(deleteGenerationTarget)}

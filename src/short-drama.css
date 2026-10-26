@@ -3098,6 +3098,7 @@
 .drama-dialog > header button { width: 40px; height: 40px; border: 0; border-radius: 10px; color: var(--text-secondary); background: transparent; }
 .drama-dialog > header button:hover { color: #fff; background: var(--bg-hover); }
 .drama-create-form { padding: 18px 22px; gap: 10px; }
+.drama-form-hint { margin: 0; color: var(--text-tertiary, #8b8f99); font-size: 12px; line-height: 1.6; }
 .drama-create-form > label { display: block; margin-bottom: 14px; color: #e8e8eb; font-size: 14px; font-weight: 520; }
 .drama-create-form input,
 .drama-create-form textarea,
@@ -3695,6 +3696,7 @@
 .asset-card-header { height: 46px; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 12px; }
 .asset-title-group { min-width: 0; flex: 1; display: flex; align-items: center; gap: 3px; }
 .asset-title-group h3 { min-width: 0; margin: 0; overflow: hidden; color: #f1f1f3; font-size: 14px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.asset-state-chip { flex-shrink: 0; padding: 1px 6px; border-radius: 8px; font-size: 11px; font-weight: 600; line-height: 16px; color: #c9bfff; background: rgba(120, 100, 255, 0.16); white-space: nowrap; }
 .asset-card-select, .asset-select-all { position: relative; display: inline-flex; align-items: center; gap: 7px; color: #d0d0d6; cursor: pointer; }
 .asset-card-select { width: 30px; height: 30px; justify-content: center; }
 .asset-card-select input, .asset-select-all input { position: absolute; width: 1px; height: 1px; opacity: 0; }
@@ -3809,7 +3811,7 @@
 .asset-modal-prompt-head label { color: #d7d5df; font-size: 13px; font-weight: 650; }
 .asset-modal-prompt-head button { border: 0; color: #9184ff; background: transparent; font-size: 13px; cursor: pointer; }
 .asset-modal-prompt-head button:disabled { color: #686772; cursor: default; }
-.asset-modal-prompt { width: 100%; height: 172px; min-height: 156px; max-height: 220px; resize: vertical; padding: 12px 13px; border: 1px solid #34343d; border-radius: 10px; outline: 0; color: #eeeaf7; background: #111115; line-height: 1.65; }
+.asset-modal-prompt { width: 100%; height: 172px; min-height: 156px; max-height: 220px; resize: vertical; padding: 12px 13px; border: 1px solid #34343d; border-radius: 10px; outline: 0;font-size: 14px; color: #eeeaf7; background: #111115; line-height: 1.65; }
 .asset-modal-prompt:focus { border-color: #7669e8; box-shadow: 0 0 0 3px rgba(118,105,232,.13); }
 .asset-modal-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .asset-modal-section-head h3 { margin: 0; color: #f2f0f7; font-size: 15px; }

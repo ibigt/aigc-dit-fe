@@ -6551,6 +6551,57 @@ a {
     color: #fff;
 }
 
+/* 角色扩展状态弹窗 */
+.drama-extend-form {
+    padding: 16px 20px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: auto;
+}
+
+.drama-extend-form > label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.drama-extend-form > label > span {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.drama-extend-form input,
+.drama-extend-form textarea {
+    width: 100%;
+    padding: 9px 11px;
+    border: 1px solid var(--border-default);
+    border-radius: 9px;
+    outline: 0;
+    color: var(--text-primary);
+    background: var(--bg-surface-2);
+    font: inherit;
+    font-size: 13px;
+}
+
+.drama-extend-form textarea {
+    min-height: 76px;
+    resize: vertical;
+    line-height: 1.6;
+}
+
+.drama-extend-form input:focus,
+.drama-extend-form textarea:focus {
+    border-color: var(--brand-highlight);
+}
+
+.drama-extend-hint {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
 /* ResultMessage 子组件 */
 .media-card,
 .result-card {
