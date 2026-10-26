@@ -69,6 +69,34 @@ export const DRAMA_STYLES = [
     cover: "/drama/styles/neon-cyber.jpg",
     fallback: "/drama/styles/neon-cyber.svg",
   },
+  {
+    key: "kdrama-soft",
+    name: "韩剧柔光风",
+    category: "realistic",
+    cover: "/drama/styles/kdrama-soft.jpg",
+    fallback: "/drama/styles/kdrama-soft.svg",
+  },
+  {
+    key: "jp-youth",
+    name: "日系青春风",
+    category: "realistic",
+    cover: "/drama/styles/jp-youth.jpg",
+    fallback: "/drama/styles/jp-youth.svg",
+  },
+  {
+    key: "sci-fi-cinema",
+    name: "科技电影风",
+    category: "realistic",
+    cover: "/drama/styles/sci-fi-cinema.jpg",
+    fallback: "/drama/styles/sci-fi-cinema.svg",
+  },
+  {
+    key: "american-retro",
+    name: "美式复古风",
+    category: "realistic",
+    cover: "/drama/styles/american-retro.jpg",
+    fallback: "/drama/styles/american-retro.svg",
+  },
 ];
 
 export const DEFAULT_DRAMA_STYLE_KEY = "live-realism";
