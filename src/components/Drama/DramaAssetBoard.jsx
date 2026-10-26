@@ -82,6 +82,20 @@ function baseNameOf(name) {
   return trimmed.slice(0, dot).trim();
 }
 
+/** 资产有没有可用图（状态图生图前要看本体有没有图）。 */
+function hasImage(asset) {
+  return Boolean(asset?.imageStorageKey || asset?.imageUrl || asset?.imageAssetId);
+}
+
+/** 状态资产的本体资产（同列表里名字为本体名的非状态行）；本体不存在时返回 null。 */
+function baseAssetOf(asset, list) {
+  if (!isStateAsset(asset)) return null;
+  const baseName = baseNameOf(asset.name);
+  return (list || []).find((item) => item.type === asset.type
+    && (item.name || "").trim() === baseName
+    && !isStateAsset(item)) || null;
+}
+
 function sameAssetId(a, b) {
   if (a == null || b == null) return false;
   return String(a) === String(b);
@@ -519,24 +533,43 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
     setImageModelId(series?.imageModelId || "");
   }, [series?.imageModelId]);
 
-  const filtered = useMemo(
-    () => assets.filter((item) => item.type === type),
-    [assets, type],
-  );
-  const counts = useMemo(() => {
-    const byType = { 角色: 0, 场景: 0, 道具: 0 };
-    for (const item of assets) {
-      if (byType[item.type] != null) byType[item.type] += 1;
+  // 资产按本体成卡，状态收进本体卡；找不到本体的状态自己成卡（如剧本只提了状态没提本体）。
+  const cardsByType = useMemo(() => {
+    const map = { 角色: [], 场景: [], 道具: [] };
+    for (const key of Object.keys(map)) {
+      const states = assets.filter((item) => item.type === key && isStateAsset(item));
+      const bases = assets.filter((item) => item.type === key && !isStateAsset(item));
+      const cards = bases.map((item) => ({ asset: item, states: [] }));
+      const byName = new Map(cards.map((card) => [(card.asset.name || "").trim(), card]));
+      for (const state of states) {
+        const owner = byName.get(baseNameOf(state.name));
+        if (owner) owner.states.push(state);
+        else cards.push({ asset: state, states: [] });
+      }
+      map[key] = cards;
     }
-    return byType;
+    return map;
   }, [assets]);
 
-  const selected = filtered.find((item) => item.id === selectedId) || filtered[0] || null;
+  // tab 计数是卡数：状态不再单独算一个角色。
+  const counts = useMemo(() => ({
+    角色: cardsByType.角色.length,
+    场景: cardsByType.场景.length,
+    道具: cardsByType.道具.length,
+  }), [cardsByType]);
+
+  const filtered = cardsByType[type];
+  const flatItems = useMemo(
+    () => filtered.flatMap((card) => [card.asset, ...card.states]),
+    [filtered],
+  );
+
+  const selected = flatItems.find((item) => item.id === selectedId) || filtered[0]?.asset || null;
   const checkedCount = assets.filter((item) => batchChecked.has(String(item.id))).length;
   const allAssetsChecked = assets.length > 0 && checkedCount === assets.length;
   const allAssetsIndeterminate = checkedCount > 0 && !allAssetsChecked;
-  const typeCheckedCount = filtered.filter((item) => batchChecked.has(String(item.id))).length;
-  const allTypeChecked = filtered.length > 0 && typeCheckedCount === filtered.length;
+  const typeCheckedCount = flatItems.filter((item) => batchChecked.has(String(item.id))).length;
+  const allTypeChecked = flatItems.length > 0 && typeCheckedCount === flatItems.length;
   const typeIndeterminate = typeCheckedCount > 0 && !allTypeChecked;
 
   const historyAssetId = detailId || selected?.id;
@@ -549,8 +582,8 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
 
   useEffect(() => {
     if (selected && selected.id !== selectedId) setSelectedId(selected.id);
-    if (!filtered.length && selectedId != null) setSelectedId(null);
-  }, [filtered, selected, selectedId]);
+    if (!flatItems.length && selectedId != null) setSelectedId(null);
+  }, [flatItems, selected, selectedId]);
 
   useEffect(() => {
     setNameDraft(selected?.name || "");
@@ -791,6 +824,14 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
 
   async function generate(asset) {
     if (!asset) return;
+    if (isStateAsset(asset)) {
+      const base = baseAssetOf(asset, assets);
+      // 状态图是本体图的改图：本体还没有图就生成，出来的是另一张新脸。
+      if (base && !hasImage(base)) {
+        showToast(`请先给本体「${base.name}」生成设定图，再生成状态图`);
+        return;
+      }
+    }
     if (dirtyOf(asset) || !identityOf(asset)) {
       showToast("请先填写并保存图片提示词");
       return;
@@ -811,11 +852,22 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
       showToast("请先勾选要生成的资产");
       return;
     }
-    const skipped = checkedAssets.filter((item) => dirtyOf(item) || !identityOf(item)).length;
-    const queue = checkedAssets.filter((item) => identityOf(item) && !dirtyOf(item) && !item.generating && !isBusy(item.id, "generate"));
+    const blockedStates = checkedAssets.filter((item) => {
+      if (!isStateAsset(item)) return false;
+      const base = baseAssetOf(item, assets);
+      return Boolean(base) && !hasImage(base);
+    });
+    const skipped = checkedAssets.filter((item) => dirtyOf(item) || !identityOf(item)).length + blockedStates.length;
+    const queue = checkedAssets.filter((item) => identityOf(item)
+      && !dirtyOf(item)
+      && !blockedStates.includes(item)
+      && !item.generating
+      && !isBusy(item.id, "generate"));
     const queuedCount = queue.length;
     if (!queue.length) {
-      showToast(skipped ? "所选资产暂无可用提示词，请先填写并保存" : "勾选的资产正在生成中，请稍后再试");
+      showToast(blockedStates.length
+        ? `有 ${blockedStates.length} 个状态需先给本体生成设定图，已跳过`
+        : skipped ? "所选资产暂无可用提示词，请先填写并保存" : "勾选的资产正在生成中，请稍后再试");
       return;
     }
     const limitRetries = new Map();
@@ -1016,6 +1068,11 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   const selectedBusy = isBusy(selected?.id, "lock") || isBusy(selected?.id, "save") || isBusy(selected?.id, "upload");
   const selectedGenerating = Boolean(selected?.generating) || isBusy(selected?.id, "generate");
   const detailAsset = assets.find((item) => item.id === detailId) || null;
+  // 本体弹窗里挂状态入口；状态弹窗里挂回本体的入口。
+  const detailStateList = detailAsset && detailAsset.type === "角色" && !isStateAsset(detailAsset)
+    ? (cardsByType.角色.find((card) => card.asset.id === detailAsset.id)?.states || [])
+    : [];
+  const detailBase = detailAsset && isStateAsset(detailAsset) ? baseAssetOf(detailAsset, assets) : null;
 
   useEffect(() => {
     setFinalSelectMode(false);
@@ -1187,7 +1244,8 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
             </section>
           ) : (
             <div className="asset-grid">
-              {filtered.map((item) => {
+              {filtered.map((card) => {
+                const item = card.asset;
                 const src = mediaUrl(item.imageStorageKey || item.imageUrl, { w: MEDIA_THUMB_WIDTH });
                 const generating = Boolean(item.generating) || isBusy(item.id, "generate");
                 const uploading = isBusy(item.id, "upload");
@@ -1284,6 +1342,66 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                         </div>
                       )}
                     </div>
+                    {card.states.length > 0 && (
+                      <div className="asset-state-row">
+                        <span className="asset-state-caption">状态</span>
+                        {card.states.map((state) => {
+                          const stateSrc = mediaUrl(state.imageStorageKey || state.imageUrl, { w: MEDIA_THUMB_WIDTH });
+                          const stateGenerating = Boolean(state.generating) || isBusy(state.id, "generate");
+                          const stateChecked = batchChecked.has(String(state.id));
+                          return (
+                            <div className={`asset-state-item${stateChecked ? " is-selected" : ""}`} key={state.id}>
+                              {batchSelectMode ? (
+                                <label className="asset-state-check" title={`${stateChecked ? "取消选择" : "选择"} ${state.name}`}>
+                                  <input
+                                    type="checkbox"
+                                    checked={stateChecked}
+                                    disabled={batchRunning}
+                                    aria-label={`选择 ${state.name}`}
+                                    onChange={() => toggleBatchAsset(state.id)}
+                                  />
+                                  <span className="asset-checkbox" aria-hidden="true"><Check size={12} /></span>
+                                </label>
+                              ) : null}
+                              <button
+                                type="button"
+                                className="asset-state-thumb"
+                                disabled={batchRunning}
+                                aria-label={`查看 ${state.name} 的状态图`}
+                                title={state.name}
+                                onClick={() => openDetail(state)}
+                              >
+                                {stateSrc ? <img src={stateSrc} alt={state.name} onError={retryMediaOnce} /> : <ImageIcon size={18} />}
+                                {stateGenerating && <span className="asset-state-spin" aria-label="生成中" />}
+                              </button>
+                              <div className="asset-state-meta">
+                                <button
+                                  type="button"
+                                  className="asset-state-name"
+                                  disabled={batchRunning}
+                                  title={state.name}
+                                  onClick={() => openDetail(state)}
+                                >
+                                  {stateLabel(state)}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="asset-state-generate"
+                                  disabled={!modelBound || batchRunning || stateGenerating}
+                                  title={!modelBound ? "先选择图像模型" : `生成「${state.name}」状态图`}
+                                  onClick={() => {
+                                    setSelectedId(state.id);
+                                    generate(state).catch((err) => showToast(err.message));
+                                  }}
+                                >
+                                  {stateGenerating ? <span className="asset-spinner small" /> : <Sparkles size={13} />}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                     <div className="asset-prompt-field">
                       <label htmlFor={`prompt-${item.id}`}>{isStateAsset(item) ? "状态外观" : "图片提示词"}</label>
                       <textarea
@@ -1399,6 +1517,21 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
             </header>
             <div className="asset-image-modal-body">
               <div className="asset-modal-config">
+                {(detailStateList.length > 0 || detailBase) && (
+                  <div className="asset-modal-states">
+                    {detailBase && (
+                      <button type="button" title={detailBase.name} onClick={() => openDetail(detailBase)}>
+                        <ImageIcon size={13} /> 本体 {detailBase.name}
+                      </button>
+                    )}
+                    {detailStateList.map((state) => (
+                      <button key={state.id} type="button" title={state.name} onClick={() => openDetail(state)}>
+                        {stateLabel(state)}
+                        {(Boolean(state.generating) || isBusy(state.id, "generate")) ? "…" : ""}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <section className="asset-modal-section">
                   <div className="asset-modal-parameter-grid">
                     <ImageModelSelect
