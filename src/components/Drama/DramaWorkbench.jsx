@@ -18,6 +18,7 @@ import { DramaStoryboard } from "./DramaStoryboard.jsx";
 import { DramaStylePicker } from "./DramaStylePicker.jsx";
 import { dramaStyleOf } from "./dramaStyles.js";
 import { preferredResolution, resolutionOptionsFor } from "./dramaSpecs.js";
+import { modelLogoSrc } from "../../lib/modelLogos.js";
 
 const STEPS = [
   { id: "script", label: "剧本" },
@@ -51,13 +52,6 @@ function RatioIcon({ ratio }) {
       <rect x={(24 - width) / 2} y={(24 - height) / 2} width={width} height={height} rx="1.8" />
     </svg>
   );
-}
-
-function modelLogo(name = "") {
-  const text = name.toLowerCase();
-  if (text.includes("doubao") || text.includes("seedance") || text.includes("bytedance")) return "/assets/model-logos/bytedance-seed.ico";
-  if (text.includes("minimax")) return "/assets/model-logos/minimax.ico";
-  return "/assets/model-logos/agnes.png";
 }
 
 function stepFromSearch(searchParams) {
@@ -97,6 +91,7 @@ function DramaSeriesSpecs({ seriesId, series, onError, styleOnly = false }) {
   const videoModelName = series?.videoModelName
     || videoModels.find((item) => String(item.id) === videoModelId)?.name
     || "请选择视频模型";
+  const videoModelLogo = modelLogoSrc(videoModels.find((item) => String(item.id) === videoModelId) || { name: series?.videoModelName });
   const aspectRatio = series?.aspectRatio || "16:9";
 
   useEffect(() => {
@@ -212,7 +207,7 @@ function DramaSeriesSpecs({ seriesId, series, onError, styleOnly = false }) {
           disabled={pending || videoModelsQuery.isLoading}
           onClick={() => toggleMenu("model")}
         >
-          <img className={`model-brand-logo${modelLogo(videoModelName).endsWith("agnes.png") ? " agnes-logo" : ""}`} src={modelLogo(videoModelName)} alt="" />
+          <img className={`model-brand-logo${videoModelLogo.includes("agnes") ? " agnes-logo" : ""}`} src={videoModelLogo} alt="" />
           <span>{videoModelName}</span>
           <ChevronDown className="workspace-setting-chevron" size={15} />
         </button>
@@ -229,7 +224,7 @@ function DramaSeriesSpecs({ seriesId, series, onError, styleOnly = false }) {
                   if (String(item.id) !== videoModelId) bindVideo.mutate(String(item.id));
                 }}
               >
-                <img className="model-brand-logo" src={modelLogo(item.name)} alt="" />
+                <img className="model-brand-logo" src={modelLogoSrc(item)} alt="" />
                 <span>{item.name}</span>
                 {String(item.id) === videoModelId && <span className="workspace-option-check">✓</span>}
               </button>

@@ -62,9 +62,10 @@ import {
   updateAdminUser,
 } from "../api/admin.js";
 import { adapterSpecificFields, adaptersMatchingProvider, audioFormatsForAdapter, providerChoicesForAdapters, sanitizeAdapterSpecificConfig, textReasoningEnabled, withTextReasoning } from "./adminModelConfig.js";
-import { defaultPricing, normalizePricing, normalizePricingUnit, pricingUnits, pricingValidationError } from "../lib/pricing.js";
+import { BASE_TIER, characterRuleText, convertPricingUnit, defaultPricing, normalizePricing, normalizePricingUnit, pricingUnits, pricingValidationError, resolveCjkWeight, tierUnits } from "../lib/pricing.js";
 import { textUsageOperationLabel, textUsageOperations, textUsageReconciliationLabel } from "../lib/textUsage.js";
 import { healthLevel, observabilityCategoryLabel } from "../lib/modelObservability.js";
+import { FALLBACK_LOGO, MODEL_LOGO_CATALOG, matchModelLogo, modelLogoSrc } from "../lib/modelLogos.js";
 
 const adminMenus = [
   { id: "dashboard", label: "仪表盘", icon: LayoutDashboard },
@@ -205,6 +206,28 @@ function isMiniMaxSpeech(adapterKey) {
   return adapterKey === "minimax-speech";
 }
 
+function supportedTiers(model) {
+  const all = tierUnits(model?.category);
+  if (!all) return null;
+  const adapter = String(model?.adapterKey || "").toLowerCase();
+  const key = String(model?.modelKey || "").toLowerCase();
+  const provider = String(model?.provider || "").toLowerCase();
+  if (model?.category !== "video") return all;
+  if (adapter.includes("agnes")) return all.filter((t) => t === "720P");
+  if (adapter === "minimax-h3") {
+    if (/comfy/i.test(provider)) return all;
+    if (key.includes("h3-max") || key.includes("h3_max")) return all.filter((t) => t === "480P" || t === "768P");
+    return all.filter((t) => t === "768P" || t === "2K");
+  }
+  if (adapter === "seedance-2.5") return all.filter((t) => t === "480P" || t === "720P");
+  if (adapter === "seedance-2.0") {
+    if (key.includes("fast") || key.includes("mini")) return all.filter((t) => t === "480P" || t === "720P");
+    return all.filter((t) => t === "480P" || t === "720P" || t === "1080P");
+  }
+  if (adapter === "wan3") return all.filter((t) => t === "480P" || t === "720P" || t === "1080P");
+  return all;
+}
+
 function audioCapabilityOf(model) {
   if (model?.category !== "video") return { supported: false, max: 0, audioOnly: false };
   if (model.adapterKey === "wan3") return { supported: true, max: 5, audioOnly: false };
@@ -338,56 +361,6 @@ function inferAdapterKey(model) {
   }
   if (key.includes("gpt-image") || (provider.includes("running") && category === "image")) return "gpt-image-2";
   return defaultAdapterKey(category);
-}
-
-const MODEL_LOGO_CATALOG = [
-  { file: "/model-logos/agnes.svg", label: "Agnes AI", keys: ["agnes"] },
-  { file: "/model-logos/deepseek.svg", label: "DeepSeek", keys: ["deepseek", "深度求索"] },
-  { file: "/model-logos/xiaomi-color.svg", label: "小米 / MiMo", keys: ["mimo", "xiaomi", "小米"] },
-  { file: "/model-logos/zhipu-color.svg", label: "智谱 / GLM", keys: ["zhipu", "智谱", "质谱", "glm", "chatglm", "cogvideo", "清影"] },
-  { file: "/model-logos/kimi.svg", label: "Kimi / 月之暗面", keys: ["kimi", "moonshot", "月之暗面"] },
-  { file: "/model-logos/openai.svg", label: "OpenAI / GPT", keys: ["gpt-image", "gpt", "openai", "dall-e", "dalle", "sora"] },
-  { file: "/model-logos/bytedance-color.svg", label: "字节 / Seedance", keys: ["seedance", "seedream", "bytedance"] },
-  { file: "/model-logos/doubao-color.svg", label: "豆包", keys: ["doubao", "豆包"] },
-  { file: "/model-logos/midjourney.svg", label: "Midjourney / Niji", keys: ["midjourney", "niji"] },
-  { file: "/model-logos/qwen-color.svg", label: "通义千问", keys: ["qwen", "tongyi", "千问"] },
-  { file: "/model-logos/kling-color.svg", label: "可灵", keys: ["kling", "可灵"] },
-  { file: "/model-logos/alibabacloud-color.svg", label: "阿里 / 万相", keys: ["wan2", "wan3", "wan-", "万相", "alibaba", "aliyun"] },
-  { file: "/model-logos/minimax-color.svg", label: "MiniMax", keys: ["minimax"] },
-  { file: "/model-logos/hailuo-color.svg", label: "海螺", keys: ["hailuo", "海螺"] },
-  { file: "/model-logos/runway.svg", label: "Runway", keys: ["runway", "aleph"] },
-  { file: "/model-logos/google-color.svg", label: "Google", keys: ["google", "gemini", "imagen", "veo", "omni"] },
-  { file: "/model-logos/lightricks.svg", label: "Lightricks / LTX", keys: ["ltx", "lightricks"] },
-  { file: "/model-logos/nanobanana-color.svg", label: "Banana", keys: ["banana"] },
-  { file: "/model-logos/elevenlabs.svg", label: "ElevenLabs", keys: ["eleven"] },
-  { file: "/model-logos/comfyui-color.svg", label: "ComfyUI", keys: ["comfy"] },
-];
-const FALLBACK_LOGO = "/model-logos/comfyui-color.svg";
-
-function matchModelLogo(name, modelKey, provider) {
-  const haystack = `${name || ""} ${modelKey || ""} ${provider || ""}`.toLowerCase();
-  let best = null;
-  let bestLen = 0;
-  for (const item of MODEL_LOGO_CATALOG) {
-    for (const key of item.keys) {
-      if (haystack.includes(key.toLowerCase()) && key.length > bestLen) {
-        best = item.file;
-        bestLen = key.length;
-      }
-    }
-  }
-  if (best) return best;
-  return FALLBACK_LOGO;
-}
-
-function modelLogoSrc(model) {
-  const stored = model?.logo;
-  const matched = matchModelLogo(model?.name, model?.modelKey, model?.provider);
-  if (!stored || stored === FALLBACK_LOGO) return matched;
-  if (stored === "/model-logos/openai.svg" && (matched === "/model-logos/agnes.svg" || matched === "/model-logos/deepseek.svg")) {
-    return matched;
-  }
-  return stored;
 }
 
 function endpointLabel(provider) {
@@ -935,6 +908,7 @@ function ModelDialog({ model, onClose, onSave, saving }) {
           : normalizeProviderSource(adapterOf(adapterKey)?.provider || model.provider)));
     return {
       ...model,
+      pricing: normalizePricing(model.category || "image", model.pricing),
       adapterKey,
       provider,
       capabilities: filterCapsForAdapter(model.capabilities, model.category || "image", adapterKey),
@@ -952,6 +926,13 @@ function ModelDialog({ model, onClose, onSave, saving }) {
       logo: modelLogoSrc(model),
     };
   });
+  // 分辨率分档定价：当前正在编辑的档位（视频/图片），文本/语音为 null
+  const [tier, setTier] = useState(() => (tierUnits(draft.category) ? BASE_TIER[draft.category] : null));
+  useEffect(() => {
+    const options = supportedTiers(draft);
+    if (!options) return;
+    if (!options.includes(tier)) setTier(options.includes(BASE_TIER[draft.category]) ? BASE_TIER[draft.category] : options[0]);
+  }, [draft.adapterKey, draft.modelKey, draft.category, draft.provider, tier]);
   const update = (key, value) => setDraft((current) => ({ ...current, [key]: value }));
   const updateIdentity = (patch) => setDraft((current) => {
     const next = { ...current, ...patch };
@@ -983,6 +964,11 @@ function ModelDialog({ model, onClose, onSave, saving }) {
     }
     if (category === "audio" && current.adapterKey !== adapter.key) {
       const minimaxSpeech = isMiniMaxSpeech(adapter.key);
+      // 换语音适配协议时清掉旧的汉字计费口径，按新供应商默认推断（MiniMax=2，火山/Ark=1）
+      if (current.pricing?.cjkWeight != null) {
+        const { cjkWeight, ...restPricing } = current.pricing;
+        next.pricing = restPricing;
+      }
       next.defaultVoice = minimaxSpeech ? "male-qn-qingse" : "alloy";
       next.voicesText = minimaxSpeech
         ? "male-qn-qingse, male-qn-jingying, male-qn-badao, male-qn-daxuesheng, female-shaonv, female-yujie, female-chengshu, female-tianmei"
@@ -1031,6 +1017,7 @@ function ModelDialog({ model, onClose, onSave, saving }) {
   const changeAdapter = (adapterKey) => setDraft((current) => applyAdapter(current, adapterKey));
   const changeCategory = (category) => {
     setPricingError("");
+    setTier(tierUnits(category) ? BASE_TIER[category] : null);
     setDraft((current) => {
       const next = applyAdapter(current, defaultAdapterKey(category), category);
       return { ...next, pricing: normalizePricing(category, current.pricing) };
@@ -1078,11 +1065,33 @@ function ModelDialog({ model, onClose, onSave, saving }) {
     setPricingError("");
     setDraft((current) => ({ ...current, pricing: { ...(current.pricing || emptyPricing), [side]: { ...(current.pricing?.[side] || emptyPricing[side]), [key]: value } } }));
   };
+  // 分档价编辑：写入当前档位；改基准档时同步 output（卡片展示与缺档兜底都以基准价为准）
+  const updateTierPrice = (side, key, value) => {
+    if (!tier || key !== "output") {
+      updatePrice(side, key, value);
+      return;
+    }
+    setPricingError("");
+    setDraft((current) => {
+      const pricing = current.pricing || emptyPricing;
+      const sideValues = { ...(pricing[side] || emptyPricing[side]) };
+      sideValues.tiers = { ...(sideValues.tiers || {}), [tier]: value };
+      if (tier === BASE_TIER[current.category]) sideValues.output = value;
+      return { ...current, pricing: { ...pricing, [side]: sideValues } };
+    });
+  };
   const adapter = adapterOf(draft.adapterKey);
   const sourceProviders = providersForCategory(draft.category);
   const sourceAdapters = adaptersForCategoryAndProvider(draft.category, draft.provider);
   const isText = draft.category === "text";
+  // 计费规则行的字段数（计费单位 + 汉字口径 + 分辨率定价）：奇数时补一个空位，
+  // 让后面的售价/成本两个 PriceEditor 始终落在同一行，不会被顶歪
+  const pricingRowFields = 1
+    + (draft.category === "audio" && ["千字符", "万字符"].includes(draft.pricing?.unit) ? 1 : 0)
+    + (tierUnits(draft.category) ? 1 : 0);
   const isAudio = draft.category === "audio";
+  // 汉字计费口径由后端内置规则表下发（pricing.cjkWeight / cjkWeightLabel / cjkWeightSource），只读展示不可编辑
+  const characterRule = characterRuleText(draft.pricing, draft.adapterKey);
   const isMiniMaxAudio = isMiniMaxSpeech(draft.adapterKey);
   const audioFormats = audioFormatsForAdapter(draft.adapterKey);
   const specificFields = new Set(adapterSpecificFields(draft.adapterKey, draft.provider));
@@ -1186,10 +1195,15 @@ function ModelDialog({ model, onClose, onSave, saving }) {
           ))}
           {!isText && draft.provider === "RunningHub" && <><label>实例类型<input value={draft.instanceType || ""} onChange={(event) => update("instanceType", event.target.value)} placeholder="可选，如 48G" /></label><label>并发限制<input type="number" min="1" max="10" value={draft.concurrentLimit || 1} onChange={(event) => update("concurrentLimit", Number(event.target.value))} /></label></>}
           <label className="model-form-wide">能力说明<input value={draft.description || ""} onChange={(event) => update("description", event.target.value)} placeholder="简要说明适用场景" /></label>
-          <label>计费单位<DemoSelect ariaLabel="计费单位" value={normalizePricingUnit(draft.category, draft.pricing?.unit)} onChange={(value) => { setPricingError(""); setDraft((current) => ({ ...current, pricing: { ...(current.pricing || emptyPricing), unit: value } })); }} options={pricingUnits(draft.category).map((unit) => ({ value: unit, label: unit }))} /></label>
-          <div />
-          <PriceEditor title="售价" category={draft.category} values={draft.pricing?.sale || emptyPricing.sale} onChange={(key, value) => updatePrice("sale", key, value)} />
-          <PriceEditor title="成本" category={draft.category} values={draft.pricing?.cost || emptyPricing.cost} onChange={(key, value) => updatePrice("cost", key, value)} />
+          <label>计费单位<DemoSelect ariaLabel="计费单位" value={normalizePricingUnit(draft.category, draft.pricing?.unit)} onChange={(value) => { setPricingError(""); setDraft((current) => ({ ...current, pricing: convertPricingUnit(current.pricing || emptyPricing, current.category, value) })); }} options={pricingUnits(draft.category).map((unit) => ({ value: unit, label: unit }))} /></label>
+          {isAudio && ["千字符", "万字符"].includes(draft.pricing?.unit) && <label className="model-form-readonly">汉字计费口径<span className="readonly-value">{characterRule.label}<small>{characterRule.source}</small></span></label>}
+          {tierUnits(draft.category)
+            && <label>分辨率定价<DemoSelect ariaLabel="分辨率定价" value={tier || BASE_TIER[draft.category]} onChange={setTier} options={(supportedTiers(draft) || tierUnits(draft.category)).map((unit) => ({ value: unit, label: unit }))} /></label>}
+          {pricingRowFields % 2 === 1 && <div />}
+          <PriceEditor title={tier ? `售价 · ${tier}` : "售价"} category={draft.category} values={tier ? { output: draft.pricing?.sale?.tiers?.[tier] ?? draft.pricing?.sale?.output ?? "0" } : (draft.pricing?.sale || emptyPricing.sale)} onChange={(key, value) => updateTierPrice("sale", key, value)} />
+          <PriceEditor title={tier ? `成本 · ${tier}` : "成本"} category={draft.category} values={tier ? { output: draft.pricing?.cost?.tiers?.[tier] ?? draft.pricing?.cost?.output ?? "0" } : (draft.pricing?.cost || emptyPricing.cost)} onChange={(key, value) => updateTierPrice("cost", key, value)} />
+          {tier && <small className="model-logo-hint model-form-wide">各档独立定价：切换分辨率分别填写售价/成本。基准档（{BASE_TIER[draft.category]}）同时作为卡片展示价与缺档兜底；图片清晰度倍率（中 ×1.5 / 高 ×2）在所选档价上叠加。首次打开已按基准价 × 全局倍率生成各档初值。</small>}
+          {isAudio && ["千字符", "万字符"].includes(draft.pricing?.unit) && <small className="model-logo-hint model-form-wide">字符计数口径由供应商官方计费规则内置，不可手动修改：{characterRule.label}（{characterRule.source}）。若该供应商的计费规则有变，请在接入前核对官方文档并更新服务端规则表。</small>}
           {pricingError && <div className="admin-notice admin-notice--error model-form-wide" role="alert">{pricingError}</div>}
         </div>
         <footer>
@@ -1208,13 +1222,14 @@ function ModelDialog({ model, onClose, onSave, saving }) {
   </div>;
 }
 
-function PriceCell({ title, pricing, side }) {
+function PriceCell({ title, pricing, side, category }) {
   const values = pricing?.[side] || {};
-  return <div className={`price-cell price-cell--${side}`}><strong>{title} · {values.output || "0"}/{pricing?.unit || "次"}</strong><small>输入 {values.input || "0"} · 缓存 {values.cache || "0"}</small></div>;
+  // 输入/缓存价只有文本模型（按 Token 三价计费）有意义，其他类型不展示
+  return <div className={`price-cell price-cell--${side}`}><strong>{title} · {values.output || "0"}/{pricing?.unit || "次"}</strong>{category === "text" && <small>输入 {values.input || "0"} · 缓存 {values.cache || "0"}</small>}</div>;
 }
 
 function ModelCard({ model, onToggle, onEdit, onRemove }) {
-  return <article className="model-card"><header><span className="model-logo"><img src={modelLogoSrc(model)} alt="" /></span><div><strong>{model.name}</strong><small>{model.modelKey}</small></div><label className="toggle-switch"><input aria-label={`${model.name} 创作端可用`} type="checkbox" checked={model.enabled !== false} onChange={(event) => onToggle(event.target.checked)} /><span /></label></header><p>{model.description}</p><div className="model-card-meta"><span>{categoryLabels[model.category] || model.category}</span><span>{model.provider}</span><span><i />{model.hasApiKey ? "密钥已配置" : "未配置密钥"}</span>{(model.category === "video" || model.category === "audio") && <span><AudioLines size={12} />{audioModelLabel(model)}</span>}</div><div className="model-card-pricing"><PriceCell title="售价" pricing={model.pricing} side="sale" /><PriceCell title="成本" pricing={model.pricing} side="cost" /></div><footer><span>{model.category === "text" ? "用于漫剧文本" : "同步至创作端"}</span><div><button aria-label={`编辑模型：${model.name}`} onClick={onEdit}><Pencil size={14} /> 编辑</button><button className="danger" aria-label={`删除模型：${model.name}`} onClick={onRemove}><Trash2 size={14} /></button></div></footer></article>;
+  return <article className="model-card"><header><span className="model-logo"><img src={modelLogoSrc(model)} alt="" /></span><div><strong>{model.name}</strong><small>{model.modelKey}</small></div><label className="toggle-switch"><input aria-label={`${model.name} 创作端可用`} type="checkbox" checked={model.enabled !== false} onChange={(event) => onToggle(event.target.checked)} /><span /></label></header><p>{model.description}</p><div className="model-card-meta"><span>{categoryLabels[model.category] || model.category}</span><span>{model.provider}</span><span><i />{model.hasApiKey ? "密钥已配置" : "未配置密钥"}</span>{(model.category === "video" || model.category === "audio") && <span><AudioLines size={12} />{audioModelLabel(model)}</span>}</div><div className="model-card-pricing"><PriceCell title="售价" pricing={model.pricing} side="sale" category={model.category} /><PriceCell title="成本" pricing={model.pricing} side="cost" category={model.category} /></div><footer><span>{model.category === "text" ? "用于漫剧文本" : "同步至创作端"}</span><div><button aria-label={`编辑模型：${model.name}`} onClick={onEdit}><Pencil size={14} /> 编辑</button><button className="danger" aria-label={`删除模型：${model.name}`} onClick={onRemove}><Trash2 size={14} /></button></div></footer></article>;
 }
 
 function toModelPayload(draft) {
@@ -1245,6 +1260,14 @@ function toModelPayload(draft) {
     adapterConfig.minSpeed = Number(draft.minSpeed || 0.25);
     adapterConfig.maxSpeed = Number(draft.maxSpeed || 4);
   }
+  // 语音按字符计费的模型总是把汉字口径写成显式配置，让 pricing 自身成为真相来源，
+  // 计费不再依赖「adapterKey 字符串是否含 minimax-speech」这类推断；换协议时由 applyAdapter 清除后重新推断。
+  const pricing = { ...(draft.pricing || defaultPricing(category)) };
+  if (category === "audio" && ["千字符", "万字符"].includes(pricing.unit)) {
+    pricing.cjkWeight = resolveCjkWeight(pricing, adapterKey);
+  } else {
+    delete pricing.cjkWeight;
+  }
   return {
     name: draft.name,
     modelKey: draft.modelKey,
@@ -1255,7 +1278,7 @@ function toModelPayload(draft) {
     category,
     capabilities: category === "text" ? ["text"] : caps,
     adapterConfig,
-    pricing: draft.pricing,
+    pricing,
     enabled: draft.enabled !== false,
     description: draft.description,
     badge: draft.badge || categoryBadge(category),
@@ -1367,7 +1390,7 @@ function ModelsPage() {
     <div className="model-category-tabs" role="tablist" aria-label="模型类型">{categoryTabs.map((tab) => <button role="tab" aria-selected={category === tab.id} className={category === tab.id ? "active" : ""} key={tab.id} onClick={() => setCategory(tab.id)}>{tab.label}<span>{tab.id === "all" ? modelItems.length : modelItems.filter((item) => item.category === tab.id).length}</span></button>)}</div>
     <div className="model-summary"><span><Server size={17} /><b>{modelItems.filter((item) => item.provider === "ComfyUI").length}</b> ComfyUI</span><span><CloudCog size={17} /><b>{modelItems.filter((item) => item.provider === "RunningHub").length}</b> RunningHub</span><span><Globe size={17} /><b>{modelItems.filter((item) => String(item.provider || "").startsWith("官方API")).length}</b> 官方API</span><span><Cpu size={17} /><b>{modelItems.filter((item) => item.provider === "自定义配置" || item.provider === "手动配置").length}</b> 自定义配置</span><em>已启用 {modelItems.filter((item) => item.enabled !== false).length} / {modelItems.length}</em></div>
     <div className="model-toolbar"><label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索模型名称或标识" /></label><DemoSelect ariaLabel="筛选接入来源" value={provider} onChange={setProvider} options={providerOptions.map((item) => ({ value: item, label: item }))} /><div className="view-switch" role="group" aria-label="视图模式"><button className={view === "cards" ? "active" : ""} aria-label="卡片模式" onClick={() => setView("cards")}><Grid2X2 size={15} /></button><button className={view === "list" ? "active" : ""} aria-label="列表模式" onClick={() => setView("list")}><List size={15} /></button></div></div>
-    {view === "cards" ? <div className="model-card-grid">{visible.map((model) => <ModelCard key={model.id} model={model} onToggle={(enabled) => toggleMutation.mutate({ id: model.id, enabled })} onEdit={() => setEditing({ ...model, apiKey: "" })} onRemove={() => setDeleteModelTarget(model)} />)}</div> : <div className="admin-table-card model-table"><div className="admin-table-scroll"><table><thead><tr><th>模型</th><th>类型</th><th>接入来源</th><th>语音能力</th><th>售价</th><th>成本</th><th>服务状态</th><th>创作端可用</th><th>操作</th></tr></thead><tbody>{visible.map((model) => <tr key={model.id}><td><span className="table-model-logo"><img src={modelLogoSrc(model)} alt="" /></span><span><strong>{model.name}</strong><small>{model.modelKey}</small></span></td><td><span className="category-chip">{categoryLabels[model.category]}</span></td><td>{model.provider}</td><td>{audioModelLabel(model)}</td><td><PriceCell title="售价" pricing={model.pricing} side="sale" /></td><td><PriceCell title="成本" pricing={model.pricing} side="cost" /></td><td><span className="service-ok"><i />{model.hasApiKey ? "密钥已配置" : "未配置密钥"}</span></td><td><label className="toggle-switch"><input aria-label={`${model.name} 创作端可用`} type="checkbox" checked={model.enabled !== false} onChange={(event) => toggleMutation.mutate({ id: model.id, enabled: event.target.checked })} /><span /></label></td><td><div className="table-actions"><button aria-label={`编辑模型：${model.name}`} onClick={() => setEditing({ ...model, apiKey: "" })}><Pencil size={14} /></button><button className="danger" aria-label={`删除模型：${model.name}`} onClick={() => { setDeleteModelTarget(model); }}><Trash2 size={14} /></button></div></td></tr>)}</tbody></table></div></div>}
+    {view === "cards" ? <div className="model-card-grid">{visible.map((model) => <ModelCard key={model.id} model={model} onToggle={(enabled) => toggleMutation.mutate({ id: model.id, enabled })} onEdit={() => setEditing({ ...model, apiKey: "" })} onRemove={() => setDeleteModelTarget(model)} />)}</div> : <div className="admin-table-card model-table"><div className="admin-table-scroll"><table><thead><tr><th>模型</th><th>类型</th><th>接入来源</th><th>语音能力</th><th>售价</th><th>成本</th><th>服务状态</th><th>创作端可用</th><th>操作</th></tr></thead><tbody>{visible.map((model) => <tr key={model.id}><td><span className="table-model-logo"><img src={modelLogoSrc(model)} alt="" /></span><span><strong>{model.name}</strong><small>{model.modelKey}</small></span></td><td><span className="category-chip">{categoryLabels[model.category]}</span></td><td>{model.provider}</td><td>{audioModelLabel(model)}</td><td><PriceCell title="售价" pricing={model.pricing} side="sale" category={model.category} /></td><td><PriceCell title="成本" pricing={model.pricing} side="cost" category={model.category} /></td><td><span className="service-ok"><i />{model.hasApiKey ? "密钥已配置" : "未配置密钥"}</span></td><td><label className="toggle-switch"><input aria-label={`${model.name} 创作端可用`} type="checkbox" checked={model.enabled !== false} onChange={(event) => toggleMutation.mutate({ id: model.id, enabled: event.target.checked })} /><span /></label></td><td><div className="table-actions"><button aria-label={`编辑模型：${model.name}`} onClick={() => setEditing({ ...model, apiKey: "" })}><Pencil size={14} /></button><button className="danger" aria-label={`删除模型：${model.name}`} onClick={() => { setDeleteModelTarget(model); }}><Trash2 size={14} /></button></div></td></tr>)}</tbody></table></div></div>}
     {!visible.length && <div className="admin-empty"><Bot size={22} /><strong>没有匹配的模型</strong><span>接入模型或调整类型、来源、关键词后重试。</span></div>}
     {deleteModelTarget && <ConfirmDialog
       open

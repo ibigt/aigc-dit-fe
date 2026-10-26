@@ -37,6 +37,7 @@ import { ConfirmDialog } from "../ConfirmDialog.jsx";
 import { BatchGenerateModal } from "./BatchGenerateModal.jsx";
 import { PromptChipEditor } from "./PromptChipEditor.jsx";
 import { narrativeMentionCount, parsePromptToTokens, referenceIdsOf } from "../../lib/promptChips.js";
+import { modelLogoSrc } from "../../lib/modelLogos.js";
 import { GenerationHistoryPanel, SwitchFinalModal } from "./GenerationHistoryPanel.jsx";
 import { VideoLightbox } from "./VideoLightbox.jsx";
 import { DRAMA_ASPECT_RATIOS, preferredResolution, resolutionOptionsFor } from "./dramaSpecs.js";
@@ -242,14 +243,6 @@ function isOfficialSeedance(model) {
     || key.includes("doubao-seedance-2.5") || key.includes("doubao-seedance-2-5");
 }
 
-/** 接口未返回 supportsI2v 时，按适配协议判断；RunningHub 的 seedance-2 没有首尾帧。 */
-function modelLogo(name = "") {
-  const text = name.toLowerCase();
-  if (text.includes("doubao") || text.includes("seedance") || text.includes("bytedance")) return "/assets/model-logos/bytedance-seed.ico";
-  if (text.includes("minimax")) return "/assets/model-logos/minimax.ico";
-  return "/assets/model-logos/agnes.png";
-}
-
 function modelSupportsR2v(model) {
   if (!model) return true;
   return model.supportsR2v !== false;
@@ -274,6 +267,7 @@ function previousFrameReady(shot) {
   return Boolean(shot && (shot.endFrameKey || shot.endFrameUrl || shot.videoTailKey || shot.videoTailUrl || shot.videoKey || shot.videoUrl));
 }
 
+/** 接口未返回 supportsI2v 时，按适配协议判断；RunningHub 的 seedance-2 没有首尾帧。 */
 function modelSupportsI2v(model) {
   if (!model) return false;
   if (model.supportsI2v === true) return true;
@@ -610,7 +604,7 @@ function ShotPromptPane({
             disabled={frozen}
             onClick={() => setMenu((current) => (current === "model" ? null : "model"))}
           >
-            <img className="model-brand-logo" src={modelLogo(videoModelName)} alt="" />
+            <img className="model-brand-logo" src={modelLogoSrc(selectedVideoModel || { name: videoModelName })} alt="" />
             <span>{videoModelName}</span>
             <ChevronDown size={14} />
           </button>
@@ -628,7 +622,7 @@ function ShotPromptPane({
                     if (String(item.id) !== String(videoModelId)) onVideoModel(String(item.id));
                   }}
                 >
-                  <img className="model-brand-logo" src={modelLogo(item.name)} alt="" />
+                  <img className="model-brand-logo" src={modelLogoSrc(item)} alt="" />
                   <span>{item.name}</span>
                 </button>
               ))}

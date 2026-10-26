@@ -4028,6 +4028,12 @@ a {
     z-index: 10;
 }
 
+/* 只有向上展开的菜单会伸进顶部素材区，此时面板才需要盖过参考素材条（z-index 11）；
+   向下展开的菜单不越过面板顶边，保持 10 让素材条照常叠在面板顶部 */
+.quick-creation-panel:has(.custom-select.dropup.open) {
+    z-index: 12;
+}
+
 .quick-creation-panel > .quick-panel-head,
 .quick-creation-panel > .quick-prompt-wrap,
 .quick-creation-panel > .quick-config-row {
@@ -4208,7 +4214,7 @@ a {
 
 .quick-reference-toolbar {
     position: absolute;
-    z-index: 5;
+    z-index: 11;
     left: 16px;
     right: 126px;
     top: 0;
@@ -6415,7 +6421,7 @@ a {
 
 .creation-asset-dialog > header > div {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     gap: 4px;
     min-width: 0;
 }
@@ -9323,6 +9329,26 @@ a {
     color: var(--text-tertiary);
     font-size: 11px;
     line-height: 1.45;
+}
+
+/* 只读字段：由服务端内置规则下发的口径等，界面只展示不可编辑 */
+.model-form-readonly .readonly-value {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 40px;
+    padding: 0 12px;
+    border: 1px dashed var(--border-default);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, .015);
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.model-form-readonly .readonly-value small {
+    color: var(--text-tertiary);
+    font-size: 11px;
+    line-height: 1.4;
 }
 
 .model-dialog form > footer {
