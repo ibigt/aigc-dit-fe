@@ -3697,9 +3697,13 @@
 .asset-title-group { min-width: 0; flex: 1; display: flex; align-items: center; gap: 3px; }
 .asset-title-group h3 { min-width: 0; margin: 0; overflow: hidden; color: #f1f1f3; font-size: 14px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .asset-state-chip { flex-shrink: 0; padding: 1px 6px; border-radius: 8px; font-size: 11px; font-weight: 600; line-height: 16px; color: #c9bfff; background: rgba(120, 100, 255, 0.16); white-space: nowrap; }
-.asset-state-row { display: flex; flex-direction: column; gap: 6px; padding: 9px 11px 3px; border-top: 1px solid rgba(255,255,255,.055); }
+.asset-state-row { display: flex; flex-direction: column; gap: 5px; padding: 8px 11px 7px; border-top: 1px solid rgba(255,255,255,.055); }
 .asset-state-caption { color: #a8a8af; font-size: 12px; }
-.asset-state-item { display: flex; align-items: center; gap: 9px; padding: 5px 8px; border: 1px solid rgba(255,255,255,.07); border-radius: 10px; background: #212227; }
+/* 状态条固定一行：多了横向滚动，卡片高度不随状态数变化。 */
+.asset-state-list { display: flex; gap: 6px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.14) transparent; }
+.asset-state-list::-webkit-scrollbar { height: 4px; }
+.asset-state-list::-webkit-scrollbar-thumb { border-radius: 4px; background: rgba(255,255,255,.14); }
+.asset-state-item { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; padding: 4px 8px 4px 5px; border: 1px solid rgba(255,255,255,.07); border-radius: 10px; background: #212227; }
 .asset-state-item.is-selected { border-color: rgba(145,130,255,.62); }
 .asset-state-thumb { position: relative; width: 38px; height: 38px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 0; border-radius: 8px; color: #747580; background: #2a2b31; cursor: pointer; }
 .asset-state-thumb img { width: 100%; height: 100%; object-fit: cover; }

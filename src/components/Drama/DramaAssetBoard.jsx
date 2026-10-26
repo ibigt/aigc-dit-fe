@@ -1344,7 +1344,8 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                     </div>
                     {card.states.length > 0 && (
                       <div className="asset-state-row">
-                        <span className="asset-state-caption">状态</span>
+                        <span className="asset-state-caption">状态 · {card.states.length}</span>
+                        <div className="asset-state-list" role="list">
                         {card.states.map((state) => {
                           const stateSrc = mediaUrl(state.imageStorageKey || state.imageUrl, { w: MEDIA_THUMB_WIDTH });
                           const stateGenerating = Boolean(state.generating) || isBusy(state.id, "generate");
@@ -1400,6 +1401,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                             </div>
                           );
                         })}
+                        </div>
                       </div>
                     )}
                     <div className="asset-prompt-field">
