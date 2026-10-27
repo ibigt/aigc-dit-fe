@@ -22,6 +22,7 @@ function switchCardMeta(record) {
 export function GenerationHistoryPanel({
   title = "生成记录",
   countLabel,
+  titleBadge = "",
   hint = "",
   switchLabel = "切换最终",
   records = [],
@@ -52,8 +53,11 @@ export function GenerationHistoryPanel({
     <section className={`youxi-history-block asset-generation-records${compactActions ? " asset-generation-records--compact" : ""}`}>
       <header>
         <div>
-          <strong>{title}</strong>
-          <span>{countText}</span>
+          <div className="youxi-history-title-row">
+            <strong>{title}</strong>
+            <span>{countText}</span>
+            {titleBadge ? <em className="asset-history-version-badge">{titleBadge}</em> : null}
+          </div>
           {hint ? <p className="youxi-history-hint">{hint}</p> : null}
         </div>
         <div className="youxi-history-block__actions">

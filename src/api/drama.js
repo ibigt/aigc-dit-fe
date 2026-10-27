@@ -91,6 +91,10 @@ export function createDramaAsset(episodeId, payload) {
   return api.post(`/drama/episodes/${episodeId}/assets`, payload);
 }
 
+export function createDramaAssetVersion(assetId, payload) {
+  return api.post(`/drama/assets/${assetId}/versions`, payload);
+}
+
 export function updateDramaAsset(assetId, payload) {
   return api.put(`/drama/assets/${assetId}`, payload);
 }

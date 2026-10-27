@@ -39,8 +39,20 @@ import {
   uploadDramaAssetImage,
   uploadDramaAssetVoiceReference,
   bindDramaAssetVoiceReference,
+  createDramaAssetVersion,
 } from "../../api/drama.js";
-import { assetIdentityKey, mergeEpisodeAssets, siblingAssets } from "../../lib/dramaAssets.js";
+import {
+  assetIdentityKey,
+  baseNameOf,
+  familyKey,
+  familyVersions,
+  groupAssetCards,
+  isBaseAsset,
+  isStateAsset,
+  mergeEpisodeAssets,
+  siblingAssets,
+  versionLabelOf,
+} from "../../lib/dramaAssets.js";
 import { MEDIA_THUMB_WIDTH, formatDateTime, mediaUrl, retryMediaOnce } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
@@ -56,44 +68,27 @@ const RESOLUTIONS = ["1K", "2K"];
 const BATCH_CONCURRENCY = 16;
 const emptyCreate = { name: "", meta: "" };
 
-// 状态标签兜底文案：状态名（后端的 stateLabel）缺省时按标签显示。
-const STATE_TAG_FALLBACK = { base: "基础", dream: "入梦", costume: "换装", wet: "湿身", custom: "特殊" };
-
-/** 状态名 = 资产名「本体名·状态名」的后缀，由后端给出；老数据没有就退回状态标签。 */
 function stateLabel(asset) {
-  const label = typeof asset?.stateLabel === "string" ? asset.stateLabel.trim() : "";
-  if (label) return label;
-  const tag = typeof asset?.stateTag === "string" && asset.stateTag.trim() ? asset.stateTag.trim() : "base";
-  return STATE_TAG_FALLBACK[tag] || tag;
+  return versionLabelOf(asset);
 }
 
-/** 是不是状态资产（本体之外的一个状态）。 */
-function isStateAsset(asset) {
-  if (typeof asset?.stateLabel === "string" && asset.stateLabel.trim()) return true;
-  const tag = typeof asset?.stateTag === "string" ? asset.stateTag.trim() : "";
-  return Boolean(tag) && tag !== "base";
-}
-
-/** 取本体名：「洛白·湿身」→「洛白」。 */
-function baseNameOf(name) {
-  const trimmed = typeof name === "string" ? name.trim() : "";
-  const dot = trimmed.indexOf("·") >= 0 ? trimmed.indexOf("·") : trimmed.indexOf("・");
-  if (dot <= 0) return trimmed;
-  return trimmed.slice(0, dot).trim();
-}
-
-/** 资产有没有可用图（状态图生图前要看本体有没有图）。 */
+/** 资产有没有可用图（延伸版生图前要看基础/父版有没有图）。 */
 function hasImage(asset) {
   return Boolean(asset?.imageStorageKey || asset?.imageUrl || asset?.imageAssetId);
 }
 
-/** 状态资产的本体资产（同列表里名字为本体名的非状态行）；本体不存在时返回 null。 */
+/** 版本资产的基础版；不存在时返回 null。 */
 function baseAssetOf(asset, list) {
   if (!isStateAsset(asset)) return null;
-  const baseName = baseNameOf(asset.name);
-  return (list || []).find((item) => item.type === asset.type
-    && (item.name || "").trim() === baseName
-    && !isStateAsset(item)) || null;
+  const key = familyKey(asset);
+  return (list || []).find((item) => familyKey(item) === key && isBaseAsset(item)) || null;
+}
+
+function identitySummary(asset) {
+  if (!asset) return "";
+  const text = typeof asset.identityInvariants === "string" ? asset.identityInvariants.trim() : "";
+  if (!text) return "";
+  return text.length > 48 ? `${text.slice(0, 48)}…` : text;
 }
 
 function sameAssetId(a, b) {
@@ -368,7 +363,7 @@ function SubjectCreateDialog({ type, pending, error, onClose, onCreate }) {
           </label>
           {type === "角色" && (
             <p className="drama-form-hint">
-              角色的不同状态（换装、湿身、入梦…）请在角色卡片上点「扩展状态」，会另建一条「本体名·状态名」资产。
+              将作为基础设定。换装/状态等版本请在卡片上「延伸」或「查看全部版本」创建。
             </p>
           )}
           {error && <p className="drama-form-error">{error}</p>}
@@ -475,6 +470,10 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   const [extendSource, setExtendSource] = useState(null);
   const [extendStateName, setExtendStateName] = useState("");
   const [extendDescription, setExtendDescription] = useState("");
+  /** 资产页本地快切：familyKey → version assetId；不影响分镜 @。 */
+  const [previewVersionIds, setPreviewVersionIds] = useState({});
+  const [workspaceFamilyId, setWorkspaceFamilyId] = useState(null);
+  const [workspaceVersionId, setWorkspaceVersionId] = useState(null);
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
   const [preview, setPreview] = useState(null);
@@ -533,25 +532,13 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
     setImageModelId(series?.imageModelId || "");
   }, [series?.imageModelId]);
 
-  // 资产按本体成卡，状态收进本体卡；找不到本体的状态自己成卡（如剧本只提了状态没提本体）。
-  const cardsByType = useMemo(() => {
-    const map = { 角色: [], 场景: [], 道具: [] };
-    for (const key of Object.keys(map)) {
-      const states = assets.filter((item) => item.type === key && isStateAsset(item));
-      const bases = assets.filter((item) => item.type === key && !isStateAsset(item));
-      const cards = bases.map((item) => ({ asset: item, states: [] }));
-      const byName = new Map(cards.map((card) => [(card.asset.name || "").trim(), card]));
-      for (const state of states) {
-        const owner = byName.get(baseNameOf(state.name));
-        if (owner) owner.states.push(state);
-        else cards.push({ asset: state, states: [] });
-      }
-      map[key] = cards;
-    }
-    return map;
-  }, [assets]);
+  // 角色按族一人一卡；场景/道具仍一资产一卡。
+  const cardsByType = useMemo(() => ({
+    角色: groupAssetCards(assets, "角色"),
+    场景: groupAssetCards(assets, "场景"),
+    道具: groupAssetCards(assets, "道具"),
+  }), [assets]);
 
-  // tab 计数是卡数：状态不再单独算一个角色。
   const counts = useMemo(() => ({
     角色: cardsByType.角色.length,
     场景: cardsByType.场景.length,
@@ -560,9 +547,29 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
 
   const filtered = cardsByType[type];
   const flatItems = useMemo(
-    () => filtered.flatMap((card) => [card.asset, ...card.states]),
+    () => filtered.flatMap((card) => card.versions || [card.asset]),
     [filtered],
   );
+
+  function activeVersionOf(card) {
+    const versions = card?.versions || (card?.asset ? [card.asset] : []);
+    if (!versions.length) return null;
+    const key = familyKey(card.asset || versions[0]);
+    const preferredId = previewVersionIds[key];
+    if (preferredId != null) {
+      const hit = versions.find((item) => String(item.id) === String(preferredId));
+      if (hit) return hit;
+    }
+    return versions.find((item) => isBaseAsset(item)) || versions[0];
+  }
+
+  function setActiveVersion(asset) {
+    if (!asset) return;
+    const key = familyKey(asset);
+    if (!key) return;
+    setPreviewVersionIds((current) => ({ ...current, [key]: asset.id }));
+    setSelectedId(asset.id);
+  }
 
   const selected = flatItems.find((item) => item.id === selectedId) || filtered[0]?.asset || null;
   const checkedCount = assets.filter((item) => batchChecked.has(String(item.id))).length;
@@ -670,31 +677,31 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   });
   const extendMutation = useMutation({
     mutationFn: ({ source, stateName, description }) => {
-      const baseName = baseNameOf(source.name);
+      const family = baseNameOf(source.name);
       const label = (stateName || "").trim();
       if (!label) {
-        throw new Error("请填写状态名");
+        throw new Error("请填写版本标签");
       }
       if (!description.trim()) {
-        throw new Error("请填写状态描述，例如「穿红色晚礼服，头发扎起」");
+        throw new Error("请填写变化描述，例如「穿红色晚礼服，头发扎起」");
       }
-      const composed = `${baseName}·${label}`;
-      if (assets.some((item) => item.type === source.type && (item.name || "").trim() === composed)) {
-        throw new Error(`「${baseName}」的「${label}」状态已经存在`);
+      const versions = familyVersions(source, assets);
+      if (versions.some((item) => versionLabelOf(item) === label)) {
+        throw new Error(`「${family}」的「${label}」版本已经存在`);
       }
-      // 状态名由后端拼成「本体名·状态名」，本体外形由后端继承，这里不复制。
-      return createDramaAsset(episodeId, {
-        name: baseName,
-        type: source.type,
-        stateName: label,
-        description: description.trim(),
-        mustSplit: true,
+      return createDramaAssetVersion(source.id, {
+        versionLabel: label,
+        changeDescription: description.trim(),
+        parentAssetId: source.id,
       });
     },
     onSuccess: (created) => {
       setExtendSource(null);
       setExtendDescription("");
-      if (created?.id) setSelectedId(created.id);
+      if (created?.id) {
+        setActiveVersion(created);
+        setWorkspaceVersionId(created.id);
+      }
       invalidate();
     },
     onError: (err) => showToast(err.message),
@@ -828,7 +835,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
       const base = baseAssetOf(asset, assets);
       // 状态图是本体图的改图：本体还没有图就生成，出来的是另一张新脸。
       if (base && !hasImage(base)) {
-        showToast(`请先给本体「${base.name}」生成设定图，再生成状态图`);
+        showToast(`请先给基础版「${base.name}」生成设定图，再生成延伸版`);
         return;
       }
     }
@@ -1068,11 +1075,22 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   const selectedBusy = isBusy(selected?.id, "lock") || isBusy(selected?.id, "save") || isBusy(selected?.id, "upload");
   const selectedGenerating = Boolean(selected?.generating) || isBusy(selected?.id, "generate");
   const detailAsset = assets.find((item) => item.id === detailId) || null;
-  // 本体弹窗里挂状态入口；状态弹窗里挂回本体的入口。
-  const detailStateList = detailAsset && detailAsset.type === "角色" && !isStateAsset(detailAsset)
-    ? (cardsByType.角色.find((card) => card.asset.id === detailAsset.id)?.states || [])
-    : [];
-  const detailBase = detailAsset && isStateAsset(detailAsset) ? baseAssetOf(detailAsset, assets) : null;
+  const workspaceSeed = workspaceFamilyId != null
+    ? assets.find((item) => String(item.id) === String(workspaceFamilyId))
+    : null;
+  const workspaceVersions = workspaceSeed ? familyVersions(workspaceSeed, assets) : [];
+  const workspaceAsset = workspaceVersions.find((item) => String(item.id) === String(workspaceVersionId))
+    || workspaceVersions.find((item) => isBaseAsset(item))
+    || workspaceVersions[0]
+    || null;
+  const workspaceBase = workspaceAsset ? (isBaseAsset(workspaceAsset) ? workspaceAsset : baseAssetOf(workspaceAsset, assets)) : null;
+  const workspaceHistoryId = workspaceAsset?.id;
+  const workspaceGenerationsQuery = useQuery({
+    queryKey: ["drama-asset-generations", workspaceHistoryId],
+    queryFn: () => fetchDramaAssetGenerations(workspaceHistoryId),
+    enabled: Boolean(workspaceHistoryId),
+  });
+  const workspaceGenerations = workspaceGenerationsQuery.data || [];
 
   useEffect(() => {
     setFinalSelectMode(false);
@@ -1246,18 +1264,23 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
           ) : (
             <div className="asset-grid">
               {filtered.map((card) => {
-                const item = card.asset;
+                const versions = card.versions || [card.asset];
+                const item = activeVersionOf(card) || card.asset;
+                const familyName = baseNameOf(item?.name || card.asset?.name);
+                const base = versions.find((v) => isBaseAsset(v)) || card.asset;
                 const src = mediaUrl(item.imageStorageKey || item.imageUrl, { w: MEDIA_THUMB_WIDTH });
                 const generating = Boolean(item.generating) || isBusy(item.id, "generate");
                 const uploading = isBusy(item.id, "upload");
                 const busyCard = generating || uploading || batchRunning;
-                const selectedCard = batchChecked.has(String(item.id));
+                const selectedCard = versions.some((v) => batchChecked.has(String(v.id)));
                 const promptDirty = dirtyOf(item);
                 const promptSaving = isBusy(item.id, "summary");
+                const versionCount = versions.length;
+                const showVersionBar = item.type === "角色" && versionCount > 0;
                 return (
-                  <article className={`asset-card${selectedCard ? " is-selected" : ""}`} key={item.id} data-asset-card={item.id}>
+                  <article className={`asset-card${selectedCard ? " is-selected" : ""}`} key={familyKey(card.asset) || item.id} data-asset-card={item.id}>
                     <header className="asset-card-header">
-                      {editingNameId === item.id ? (
+                      {editingNameId === (base?.id || item.id) ? (
                         <input
                           className="asset-name-input"
                           autoFocus
@@ -1265,13 +1288,13 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                           aria-label="修改资产名称"
                           value={nameDraft}
                           onChange={(event) => setNameDraft(event.target.value)}
-                          onBlur={() => commitName(item)}
+                          onBlur={() => commitName(base || item)}
                           onKeyDown={(event) => {
                             if (event.key === "Enter") {
                               event.preventDefault();
-                              commitName(item);
+                              commitName(base || item);
                             } else if (event.key === "Escape") {
-                              setNameDraft(item.name);
+                              setNameDraft(familyName);
                               setEditingNameId(null);
                             }
                           }}
@@ -1279,54 +1302,71 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                       ) : (
                         <div className="asset-title-group">
                           {batchSelectMode && (
-                            <label className="asset-card-select" title={`${selectedCard ? "取消选择" : "选择"} ${item.name}`}>
+                            <label className="asset-card-select" title={`${selectedCard ? "取消选择" : "选择"} ${familyName}`}>
                               <input
                                 type="checkbox"
                                 checked={selectedCard}
                                 disabled={batchRunning}
-                                aria-label={`选择 ${item.name}`}
+                                aria-label={`选择 ${familyName}`}
                                 onChange={() => toggleBatchAsset(item.id)}
                               />
                               <span className="asset-checkbox" aria-hidden="true"><Check size={12} /></span>
                             </label>
                           )}
-                          <h3 title={item.name}>{item.name}</h3>
-                          {item.type === "角色" && stateLabel(item) !== "基础" && (
-                            <span className="asset-state-chip">{stateLabel(item)}</span>
+                          <h3 title={familyName}>{familyName}</h3>
+                          {item.type === "角色" && versionCount > 1 && (
+                            <span className="asset-state-chip">共 {versionCount} 版</span>
                           )}
                           <button
                             className="asset-edit-name"
                             type="button"
-                            aria-label={`修改 ${item.name} 的名称`}
+                            aria-label={`修改 ${familyName} 的名称`}
                             disabled={busyCard}
                             onClick={() => {
-                              setSelectedId(item.id);
-                              setNameDraft(item.name);
-                              setEditingNameId(item.id);
+                              setSelectedId((base || item).id);
+                              setNameDraft(familyName);
+                              setEditingNameId((base || item).id);
                             }}
                           >
                             <Pencil size={14} />
                           </button>
                         </div>
                       )}
+                      {showVersionBar && versionCount > 1 ? (
+                        <DemoSelect
+                          className="asset-version-select"
+                          ariaLabel={`切换 ${familyName} 的版本`}
+                          placeholder="选择版本"
+                          value={String(item.id)}
+                          disabled={batchRunning}
+                          options={versions.map((ver) => ({
+                            value: String(ver.id),
+                            label: stateLabel(ver),
+                          }))}
+                          onChange={(value) => {
+                            const next = versions.find((ver) => String(ver.id) === String(value));
+                            if (next) setActiveVersion(next);
+                          }}
+                        />
+                      ) : null}
                       <div className="asset-card-actions">
                         {item.type === "角色" && (
-                          <button type="button" aria-label={`扩展 ${item.name} 的状态`} title="扩展状态" disabled={batchRunning} onClick={() => openExtendDialog(item)}>
+                          <button type="button" aria-label={`延伸 ${familyName}`} title="延伸版本" disabled={batchRunning} onClick={() => openExtendDialog(item)}>
                             <Sparkles size={17} />
                           </button>
                         )}
-                        <button className="danger" type="button" aria-label={`删除 ${item.name}`} title="删除" disabled={batchRunning || isBusy(item.id, "delete")} onClick={() => setDeleteAssetTarget(item)}>
+                        <button className="danger" type="button" aria-label={`删除 ${isBaseAsset(item) ? familyName : stateLabel(item)}`} title={isBaseAsset(item) ? "删除整族" : "删除此版本"} disabled={batchRunning || isBusy(item.id, "delete")} onClick={() => setDeleteAssetTarget(item)}>
                           <Trash2 size={17} />
                         </button>
-                        <button type="button" aria-label={`上传 ${item.name} 的图片`} title="上传图片" disabled={busyCard} onClick={() => pickUpload(item)}>
+                        <button type="button" aria-label={`上传 ${familyName} 的图片`} title="上传图片" disabled={busyCard} onClick={() => pickUpload(item)}>
                           <Upload size={17} />
                         </button>
                       </div>
                     </header>
-                    <div className={`asset-image-wrap${card.states.length ? " has-states" : ""}`}>
+                    <div className="asset-image-wrap">
                       {src ? (
-                        <button className="asset-card-image-button" type="button" aria-label={`打开 ${item.name} 的图片生成弹窗`} disabled={busyCard} onClick={() => openDetail(item)}>
-                          <img key={src} src={src} alt={item.name} onError={retryMediaOnce} />
+                        <button className="asset-card-image-button" type="button" aria-label={`打开 ${familyName} 的图片生成弹窗`} disabled={busyCard} onClick={() => openDetail(item)}>
+                          <img key={src} src={src} alt={familyName} onError={retryMediaOnce} />
                           <span className="asset-card-image-open" aria-hidden="true"><Expand size={15} /></span>
                         </button>
                       ) : (
@@ -1342,87 +1382,33 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                           <strong>{uploading ? "正在上传…" : "正在生成…"}</strong>
                         </div>
                       )}
-                      {card.states.length > 0 && (
-                        <div className="asset-state-row">
-                          <div className="asset-state-list" role="list">
-                            {card.states.map((state) => {
-                          const stateSrc = mediaUrl(state.imageStorageKey || state.imageUrl, { w: MEDIA_THUMB_WIDTH });
-                          const stateGenerating = Boolean(state.generating) || isBusy(state.id, "generate");
-                          const stateChecked = batchChecked.has(String(state.id));
-                          return (
-                            <div className={`asset-state-item${stateChecked ? " is-selected" : ""}`} key={state.id}>
-                              {batchSelectMode ? (
-                                <label className="asset-state-check" title={`${stateChecked ? "取消选择" : "选择"} ${state.name}`}>
-                                  <input
-                                    type="checkbox"
-                                    checked={stateChecked}
-                                    disabled={batchRunning}
-                                    aria-label={`选择 ${state.name}`}
-                                    onChange={() => toggleBatchAsset(state.id)}
-                                  />
-                                  <span className="asset-checkbox" aria-hidden="true"><Check size={12} /></span>
-                                </label>
-                              ) : null}
-                              <button
-                                type="button"
-                                className="asset-state-thumb"
-                                disabled={batchRunning}
-                                aria-label={`查看 ${state.name} 的状态图`}
-                                title={state.name}
-                                onClick={() => openDetail(state)}
-                              >
-                                {stateSrc ? <img src={stateSrc} alt={state.name} onError={retryMediaOnce} /> : <ImageIcon size={18} />}
-                                {stateGenerating && <span className="asset-state-spin" aria-label="生成中" />}
-                              </button>
-                              <div className="asset-state-meta">
-                                <button
-                                  type="button"
-                                  className="asset-state-name"
-                                  disabled={batchRunning}
-                                  title={state.name}
-                                  onClick={() => openDetail(state)}
-                                >
-                                  {stateLabel(state)}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="asset-state-generate"
-                                  disabled={!modelBound || batchRunning || stateGenerating}
-                                  title={!modelBound ? "先选择图像模型" : `生成「${state.name}」状态图`}
-                                  onClick={() => {
-                                    setSelectedId(state.id);
-                                    generate(state).catch((err) => showToast(err.message));
-                                  }}
-                                >
-                                  {stateGenerating ? <span className="asset-spinner small" /> : <Sparkles size={13} />}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="asset-state-delete"
-                                  disabled={batchRunning || isBusy(state.id, "delete")}
-                                  aria-label={`删除 ${state.name}`}
-                                  title={`删除状态 ${state.name}`}
-                                  onClick={() => setDeleteAssetTarget(state)}
-                                >
-                                  {isBusy(state.id, "delete") ? <span className="asset-spinner small" /> : <Trash2 size={13} />}
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                          </div>
-                        </div>
+                      {showVersionBar && versionCount > 1 && (
+                        <button
+                          type="button"
+                          className="asset-version-all-corner"
+                          disabled={batchRunning}
+                          title="查看全部版本"
+                          onClick={() => {
+                            setWorkspaceFamilyId(base?.id || item.id);
+                            setWorkspaceVersionId(item.id);
+                          }}
+                        >
+                          查看全部版本
+                        </button>
                       )}
                     </div>
                     <div className="asset-prompt-field">
-                      <label htmlFor={`prompt-${item.id}`}>{isStateAsset(item) ? "状态外观" : "图片提示词"}</label>
+                      <label htmlFor={`prompt-${item.id}`}>{isStateAsset(item) ? "变化描述" : "外形设定"}</label>
+                      {isStateAsset(item) && identitySummary(base) ? (
+                        <p className="drama-extend-hint">将保持：{identitySummary(base)}</p>
+                      ) : null}
                       <textarea
                         id={`prompt-${item.id}`}
                         rows={4}
                         maxLength={512}
                         disabled={batchRunning}
                         value={draftOf(item)}
-                        placeholder={isStateAsset(item) ? "写这一状态相对本体的变化，如：穿红色晚礼服，头发扎起" : "输入图片提示词…"}
+                        placeholder={isStateAsset(item) ? "写这一版本相对基础的变化，如：穿红色晚礼服，头发扎起" : "输入外形设定…"}
                         onChange={(event) => {
                           const value = event.target.value;
                           setPromptDrafts((current) => ({ ...current, [item.id]: value }));
@@ -1437,7 +1423,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                           disabled={!modelBound || busyCard}
                           title={!modelBound ? "先选择图像模型" : "按已保存的设定生成"}
                           onClick={() => {
-                            setSelectedId(item.id);
+                            setActiveVersion(item);
                             generate(item).catch((err) => showToast(err.message));
                           }}
                         >
@@ -1452,8 +1438,21 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                         >
                           {promptSaving ? "正在保存…" : "保存提示词"}
                         </button>
+                        {item.type === "角色" && (
+                          <button
+                            type="button"
+                            className="asset-save-prompt"
+                            disabled={batchRunning}
+                            onClick={() => {
+                              setWorkspaceFamilyId(base?.id || item.id);
+                              setWorkspaceVersionId(item.id);
+                            }}
+                          >
+                            全部版本
+                          </button>
+                        )}
                       </div>
-                      <button className="asset-expand-button" type="button" aria-label={`查看 ${item.name} 详情`} title="查看详情" disabled={batchRunning} onClick={() => openDetail(item)}>
+                      <button className="asset-expand-button" type="button" aria-label={`查看 ${familyName} 详情`} title="查看详情" disabled={batchRunning} onClick={() => openDetail(item)}>
                         <Expand size={17} />
                       </button>
                     </footer>
@@ -1489,7 +1488,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
             if (event.target === event.currentTarget && !selectedGenerating) setDetailId(null);
           }}
         >
-          <section className={`asset-image-modal has-history${detailAsset.type === "角色" ? "" : " is-compact"}`} role="dialog" aria-modal="true" aria-labelledby="asset-image-modal-title">
+          <section className={`asset-image-modal has-history is-detail${detailAsset.type === "角色" ? "" : " is-compact"}`} role="dialog" aria-modal="true" aria-labelledby="asset-image-modal-title">
             <header className="asset-image-modal-header">
               {editingNameId === detailAsset.id ? (
                 <input
@@ -1529,21 +1528,6 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
             </header>
             <div className="asset-image-modal-body">
               <div className="asset-modal-config">
-                {(detailStateList.length > 0 || detailBase) && (
-                  <div className="asset-modal-states">
-                    {detailBase && (
-                      <button type="button" title={detailBase.name} onClick={() => openDetail(detailBase)}>
-                        <ImageIcon size={13} /> 本体 {detailBase.name}
-                      </button>
-                    )}
-                    {detailStateList.map((state) => (
-                      <button key={state.id} type="button" title={state.name} onClick={() => openDetail(state)}>
-                        {stateLabel(state)}
-                        {(Boolean(state.generating) || isBusy(state.id, "generate")) ? "…" : ""}
-                      </button>
-                    ))}
-                  </div>
-                )}
                 <section className="asset-modal-section">
                   <div className="asset-modal-parameter-grid">
                     <ImageModelSelect
@@ -1576,7 +1560,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                     </div>
                   </div>
                   <div className="asset-modal-prompt-head">
-                    <label htmlFor="asset-modal-prompt">{isStateAsset(detailAsset) ? "状态外观" : "图片提示词"}</label>
+                    <label htmlFor="asset-modal-prompt">{isStateAsset(detailAsset) ? "变化描述" : "外形设定"}</label>
                     <button
                       type="button"
                       disabled={!dirtyOf(detailAsset) || isBusy(detailAsset.id, "summary") || selectedGenerating}
@@ -1587,10 +1571,10 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                   </div>
                   <textarea
                     id="asset-modal-prompt"
-                    className="asset-modal-prompt"
+                    className="asset-modal-prompt asset-detail-prompt"
                     maxLength={512}
                     value={draftOf(detailAsset)}
-                    placeholder={isStateAsset(detailAsset) ? "写这一状态相对本体的变化，如：穿红色晚礼服，头发扎起" : "输入图片提示词…"}
+                    placeholder={isStateAsset(detailAsset) ? "写这一版本相对基础的变化，如：穿红色晚礼服，头发扎起" : "输入外形设定…"}
                     disabled={selectedGenerating}
                     onChange={(event) => {
                       const value = event.target.value;
@@ -1648,11 +1632,8 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                   </section>
                 )}
                 <section className="asset-modal-section asset-reference-section">
-                  <div className="asset-modal-section-head">
-                    <div>
-                      <h3>参考图片</h3>
-                      <p>可上传本地图片，或从当前项目的素材库中选择。选中后会替换当前资产图，并写入生成历史。</p>
-                    </div>
+                  <div className="asset-modal-section-head asset-reference-head">
+                    <h3>参考图片</h3>
                     <div className="asset-reference-actions">
                       <button type="button" disabled={selectedBusy || selectedGenerating} onClick={() => pickUpload(detailAsset)}>
                         <Upload size={15} /> 上传图片
@@ -1670,6 +1651,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                       </button>
                     </div>
                   </div>
+                  <p className="asset-reference-hint">可上传本地图片，或从素材库中选择。选中后会替换当前资产图，并写入生成历史。</p>
                 </section>
                 <div className="asset-generate-action">
                   <button
@@ -1686,6 +1668,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                 <GenerationHistoryPanel
                   title="生成历史"
                   countLabel={`${generations.length}`}
+                  titleBadge={detailAsset.type === "角色" ? stateLabel(detailAsset) : ""}
                   hint={(
                     <>
                       “当前选中”即页面正在使用的图片。
@@ -1724,8 +1707,12 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
       <ConfirmDialog
         open={Boolean(deleteAssetTarget)}
         eyebrow="资产"
-        title="删除此资产？"
-        message={deleteAssetTarget ? `将删除「${deleteAssetTarget.name}」。此操作不可撤销。已生成并出现在我的创作中的图片也会一并删除。` : ""}
+        title={deleteAssetTarget && isBaseAsset(deleteAssetTarget) ? "删除整个角色？" : "删除此版本？"}
+        message={deleteAssetTarget
+          ? (isBaseAsset(deleteAssetTarget)
+            ? `将删除「${baseNameOf(deleteAssetTarget.name)}」及其全部版本。此操作不可撤销。`
+            : `将删除「${baseNameOf(deleteAssetTarget.name)}·${stateLabel(deleteAssetTarget)}」。此操作不可撤销。`)
+          : ""}
         confirmLabel="删除"
         busy={isBusy(deleteAssetTarget?.id, "delete")}
         busyLabel="删除中…"
@@ -1737,6 +1724,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
             .then(() => {
               setDeleteAssetTarget(null);
               if (detailId === target.id) setDetailId(null);
+              if (String(workspaceVersionId) === String(target.id)) setWorkspaceVersionId(null);
             })
             .catch((err) => showToast(err.message));
         }}
@@ -1753,26 +1741,26 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
           <section className="creation-asset-dialog" role="dialog" aria-modal="true" aria-labelledby="extend-state-title" style={{ maxWidth: 420 }}>
             <header>
               <div>
-                <small>角色扩展</small>
-                <h2 id="extend-state-title">为「{baseNameOf(extendSource.name)}」添加状态</h2>
+                <small>延伸创作</small>
+                <h2 id="extend-state-title">基于「{stateLabel(extendSource)}」延伸</h2>
               </div>
-              <button type="button" aria-label="关闭扩展状态" disabled={extendMutation.isPending} onClick={() => setExtendSource(null)}>
+              <button type="button" aria-label="关闭延伸" disabled={extendMutation.isPending} onClick={() => setExtendSource(null)}>
                 <X size={17} />
               </button>
             </header>
             <div className="drama-extend-form">
               <label>
-                <span>状态名</span>
+                <span>版本标签</span>
                 <input
-                  aria-label="状态名"
-                  maxLength={32}
-                  placeholder="如：换装、湿身、入梦、战损"
+                  aria-label="版本标签"
+                  maxLength={16}
+                  placeholder="如：换装、湿身、校服"
                   value={extendStateName}
                   onChange={(event) => setExtendStateName(event.target.value)}
                 />
               </label>
               <label>
-                <span>状态描述（必填）</span>
+                <span>变化描述（必填）</span>
                 <textarea
                   rows={3}
                   maxLength={512}
@@ -1782,8 +1770,8 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                 />
               </label>
               <p className="drama-extend-hint">
-                将创建为「{baseNameOf(extendSource.name)}·{extendStateName.trim() || "状态"}」，
-                沿用原角色的脸与发型，只叠加状态描述。
+                分镜引用为「@{baseNameOf(extendSource.name)}·{extendStateName.trim() || "标签"}」。
+                延伸创作将自动保持样貌/身高等与基础版一致。
               </p>
             </div>
             <footer>
@@ -1800,10 +1788,165 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                     description: extendDescription,
                   })}
                 >
-                  创建状态
+                  创建版本
                 </button>
               </div>
             </footer>
+          </section>
+        </div>,
+        document.body,
+      )}
+
+      {workspaceAsset && createPortal(
+        <div
+          className="drama-dialog-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setWorkspaceFamilyId(null);
+              setWorkspaceVersionId(null);
+            }
+          }}
+        >
+          <section className="asset-image-modal has-history" role="dialog" aria-modal="true" aria-labelledby="version-workspace-title">
+            <header className="asset-image-modal-header">
+              <div className="asset-modal-title">
+                <h2 id="version-workspace-title">{baseNameOf(workspaceAsset.name)} · 版本工作台</h2>
+              </div>
+              <button
+                type="button"
+                aria-label="关闭"
+                onClick={() => {
+                  setWorkspaceFamilyId(null);
+                  setWorkspaceVersionId(null);
+                }}
+              >
+                <X size={18} />
+              </button>
+            </header>
+            <div className="asset-image-modal-body">
+              <div className="asset-modal-config">
+                <p className="drama-extend-hint">
+                  延伸创作将自动带上「样貌/身高等与基础版一致」的系统句；当前选中：{stateLabel(workspaceAsset)}
+                </p>
+                <section className="asset-modal-section">
+                  <div className="asset-modal-prompt-head">
+                    <label htmlFor="workspace-prompt">{isStateAsset(workspaceAsset) ? "变化描述" : "外形设定"}</label>
+                    <button
+                      type="button"
+                      disabled={!dirtyOf(workspaceAsset) || isBusy(workspaceAsset.id, "summary")}
+                      onClick={() => savePrompt(workspaceAsset).catch((err) => showToast(err.message))}
+                    >
+                      {isBusy(workspaceAsset.id, "summary") ? "正在保存…" : dirtyOf(workspaceAsset) ? "保存" : "已保存"}
+                    </button>
+                  </div>
+                  <textarea
+                    id="workspace-prompt"
+                    className="asset-modal-prompt workspace-version-prompt"
+                    maxLength={512}
+                    value={draftOf(workspaceAsset)}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setPromptDrafts((current) => ({ ...current, [workspaceAsset.id]: value }));
+                    }}
+                  />
+                  <div className="workspace-version-actions">
+                    <button
+                      type="button"
+                      className="asset-generate-button"
+                      disabled={!modelBound || isBusy(workspaceAsset.id, "generate")}
+                      onClick={() => {
+                        setActiveVersion(workspaceAsset);
+                        generate(workspaceAsset).catch((err) => showToast(err.message));
+                      }}
+                    >
+                      {(Boolean(workspaceAsset.generating) || isBusy(workspaceAsset.id, "generate"))
+                        ? "生成中…"
+                        : "图片生成"}
+                    </button>
+                    <button type="button" className="asset-generate-button" onClick={() => pickUpload(workspaceAsset)}>
+                      上传图片
+                    </button>
+                    <button type="button" className="asset-generate-button" onClick={() => openExtendDialog(workspaceAsset)}>
+                      基于此版延伸
+                    </button>
+                  </div>
+                  {(() => {
+                    const src = mediaUrl(workspaceAsset.imageStorageKey || workspaceAsset.imageUrl, { w: 960 });
+                    return src ? (
+                      <button
+                        type="button"
+                        className="workspace-version-preview"
+                        onClick={() => setPreview({
+                          src: mediaUrl(workspaceAsset.imageStorageKey || workspaceAsset.imageUrl),
+                          title: `${baseNameOf(workspaceAsset.name)}·${stateLabel(workspaceAsset)}`,
+                        })}
+                      >
+                        <img src={src} alt="" onError={retryMediaOnce} />
+                      </button>
+                    ) : (
+                      <div className="workspace-version-preview is-empty">
+                        <ImageIcon size={32} />
+                        <span>暂无图片</span>
+                      </div>
+                    );
+                  })()}
+                </section>
+              </div>
+              <aside className="asset-history-panel">
+                <div className="asset-modal-states" style={{ flexWrap: "wrap", marginBottom: 12 }}>
+                  {workspaceVersions.map((ver) => {
+                    const parent = ver.parentAssetId
+                      ? workspaceVersions.find((v) => v.id === ver.parentAssetId)
+                      : null;
+                    const label = parent
+                      ? `${stateLabel(parent)} → ${stateLabel(ver)}`
+                      : stateLabel(ver);
+                    return (
+                      <button
+                        key={ver.id}
+                        type="button"
+                        className={String(ver.id) === String(workspaceAsset.id) ? "is-active" : ""}
+                        title={label}
+                        onClick={() => {
+                          setWorkspaceVersionId(ver.id);
+                          setActiveVersion(ver);
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <GenerationHistoryPanel
+                  title="本版生成历史"
+                  countLabel={`${workspaceGenerations.length}`}
+                  hint="与「版本」正交：同一服装/状态下的多张候选图。"
+                  switchLabel="切换当前选用"
+                  records={workspaceGenerations}
+                  locked={false}
+                  mediaKind="image"
+                  showImport
+                  compactActions
+                  selecting={finalSelectMode}
+                  selectedBadge="当前选中"
+                  itemName={`${baseNameOf(workspaceAsset.name)}·${stateLabel(workspaceAsset)}`}
+                  busy={isBusy(workspaceAsset.id, "history") || workspaceGenerationsQuery.isLoading}
+                  onSwitchClick={() => setFinalSelectMode((current) => !current)}
+                  onSelect={(record) => {
+                    setSelectedId(workspaceAsset.id);
+                    selectGeneration(record);
+                  }}
+                  onPreview={(record) => setPreview({
+                    src: mediaUrl(record.url || record.storageKey),
+                    title: `${baseNameOf(workspaceAsset.name)} · ${record.label}`,
+                    time: formatDateTime(record.createdAt),
+                    detail: historyPreviewDetail(record),
+                  })}
+                  onDelete={requestDeleteGeneration}
+                  onImport={importGeneration}
+                />
+              </aside>
+            </div>
           </section>
         </div>,
         document.body,

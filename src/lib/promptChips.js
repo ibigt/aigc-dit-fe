@@ -1,12 +1,12 @@
 /**
  * 分镜核心正文的 @ 引用解析。
  *
- * 存储约定：叙述里的资产写成 `@名字`。台词段保持普通名字，不解析成芯片。
- * 冒号后只允许空白、紧接着“或"时，引号内不算叙述；引号外同一行仍可 @。
- * 引号没关上时，这句收到本行末尾。旧稿仍认没有引号的「说：」，以及「旁白：」「（画外音）：」。
- * 场景、镜头、站位这类冒号后面没有引号，不当台词。
+ * 存储约定：叙述里的资产写成 `@名字` 或 `@名字·版本标签`（语法 A）。
+ * 裸 `@洛白` → 基础版；`@洛白·湿身` → 精确版本。台词段不解析成芯片。
  * 缩略图只在编辑器里显示，不写回正文。
  */
+
+import { characterFamilies, mentionNameOf, versionLabelOf } from "./dramaAssets.js";
 
 const LABEL_RE = /(站位|镜头\d+|景别|动作|接续|台词|场景|运镜|环境声)\s*[:：]/g;
 const LEGACY_SPEECH_RE = /说\s*[:：]|旁白\s*[:：]|（画外音）\s*[:：]/g;
@@ -25,13 +25,44 @@ function knownNames(lockedAssets) {
   const names = [];
   const seen = new Set();
   for (const asset of lockedAssets || []) {
-    const name = String(asset?.name || "").trim();
+    const name = mentionNameOf(asset) || String(asset?.name || "").trim();
     if (!name || seen.has(name)) continue;
     seen.add(name);
     names.push(name);
   }
   names.sort((left, right) => right.length - left.length);
   return names;
+}
+
+/** @ 第一窗：角色按族去重；场景/道具仍逐条。 */
+export function mentionPickerItems(lockedAssets, category, query) {
+  const q = (query || "").toLowerCase();
+  if (category === "角色") {
+    return characterFamilies(lockedAssets).filter((item) => {
+      if (!q) return true;
+      return (item.familyName || item.name || "").toLowerCase().includes(q);
+    });
+  }
+  return (lockedAssets || [])
+    .filter((asset) => (asset.type || "角色") === category)
+    .filter((asset) => {
+      if (!q) return true;
+      return (mentionNameOf(asset) || asset.name || "").toLowerCase().includes(q);
+    })
+    .sort((left, right) => (left.name || "").localeCompare(right.name || "", "zh-Hans-CN"));
+}
+
+export function versionPickerItems(familyAsset) {
+  const versions = familyAsset?.versions || [familyAsset].filter(Boolean);
+  return versions.map((asset) => {
+    const mention = mentionNameOf(asset);
+    const label = versionLabelOf(asset);
+    return {
+      asset,
+      label: label || "基础",
+      mentionName: mention || asset?.name || "",
+    };
+  });
 }
 
 function labelSpans(source) {
@@ -211,7 +242,13 @@ function readMention(text, index, names) {
 }
 
 function takeAsset(name, assets, idQueue, assigned) {
-  const matches = (assets || []).filter((asset) => asset && asset.name === name);
+  const matches = (assets || []).filter((asset) => {
+    if (!asset) return false;
+    const mention = mentionNameOf(asset);
+    if (mention === name) return true;
+    // 兼容旧数据：库内 name 仍是「洛白·湿身」
+    return asset.name === name;
+  });
   if (!matches.length) return null;
   while (idQueue.length) {
     const id = idQueue[0];
@@ -222,7 +259,7 @@ function takeAsset(name, assets, idQueue, assigned) {
       return hit;
     }
     const other = (assets || []).find((asset) => asset && asset.id === id);
-    if (other && other.name !== name) break;
+    if (other && mentionNameOf(other) !== name && other.name !== name) break;
     idQueue.shift();
   }
   if (assigned.has(name)) return assigned.get(name);
@@ -273,6 +310,7 @@ export function parsePromptToTokens(value, { lockedAssets = [], referenceAssetId
         assetId: asset?.id ?? null,
         asset: asset || null,
       });
+      // name 即 mention 串（@ 后正文），序列化仍写 @name
       index += mention.length;
     }
   }

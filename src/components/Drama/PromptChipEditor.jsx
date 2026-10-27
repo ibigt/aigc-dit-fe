@@ -12,11 +12,14 @@ import { createPortal } from "react-dom";
 import { mediaUrl, MEDIA_THUMB_WIDTH } from "../../lib/media.js";
 import {
   caretInDialogue,
+  mentionPickerItems,
   nextTokenId,
   parsePromptToTokens,
   serializeTokensToPrompt,
   speechHighlightRanges,
+  versionPickerItems,
 } from "../../lib/promptChips.js";
+import { baseNameOf, mentionNameOf } from "../../lib/dramaAssets.js";
 
 /**
  * 分镜视频提示词富文本编辑器。
@@ -58,11 +61,14 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
 
   const [mention, setMention] = useState({
     open: false,
+    mode: "asset", // asset | version
     query: "",
     category: "角色",
     anchorTokenId: null,
     atIdx: null,
     rect: null,
+    family: null,
+    chipTokenId: null,
   });
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -222,6 +228,7 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
     const onPointerDown = (event) => {
       const target = event.target;
       if (target instanceof Element && target.closest(".drama-mention-dropdown")) return;
+      // version / asset 下拉同属 mention 浮层
       if (editorRef.current?.contains(target)) return;
       setMention((current) => (current.open ? { ...current, open: false } : current));
     };
@@ -235,19 +242,16 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
     };
   }, [mention.open]);
 
-  // ---------- 过滤后的下拉数据（已绑定拍前） ----------
+  // ---------- 过滤后的下拉数据（角色按族；版本第二窗） ----------
   const filteredAssets = useMemo(() => {
-    if (!mention.open) return [];
-    const q = (mention.query || "").toLowerCase();
-    const category = mention.category || "角色";
-    const list = safeLockedAssets.filter((asset) => {
-      if ((asset.type || "角色") !== category) return false;
-      if (!q) return true;
-      return (asset.name || "").toLowerCase().includes(q);
-    });
-    list.sort((left, right) => (left.name || "").localeCompare(right.name || "", "zh-Hans-CN"));
-    return list;
+    if (!mention.open || mention.mode === "version") return [];
+    return mentionPickerItems(safeLockedAssets, mention.category || "角色", mention.query || "");
   }, [mention, safeLockedAssets]);
+
+  const versionItems = useMemo(() => {
+    if (!mention.open || mention.mode !== "version" || !mention.family) return [];
+    return versionPickerItems(mention.family);
+  }, [mention]);
 
   const usedAssetIds = useMemo(() => {
     const ids = new Set();
@@ -301,18 +305,21 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
         const rect = computeCaretRect();
         setMention((current) => ({
           open: true,
+          mode: "asset",
           query: match[1] || "",
           category: current.open ? current.category || "角色" : "角色",
           anchorTokenId: caret.token.id,
           atIdx: match.index,
           rect,
+          family: null,
+          chipTokenId: null,
         }));
         setActiveIndex(0);
         return;
       }
     }
-    if (mention.open) setMention((m) => ({ ...m, open: false }));
-  }, [tokens, mention.open]);
+    if (mention.open && mention.mode === "asset") setMention((m) => ({ ...m, open: false }));
+  }, [tokens, mention.open, mention.mode]);
 
   const tryRemoveAdjacentChip = useCallback(
     (e) => {
@@ -356,36 +363,138 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
     [tokens],
   );
 
+  const insertOrReplaceChip = useCallback((asset, mentionName, { replaceChipId } = {}) => {
+    if (!asset) return;
+    const name = mentionName || mentionNameOf(asset) || asset.name;
+    if (replaceChipId) {
+      setTokens((prev) => prev.map((token) => (
+        token.id === replaceChipId && token.kind === "chip"
+          ? { ...token, name, assetId: asset.id, asset }
+          : token
+      )));
+      setMention({
+        open: false, mode: "asset", query: "", category: "角色",
+        anchorTokenId: null, atIdx: null, rect: null, family: null, chipTokenId: null,
+      });
+      return;
+    }
+    setTokens((prev) => {
+      const idx = prev.findIndex((t) => t.id === mention.anchorTokenId);
+      if (idx === -1) return prev;
+      const cur = prev[idx];
+      if (!cur || cur.kind !== "text") return prev;
+      const query = mention.query || "";
+      const text = cur.value || "";
+      const atIdx = Number.isInteger(mention.atIdx) ? mention.atIdx : text.length - query.length - 1;
+      if (atIdx < 0 || text.slice(atIdx, atIdx + 1 + query.length) !== `@${query}`) return prev;
+      const before = text.slice(0, atIdx);
+      const after = text.slice(atIdx + 1 + query.length);
+      const chipId = nextTokenId();
+      pendingCaretRef.current = { tokenId: chipId, offset: 0, afterChip: true };
+      const newTokens = [];
+      if (before) newTokens.push({ kind: "text", id: nextTokenId(), value: before });
+      newTokens.push({
+        kind: "chip",
+        id: chipId,
+        name,
+        assetId: asset.id,
+        asset,
+      });
+      if (after) newTokens.push({ kind: "text", id: nextTokenId(), value: after });
+      return [...prev.slice(0, idx), ...newTokens, ...prev.slice(idx + 1)];
+    });
+    setMention({
+      open: false, mode: "asset", query: "", category: "角色",
+      anchorTokenId: null, atIdx: null, rect: null, family: null, chipTokenId: null,
+    });
+  }, [mention]);
+
   const pickAsset = useCallback(
     (asset) => {
       if (!asset) return;
+      const versions = asset.versions || [asset];
+      if ((asset.type || "角色") === "角色" && versions.length >= 2) {
+        setMention((current) => ({
+          ...current,
+          mode: "version",
+          family: asset,
+          query: "",
+        }));
+        setActiveIndex(0);
+        return;
+      }
+      const base = versions.find((item) => (item.stateTag || "base") === "base") || asset;
+      insertOrReplaceChip(base, mentionNameOf(base) || base.name, {
+        replaceChipId: mention.chipTokenId,
+      });
+    },
+    [insertOrReplaceChip, mention.chipTokenId],
+  );
+
+  const pickVersion = useCallback(
+    (item) => {
+      if (!item?.asset) return;
+      insertOrReplaceChip(item.asset, item.mentionName, { replaceChipId: mention.chipTokenId });
+    },
+    [insertOrReplaceChip, mention.chipTokenId],
+  );
+
+  /** 本镜内该角色族的所有芯片一键切到所选版本；若正从 @ 插入则同时落成芯片。 */
+  const applyVersionToShot = useCallback(
+    (item) => {
+      if (!item?.asset || !mention.family) return;
+      const asset = item.asset;
+      const name = item.mentionName || mentionNameOf(asset) || asset.name;
+      const versions = mention.family.versions || [mention.family];
+      const versionIds = new Set(versions.map((ver) => ver?.id).filter((id) => id != null));
+      const familyName = mention.family.familyName || baseNameOf(mention.family.name);
+      const belongs = (token) => {
+        if (!token || token.kind !== "chip") return false;
+        if (token.assetId != null && versionIds.has(token.assetId)) return true;
+        return baseNameOf(token.name) === familyName;
+      };
+
+      if (mention.chipTokenId || !mention.anchorTokenId) {
+        setTokens((prev) => prev.map((token) => (
+          belongs(token)
+            ? { ...token, name, assetId: asset.id, asset }
+            : token
+        )));
+        setMention({
+          open: false, mode: "asset", query: "", category: "角色",
+          anchorTokenId: null, atIdx: null, rect: null, family: null, chipTokenId: null,
+        });
+        return;
+      }
+
       setTokens((prev) => {
-        const idx = prev.findIndex((t) => t.id === mention.anchorTokenId);
-        if (idx === -1) return prev;
-        const cur = prev[idx];
-        if (!cur || cur.kind !== "text") return prev;
+        const replaced = prev.map((token) => (
+          belongs(token)
+            ? { ...token, name, assetId: asset.id, asset }
+            : token
+        ));
+        const idx = replaced.findIndex((t) => t.id === mention.anchorTokenId);
+        if (idx === -1) return replaced;
+        const cur = replaced[idx];
+        if (!cur || cur.kind !== "text") return replaced;
         const query = mention.query || "";
         const text = cur.value || "";
-        // @ 的位置以下拉打开时的 atIdx 为准（光标后可能还有文字，不能假设 @ 在 token 末尾）
         const atIdx = Number.isInteger(mention.atIdx) ? mention.atIdx : text.length - query.length - 1;
-        if (atIdx < 0 || text.slice(atIdx, atIdx + 1 + query.length) !== `@${query}`) return prev;
+        if (atIdx < 0 || text.slice(atIdx, atIdx + 1 + query.length) !== `@${query}`) return replaced;
         const before = text.slice(0, atIdx);
         const after = text.slice(atIdx + 1 + query.length);
         const chipId = nextTokenId();
         pendingCaretRef.current = { tokenId: chipId, offset: 0, afterChip: true };
-        const newTokens = [];
-        if (before) newTokens.push({ kind: "text", id: nextTokenId(), value: before });
-        newTokens.push({
-          kind: "chip",
-          id: chipId,
-          name: asset.name,
-          assetId: asset.id,
-          asset,
-        });
-        if (after) newTokens.push({ kind: "text", id: nextTokenId(), value: after });
-        return [...prev.slice(0, idx), ...newTokens, ...prev.slice(idx + 1)];
+        const chunk = [];
+        if (before) chunk.push({ kind: "text", id: nextTokenId(), value: before });
+        chunk.push({ kind: "chip", id: chipId, name, assetId: asset.id, asset });
+        if (after) chunk.push({ kind: "text", id: nextTokenId(), value: after });
+        return [...replaced.slice(0, idx), ...chunk, ...replaced.slice(idx + 1)];
       });
-      setMention({ open: false, query: "", category: "角色", anchorTokenId: null, atIdx: null, rect: null });
+      setMention({
+        open: false, mode: "asset", query: "", category: "角色",
+        anchorTokenId: null, atIdx: null, rect: null, family: null, chipTokenId: null,
+      });
     },
     [mention],
   );
@@ -417,6 +526,7 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
       if (e.isComposing || e.keyCode === 229) return;
       if (disabled) return;
       if (mention.open) {
+        const listLen = mention.mode === "version" ? versionItems.length : filteredAssets.length;
         if (e.key === "ArrowUp") {
           e.preventDefault();
           setActiveIndex((i) => Math.max(0, i - 1));
@@ -424,12 +534,10 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
         }
         if (e.key === "ArrowDown") {
           e.preventDefault();
-          setActiveIndex((i) =>
-            Math.min(Math.max(0, filteredAssets.length - 1), i + 1),
-          );
+          setActiveIndex((i) => Math.min(Math.max(0, listLen - 1), i + 1));
           return;
         }
-        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        if (mention.mode === "asset" && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
           e.preventDefault();
           const order = ["角色", "场景", "道具"];
           const current = order.indexOf(mention.category || "角色");
@@ -442,12 +550,22 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
         }
         if (e.key === "Enter" || e.key === "Tab") {
           e.preventDefault();
-          const asset = filteredAssets[activeIndex];
-          if (asset) pickAsset(asset);
+          if (mention.mode === "version") {
+            const item = versionItems[activeIndex];
+            if (item) pickVersion(item);
+          } else {
+            const asset = filteredAssets[activeIndex];
+            if (asset) pickAsset(asset);
+          }
           return;
         }
         if (e.key === "Escape") {
           e.preventDefault();
+          if (mention.mode === "version" && !mention.chipTokenId) {
+            setMention((m) => ({ ...m, mode: "asset", family: null }));
+            setActiveIndex(0);
+            return;
+          }
           setMention((m) => ({ ...m, open: false }));
           return;
         }
@@ -461,20 +579,48 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
         if (tryRemoveAdjacentChip(e)) return;
       }
     },
-    [mention.open, mention.category, filteredAssets, activeIndex, disabled, pickAsset, tryRemoveAdjacentChip, insertNewline],
+    [mention.open, mention.mode, mention.category, mention.chipTokenId, filteredAssets, versionItems, activeIndex, disabled, pickAsset, pickVersion, tryRemoveAdjacentChip, insertNewline],
   );
 
   const handleClick = useCallback((e) => {
     const thumb = e.target.closest(".drama-prompt-chip__thumb");
-    if (!thumb) return;
-    e.preventDefault();
-    if (thumb.dataset.zoom !== "1") return;
-    const chip = thumb.closest("[data-token-id]");
-    const token = tokens.find((item) => item.id === chip?.dataset.tokenId);
-    const src = chipImage(token);
-    if (!src || !token) return;
-    onZoom?.({ src: mediaUrl(src), title: token.name });
-  }, [onZoom, tokens]);
+    const chipEl = e.target.closest("[data-kind=\"asset\"]");
+    if (thumb) {
+      e.preventDefault();
+      if (thumb.dataset.zoom !== "1") return;
+      const chip = thumb.closest("[data-token-id]");
+      const token = tokens.find((item) => item.id === chip?.dataset.tokenId);
+      const src = chipImage(token);
+      if (!src || !token) return;
+      onZoom?.({ src: mediaUrl(src), title: token.name });
+      return;
+    }
+    if (chipEl && !disabled) {
+      const token = tokens.find((item) => item.id === chipEl.dataset.tokenId);
+      if (!token || token.kind !== "chip") return;
+      const asset = token.asset || safeLockedAssets.find((item) => item.id === token.assetId);
+      if (!asset || (asset.type || "角色") !== "角色") return;
+      const families = mentionPickerItems(safeLockedAssets, "角色", "");
+      const family = families.find((item) => (item.versions || []).some((v) => v.id === asset.id)
+        || item.id === asset.id
+        || (item.familyName || item.name) === (asset.name || "").split(/[·・]/)[0]);
+      if (!family || (family.versions || [family]).length < 2) return;
+      e.preventDefault();
+      const rect = chipEl.getBoundingClientRect();
+      setMention({
+        open: true,
+        mode: "version",
+        query: "",
+        category: "角色",
+        anchorTokenId: null,
+        atIdx: null,
+        rect: { left: rect.left, top: rect.top, bottom: rect.bottom, right: rect.right },
+        family,
+        chipTokenId: token.id,
+      });
+      setActiveIndex(Math.max(0, (family.versions || []).findIndex((v) => v.id === asset.id)));
+    }
+  }, [onZoom, tokens, disabled, safeLockedAssets]);
 
   const handlePaste = useCallback((e) => {
     e.preventDefault();
@@ -514,20 +660,33 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
       />
       {mention.open && mention.rect
         ? createPortal(
+            mention.mode === "version" ? (
+              <VersionDropdown
+                items={versionItems}
+                activeIndex={activeIndex}
+                rect={mention.rect}
+                familyName={mention.family?.familyName || mention.family?.name || ""}
+                onPick={pickVersion}
+                onApplyShot={applyVersionToShot}
+                onActiveChange={setActiveIndex}
+                onClose={() => setMention((current) => ({ ...current, open: false }))}
+              />
+            ) : (
               <MentionDropdown
-              items={filteredAssets}
-              activeIndex={activeIndex}
-              rect={mention.rect}
-              category={mention.category || "角色"}
-              usedAssetIds={usedAssetIds}
-              onPick={pickAsset}
-              onActiveChange={setActiveIndex}
-              onCategory={(category) => {
-                setMention((current) => ({ ...current, category }));
-                setActiveIndex(0);
-              }}
-              onClose={() => setMention((current) => ({ ...current, open: false }))}
-            />,
+                items={filteredAssets}
+                activeIndex={activeIndex}
+                rect={mention.rect}
+                category={mention.category || "角色"}
+                usedAssetIds={usedAssetIds}
+                onPick={pickAsset}
+                onActiveChange={setActiveIndex}
+                onCategory={(category) => {
+                  setMention((current) => ({ ...current, category, mode: "asset", family: null }));
+                  setActiveIndex(0);
+                }}
+                onClose={() => setMention((current) => ({ ...current, open: false }))}
+              />
+            ),
             document.body,
           )
         : null}
@@ -603,7 +762,8 @@ function MentionDropdown({
         ) : (
           items.map((asset, index) => {
             const src = mediaUrl(asset.imageStorageKey || asset.imageUrl, { w: MEDIA_THUMB_WIDTH });
-            const used = usedAssetIds?.has(asset.id);
+            const versionIds = (asset.versions || [asset]).map((item) => item?.id);
+            const used = versionIds.some((id) => id != null && usedAssetIds?.has(id));
             return (
               <div
                 key={asset.id}
@@ -618,8 +778,88 @@ function MentionDropdown({
                 ) : (
                   <span className="drama-mention-dropdown__thumb" />
                 )}
-                <span className="drama-mention-dropdown__item-name">{asset.name || "(未命名)"}</span>
+                <span className="drama-mention-dropdown__item-name">
+                  {asset.familyName || asset.name || "(未命名)"}
+                  {asset.versionCount > 1 ? ` · ${asset.versionCount} 版` : ""}
+                </span>
                 {used ? <span className="drama-mention-dropdown__item-bound">已引用</span> : null}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function VersionDropdown({
+  items,
+  activeIndex,
+  rect,
+  familyName,
+  onPick,
+  onApplyShot,
+  onActiveChange,
+  onClose,
+}) {
+  const listRef = useRef(null);
+  useEffect(() => {
+    if (!listRef.current) return;
+    const el = listRef.current.querySelector(".drama-mention-dropdown__item.is-active");
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "nearest" });
+    }
+  }, [activeIndex]);
+
+  if (typeof window === "undefined") return null;
+  const width = 320;
+  const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.left));
+  const estimated = 280;
+  let top = rect.bottom + 6;
+  if (top + estimated > window.innerHeight) top = Math.max(8, rect.top - estimated - 6);
+
+  return (
+    <div
+      className="drama-mention-dropdown drama-mention-dropdown--version"
+      style={{ left, top, width }}
+      role="dialog"
+      aria-label="选择版本"
+      onMouseDown={(e) => {
+        e.preventDefault();
+      }}
+    >
+      <div className="drama-mention-dropdown__header">
+        <span>选择「{familyName}」版本</span>
+        <button type="button" aria-label="关闭" onClick={onClose}>×</button>
+      </div>
+      <div ref={listRef} className="drama-mention-dropdown__list" role="listbox">
+        {items.length === 0 ? (
+          <div className="drama-mention-dropdown__empty">暂无版本</div>
+        ) : (
+          items.map((item, index) => {
+            const src = mediaUrl(item.asset?.imageStorageKey || item.asset?.imageUrl, { w: MEDIA_THUMB_WIDTH });
+            return (
+              <div
+                key={item.asset?.id || item.mentionName}
+                className={`drama-mention-dropdown__item ${index === activeIndex ? "is-active" : ""}`}
+                role="option"
+                aria-selected={index === activeIndex}
+                onMouseEnter={() => onActiveChange(index)}
+                onClick={() => onPick(item)}
+              >
+                {src ? <img src={src} alt="" /> : <span className="drama-mention-dropdown__thumb" />}
+                <span className="drama-mention-dropdown__item-name">{item.label || "基础"}</span>
+                <button
+                  type="button"
+                  className="drama-mention-dropdown__shot-switch"
+                  title="本镜提示词中该角色全部切到此版本"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onApplyShot?.(item);
+                  }}
+                >
+                  一键切换
+                </button>
               </div>
             );
           })
