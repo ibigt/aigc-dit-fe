@@ -1138,6 +1138,39 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
             })}
           </div>
           <div className="asset-category-actions">
+            {batchSelectMode && (
+              <>
+                <label className={`asset-select-all${allAssetsIndeterminate ? " is-indeterminate" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={allAssetsChecked}
+                    disabled={!assets.length || batchRunning}
+                    aria-label="一键全选全部资产"
+                    ref={(node) => {
+                      if (node) node.indeterminate = allAssetsIndeterminate;
+                    }}
+                    onChange={toggleSelectAllAssets}
+                  />
+                  <span className="asset-checkbox" aria-hidden="true"><Check size={12} /></span>
+                  <span>一键全选</span>
+                </label>
+                <label className={`asset-select-all${typeIndeterminate ? " is-indeterminate" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={allTypeChecked}
+                    disabled={!filtered.length || batchRunning}
+                    aria-label={`一键全选${type}`}
+                    ref={(node) => {
+                      if (node) node.indeterminate = typeIndeterminate;
+                    }}
+                    onChange={toggleSelectAllInType}
+                  />
+                  <span className="asset-checkbox" aria-hidden="true"><Check size={12} /></span>
+                  <span>一键全选{type}</span>
+                </label>
+                <span className="asset-selected-count">已选 <strong>{checkedCount}</strong> 项</span>
+              </>
+            )}
             {!batchSelectMode ? (
               <button
                 className="asset-secondary-button"
@@ -1203,39 +1236,6 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
             }}
           />
           <div className="asset-toolbar-actions">
-            {batchSelectMode && (
-              <>
-                <label className={`asset-select-all${allAssetsIndeterminate ? " is-indeterminate" : ""}`}>
-                  <input
-                    type="checkbox"
-                    checked={allAssetsChecked}
-                    disabled={!assets.length || batchRunning}
-                    aria-label="一键全选全部资产"
-                    ref={(node) => {
-                      if (node) node.indeterminate = allAssetsIndeterminate;
-                    }}
-                    onChange={toggleSelectAllAssets}
-                  />
-                  <span className="asset-checkbox" aria-hidden="true"><Check size={12} /></span>
-                  <span>一键全选</span>
-                </label>
-                <label className={`asset-select-all${typeIndeterminate ? " is-indeterminate" : ""}`}>
-                  <input
-                    type="checkbox"
-                    checked={allTypeChecked}
-                    disabled={!filtered.length || batchRunning}
-                    aria-label={`一键全选${type}`}
-                    ref={(node) => {
-                      if (node) node.indeterminate = typeIndeterminate;
-                    }}
-                    onChange={toggleSelectAllInType}
-                  />
-                  <span className="asset-checkbox" aria-hidden="true"><Check size={12} /></span>
-                  <span>一键全选{type}</span>
-                </label>
-                <span className="asset-selected-count">已选 <strong>{checkedCount}</strong> 项</span>
-              </>
-            )}
             <button className="asset-primary-button" type="button" disabled={batchRunning} onClick={() => setCreating(true)}>
               <Plus size={17} />
               <span>新增{type}</span>
