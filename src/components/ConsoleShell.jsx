@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { LogOut, ShieldCheck, UserRound, Zap } from "lucide-react";
+import { LogOut, ShieldCheck, UserRound, Workflow, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { fetchEnabledModels } from "../api/models.js";
@@ -14,6 +14,8 @@ import { AssetLibrary } from "./AssetLibrary.jsx";
 import { AdminConsole } from "./AdminConsole.jsx";
 import { DramaHome } from "./Drama/DramaHome.jsx";
 import { DramaWorkbench } from "./Drama/DramaWorkbench.jsx";
+import { WorkflowStudio } from "./WorkflowStudio.jsx";
+import { TemplateModal } from "./TemplateModal.jsx";
 
 const SIDEBAR_KEY = "tongdao-sidebar";
 
@@ -24,6 +26,7 @@ const navGroups = [
       { id: "create", to: "/console/create", label: "快速创作", Icon: SparkIcon },
       { id: "drama", to: "/console/drama", label: "短剧创作", Icon: FilmIcon },
       { id: "script", to: "/console/script", label: "剧本创作", Icon: ScriptIcon },
+      { id: "studio", to: "/console/studio", label: "高级工作台", Icon: Workflow },
     ],
   },
   {
@@ -39,6 +42,7 @@ const navGroups = [
 function deriveActiveId(pathname) {
   if (pathname.startsWith("/console/drama")) return "drama";
   if (pathname.startsWith("/console/script")) return "script";
+  if (pathname.startsWith("/console/studio")) return "studio";
   if (pathname.startsWith("/console/creations")) return "creations";
   if (pathname.startsWith("/console/assets")) return "assets";
   if (pathname.startsWith("/console/admin")) return "admin";
@@ -50,6 +54,7 @@ function navItemMatch(id, pathname) {
   if (id === "drama") return pathname === "/console/drama" || pathname.startsWith("/console/drama/");
   if (id === "admin") return pathname.startsWith("/console/admin");
   if (id === "create") return pathname === "/console" || pathname === "/console/" || pathname === "/console/create" || pathname.startsWith("/console/create/");
+  if (id === "studio") return pathname === "/console/studio" || pathname.startsWith("/console/studio/");
   return pathname === `/console/${id}`;
 }
 
@@ -68,6 +73,8 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
   const [profileMode, setProfileMode] = useState(null);
   const [creditsOpen, setCreditsOpen] = useState(false);
   const [recentTransactions, setRecentTransactions] = useState([]);
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const [templateLaunch, setTemplateLaunch] = useState(null);
   const [creationReuse, setCreationReuse] = useState(null);
   const menuRef = useRef(null);
 
@@ -86,7 +93,7 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
   }, [dramaId]);
 
   useEffect(() => {
-    if (active === "admin") setCollapsed(true);
+    if (active === "admin" || active === "studio") setCollapsed(true);
   }, [active]);
 
   useEffect(() => {
@@ -247,11 +254,27 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
         )}
         {active === "drama" && (dramaId ? <DramaWorkbench seriesId={dramaId} /> : <DramaHome />)}
         {active === "script" && <ScriptCreation />}
+        {active === "studio" && (
+          <WorkflowStudio
+            models={models.filter((model) => model.enabled !== false)}
+            onOpenTemplates={() => setTemplateOpen(true)}
+            templateLaunch={templateLaunch}
+          />
+        )}
         {active === "creations" && <MyCreations onReuse={reuseCreation} />}
         {active === "assets" && <AssetLibrary />}
         {active === "admin" && canSeeAdmin && <AdminConsole />}
       </main>
 
+      <TemplateModal
+        open={templateOpen}
+        onClose={() => setTemplateOpen(false)}
+        onUse={(template) => {
+          setTemplateOpen(false);
+          setTemplateLaunch({ ...template, token: Date.now() });
+          navigate("/console/studio");
+        }}
+      />
       <ProfileModal
         open={Boolean(profileMode)}
         mode={profileMode}

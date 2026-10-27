@@ -1,0 +1,45 @@
+export function estimatedNodeHeight(node) {
+  const kind = node.data?.kind;
+  if (kind === "AudioGenerator") return 560;
+  if (kind === "VideoEditing") return 390;
+  const fields = node.data?.fields || [];
+  const ports = Math.max(node.data?.inputs?.length || 0, node.data?.outputs?.length || 0);
+  return 76 + ports * 22 + (node.data?.preview ? 228 : 0) + fields.reduce((sum, field) => sum + (field.multiline ? 104 : 35), 0);
+}
+
+export function nodeLayoutSize(node) {
+  const kind = node.data?.kind;
+  const minimumWidth = ["MarkdownNote", "Prompt"].includes(kind) ? 286 : 0;
+  const height = kind === "VideoGenerator" ? 600 : kind === "ImageGenerator" ? 520 : ["MarkdownNote", "Prompt"].includes(kind) ? 260 : estimatedNodeHeight(node);
+  return {
+    width: Math.max(minimumWidth, Number(node.measured?.width) || Number(node.style?.width) || 320),
+    height: Number(node.measured?.height) || Number(node.style?.height) || height,
+  };
+}
+
+export function placeQuickNode(preferred, existingNodes, newNode) {
+  const padding = 32;
+  const step = 64;
+  const size = nodeLayoutSize(newNode);
+  const obstacles = existingNodes.filter((node) => !node.parentId).map((node) => ({ position: node.position, ...nodeLayoutSize(node) }));
+  const isFree = (point) => obstacles.every((node) =>
+    point.x + size.width + padding <= node.position.x
+    || node.position.x + node.width + padding <= point.x
+    || point.y + size.height + padding <= node.position.y
+    || node.position.y + node.height + padding <= point.y);
+  if (isFree(preferred)) return preferred;
+
+  let nearest;
+  for (let ring = 1; !nearest || ring * ring * step * step <= nearest.distance; ring += 1) {
+    for (let x = -ring; x <= ring; x += 1) {
+      for (let y = -ring; y <= ring; y += 1) {
+        if (Math.max(Math.abs(x), Math.abs(y)) !== ring) continue;
+        const distance = (x * x + y * y) * step * step;
+        if (nearest && distance >= nearest.distance) continue;
+        const point = { x: preferred.x + x * step, y: preferred.y + y * step };
+        if (isFree(point)) nearest = { point, distance };
+      }
+    }
+  }
+  return nearest.point;
+}
