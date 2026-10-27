@@ -1761,7 +1761,8 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
               </label>
               <p className="drama-extend-hint">
                 分镜引用为「@{baseNameOf(extendSource.name)}·{extendStateName.trim() || "标签"}」。
-                父版为「{stateLabel(extendSource)}」（生图优先参考该版图）；样貌/身高等仍与基础版一致。
+                父版「{stateLabel(extendSource)}」提供参考图与当前外观底；仅脸型/身高体型与基础版对齐（同一人）。
+                服装、发型发色以父版参考图与本版变化描述为准，不强制跟基础版。
               </p>
             </div>
             <footer>
