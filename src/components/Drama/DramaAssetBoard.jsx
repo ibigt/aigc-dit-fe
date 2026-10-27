@@ -84,13 +84,6 @@ function baseAssetOf(asset, list) {
   return (list || []).find((item) => familyKey(item) === key && isBaseAsset(item)) || null;
 }
 
-function identitySummary(asset) {
-  if (!asset) return "";
-  const text = typeof asset.identityInvariants === "string" ? asset.identityInvariants.trim() : "";
-  if (!text) return "";
-  return text.length > 48 ? `${text.slice(0, 48)}…` : text;
-}
-
 function sameAssetId(a, b) {
   if (a == null || b == null) return false;
   return String(a) === String(b);
@@ -1399,9 +1392,6 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                     </div>
                     <div className="asset-prompt-field">
                       <label htmlFor={`prompt-${item.id}`}>{isStateAsset(item) ? "变化描述" : "外形设定"}</label>
-                      {isStateAsset(item) && identitySummary(base) ? (
-                        <p className="drama-extend-hint">将保持：{identitySummary(base)}</p>
-                      ) : null}
                       <textarea
                         id={`prompt-${item.id}`}
                         rows={4}
