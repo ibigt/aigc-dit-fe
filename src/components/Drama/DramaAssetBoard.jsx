@@ -1761,7 +1761,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
               </label>
               <p className="drama-extend-hint">
                 分镜引用为「@{baseNameOf(extendSource.name)}·{extendStateName.trim() || "标签"}」。
-                延伸创作将自动保持样貌/身高等与基础版一致。
+                父版为「{stateLabel(extendSource)}」（生图优先参考该版图）；样貌/身高等仍与基础版一致。
               </p>
             </div>
             <footer>
@@ -1816,7 +1816,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
             <div className="asset-image-modal-body">
               <div className="asset-modal-config">
                 <p className="drama-extend-hint">
-                  延伸创作将自动带上「样貌/身高等与基础版一致」的系统句；当前选中：{stateLabel(workspaceAsset)}
+                  延伸以当前选中版为父版（生图优先参考该版图）；样貌/身高等仍与基础版一致。当前选中：{stateLabel(workspaceAsset)}
                 </p>
                 <section className="asset-modal-section">
                   <div className="asset-modal-prompt-head">
