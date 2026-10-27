@@ -1817,7 +1817,8 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
             <div className="asset-image-modal-body">
               <div className="asset-modal-config">
                 <p className="drama-extend-hint">
-                  延伸以当前选中版为父版（生图优先参考该版图）；样貌/身高等仍与基础版一致。当前选中：{stateLabel(workspaceAsset)}
+                  延伸以当前选中版为父版（生图优先参考该版图）；仅脸型/身高体型与基础版对齐。
+                  服装、发型发色跟父版参考图与本版变化描述，不强制跟基础版。当前选中：{stateLabel(workspaceAsset)}
                 </p>
                 <section className="asset-modal-section">
                   <div className="asset-modal-prompt-head">
