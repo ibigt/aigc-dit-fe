@@ -10395,7 +10395,7 @@ html[data-theme="dark"] .drama-dialog.drama-dialog--prompt .drama-dialog__action
 .template-modal { width: min(880px, 96vw); max-height: min(720px, 92vh); overflow-y: auto; border-radius: 20px; background: #fbfcfd; box-shadow: 0 28px 90px rgba(20,27,36,.24); padding: 25px; }
 .template-modal > header, .profile-modal > header { display: flex; justify-content: space-between; align-items: flex-start; }
 .template-modal h2, .profile-modal h2 { margin: 7px 0 3px; font-size: 24px; letter-spacing: -.03em; }.template-modal header p { margin: 0; color: #7b838e; font-size: 11px; }
-.modal-close { width: 32px; height: 32px; border: 1px solid var(--line); background: white; border-radius: 9px; display: grid; place-items: center; }
+.template-modal .modal-close, .profile-modal .modal-close { width: 32px; height: 32px; border: 1px solid var(--line); background: white; border-radius: 9px; display: grid; place-items: center; }
 .template-modal__toolbar { display: flex; align-items: center; justify-content: space-between; margin: 21px 0 14px; }
 .template-modal__toolbar label { width: 230px; height: 34px; background: white; border: 1px solid var(--line); border-radius: 9px; display: flex; align-items: center; gap: 7px; padding: 0 10px; color: #939aa3; }.template-modal__toolbar input { border: 0; outline: 0; font-size: 11px; }
 .template-modal__toolbar > div { display: flex; gap: 5px; }.template-modal__toolbar button { border: 0; border-radius: 8px; background: none; padding: 7px 11px; font-size: 11px; color: #818994; }.template-modal__toolbar button.active { color: var(--primary); background: #eceeff; }
