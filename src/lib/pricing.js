@@ -261,21 +261,6 @@ export function capabilityPricingError(pricing, category) {
   return "";
 }
 
-/**
- * 能力统一价的展示摘要：各能力共用同一套分辨率分档价，最高档价即「参考视频」的计费标准。
- */
-export function capabilityPricingSummary(pricing, category) {
-  const unit = pricing?.unit || "";
-  const tiers = pricing?.sale?.tiers || {};
-  const unitNames = TIER_UNITS[category] || [];
-  const entries = unitNames
-    .filter((name) => tiers[name] != null && String(tiers[name]).trim() !== "")
-    .map((name) => ({ tier: name, price: configuredPricingAmount(tiers[name]) }));
-  const base = configuredPricingAmount(pricing?.sale?.output);
-  const highest = highestTierUnitPrice(pricing, base || 0);
-  return { unit, entries, highestTierPrice: highest };
-}
-
 export function calculateCreditEstimate({ pricing, category, resolution, quality, durationSec, referenceVideoSeconds = 0, characterCount, copies = 1 }) {
   const configured = configuredPricingAmount(pricing?.sale?.output ?? pricing?.sale);
   const unitPrice = configured == null ? (DEFAULT_UNIT_PRICE[category] || 0) : Math.max(0, configured);

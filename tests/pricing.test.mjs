@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { billableCharacters, calculateCreditEstimate, capabilityPricingError, capabilityPricingSummary, characterRuleText, configuredPricingAmount, convertPricingUnit, highestTierUnitPrice, normalizePricing, normalizePricingUnit, parsePricingAmount, pricingUnits, pricingValidationError, resolveCjkWeight } from "../src/lib/pricing.js";
+import { billableCharacters, calculateCreditEstimate, capabilityPricingError, characterRuleText, configuredPricingAmount, convertPricingUnit, highestTierUnitPrice, normalizePricing, normalizePricingUnit, parsePricingAmount, pricingUnits, pricingValidationError, resolveCjkWeight } from "../src/lib/pricing.js";
 
 test("pricing units are constrained by model category", () => {
   // 2026-10-22 起「次」已从所有类型移除（视频秒/图片张/语音字符/文本Token）
@@ -95,17 +95,6 @@ test("capability pricing rejects a tier priced below its cost", () => {
   // 6 积分 = ¥0.6 ≥ ¥0.51 → 通过
   const ok = { ...pricing, sale: { ...pricing.sale, tiers: { ...pricing.sale.tiers, "480P": "6" } } };
   assert.equal(capabilityPricingError(ok, "video"), "");
-});
-
-test("capability summary exposes the unified tier prices and the highest tier", () => {
-  const pricing = {
-    unit: "秒",
-    sale: { output: "33 积分", tiers: { "480P": "7", "720P": "15", "1080P": "33" } },
-  };
-  const summary = capabilityPricingSummary(pricing, "video");
-  assert.equal(summary.unit, "秒");
-  assert.deepEqual(summary.entries.map((entry) => entry.tier), ["480P", "720P", "1080P"]);
-  assert.equal(summary.highestTierPrice, 33);
 });
 
 test("audio estimate bills fractional character units then rounds once", () => {
