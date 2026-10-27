@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { billableCharacters, calculateCreditEstimate, characterRuleText, configuredPricingAmount, convertPricingUnit, normalizePricing, normalizePricingUnit, parsePricingAmount, pricingUnits, pricingValidationError, resolveCjkWeight } from "../src/lib/pricing.js";
+import { billableCharacters, calculateCreditEstimate, capabilityPricingError, capabilityPricingSummary, characterRuleText, configuredPricingAmount, convertPricingUnit, highestTierUnitPrice, normalizePricing, normalizePricingUnit, parsePricingAmount, pricingUnits, pricingValidationError, resolveCjkWeight } from "../src/lib/pricing.js";
 
 test("pricing units are constrained by model category", () => {
   // 2026-10-22 起「次」已从所有类型移除（视频秒/图片张/语音字符/文本Token）
@@ -55,6 +55,57 @@ test("image estimate matches backend quality and resolution", () => {
     resolution: "2K",
     quality: "High",
   }), 12);
+});
+
+test("reference video is billed at the model highest tier price", () => {
+  // 能力之间不分价，但参考视频（r2v 的视频输入）按最高档价计：上游对输入视频也按最高档扣费
+  const pricing = {
+    unit: "秒",
+    sale: { output: "33 积分", tiers: { "480P": "7", "720P": "15", "1080P": "33" } },
+  };
+  // 输出 5s × 720P 档 15 = 75；参考 6s × 最高档 33 = 198
+  assert.equal(calculateCreditEstimate({
+    pricing,
+    category: "video",
+    resolution: "720P",
+    durationSec: 5,
+    referenceVideoSeconds: 6,
+  }), 75 + 198);
+  // 同一份输入不随副本数重复计
+  assert.equal(calculateCreditEstimate({
+    pricing,
+    category: "video",
+    resolution: "720P",
+    durationSec: 5,
+    referenceVideoSeconds: 6,
+    copies: 2,
+  }), 75 * 2 + 198);
+  assert.equal(highestTierUnitPrice(pricing, 33), 33);
+});
+
+test("capability pricing rejects a tier priced below its cost", () => {
+  const pricing = {
+    unit: "秒",
+    sale: { output: "33 积分", tiers: { "480P": "5", "720P": "15", "1080P": "33" } },
+    cost: { output: "¥2.48", tiers: { "480P": "¥0.51", "720P": "¥1.1", "1080P": "¥2.48" } },
+  };
+  // 5 积分 = ¥0.5 < ¥0.51 → 亏本，拦截
+  assert.match(capabilityPricingError(pricing, "video"), /480P/);
+  assert.match(capabilityPricingError(pricing, "video"), /亏本/);
+  // 6 积分 = ¥0.6 ≥ ¥0.51 → 通过
+  const ok = { ...pricing, sale: { ...pricing.sale, tiers: { ...pricing.sale.tiers, "480P": "6" } } };
+  assert.equal(capabilityPricingError(ok, "video"), "");
+});
+
+test("capability summary exposes the unified tier prices and the highest tier", () => {
+  const pricing = {
+    unit: "秒",
+    sale: { output: "33 积分", tiers: { "480P": "7", "720P": "15", "1080P": "33" } },
+  };
+  const summary = capabilityPricingSummary(pricing, "video");
+  assert.equal(summary.unit, "秒");
+  assert.deepEqual(summary.entries.map((entry) => entry.tier), ["480P", "720P", "1080P"]);
+  assert.equal(summary.highestTierPrice, 33);
 });
 
 test("audio estimate bills fractional character units then rounds once", () => {

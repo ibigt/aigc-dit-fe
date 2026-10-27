@@ -22,6 +22,8 @@ const miniMaxMaxDurations = Array.from({ length: 11 }, (_, index) => index + 5);
 const miniMaxComfyDurations = Array.from({ length: 11 }, (_, index) => index + 5);
 const agnesDurations = Array.from({ length: 9 }, (_, index) => index + 4);
 const videoResolutions = ["480P", "720P", "1080P", "2K", "4K"];
+// 图片分辨率档位与图片计费分档保持一致（1K 为基准档）
+const imageResolutions = ["1K", "2K", "4K"];
 const qualityLevels = ["Low", "Medium", "High"];
 const DEFAULT_SESSION_ID = "new-creation-default";
 const MODE_CAPS = ["t2i", "i2i", "t2v", "r2v", "i2v", "t2a"];
@@ -62,6 +64,41 @@ function supportsLibraryCite(model, generationType, videoMode) {
   if (generationType === "image") return modelSupports(model, "i2i");
   if (videoMode === "frames") return modelSupports(model, "i2v");
   return modelSupports(model, "r2v");
+}
+
+const videoDurationCache = new Map();
+// 读参考视频时长（秒），读不到按 0：本地新选的素材服务端还没探测时长，先用浏览器元数据估。
+function readVideoDuration(url) {
+  if (!url) return Promise.resolve(0);
+  if (videoDurationCache.has(url)) return videoDurationCache.get(url);
+  const promise = new Promise((resolve) => {
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    const settle = (value) => {
+      video.removeAttribute("src");
+      video.load();
+      resolve(Number.isFinite(value) && value > 0 ? value : 0);
+    };
+    video.onloadedmetadata = () => settle(video.duration);
+    video.onerror = () => settle(0);
+    video.src = url;
+  });
+  videoDurationCache.set(url, promise);
+  return promise;
+}
+
+// 参考视频计费秒数：与服务端同口径（各视频时长求和后按秒四舍五入）。
+// 优先用服务端探测的 durationMs（素材库已有），本地新选的才读浏览器元数据。
+function sumReferenceVideoSeconds(items) {
+  const videos = (items || []).filter((item) => item?.type === "video" || item?.kind === "video");
+  if (!videos.length) return Promise.resolve(0);
+  return Promise.all(videos.map((item) => (
+    Number.isFinite(item?.durationMs) && item.durationMs > 0
+      ? Promise.resolve(item.durationMs)
+      : readVideoDuration(item.url || item.src).then((seconds) => seconds * 1000)
+  ))).then(
+    (durations) => Math.max(1, Math.round(durations.reduce((sum, value) => sum + value, 0) / 1000)),
+  );
 }
 
 function isImageMaterial(item) {
@@ -124,6 +161,12 @@ function videoResolutionsFor(model) {
   // 展示出来会导致按高档位收费却只生成 720P
   if (isWan3Model(model)) return ["480P", "720P", "1080P"];
   return videoResolutions;
+}
+// 各创作类型的可选分辨率：视频按模型能力收敛，图片固定 1K/2K/4K（与计费分档一致）
+function resolutionOptionsFor(model, generationType) {
+  if (generationType === "video") return videoResolutionsFor(model);
+  if (generationType === "image") return imageResolutions;
+  return [];
 }
 function clampDurationForModel(model, duration) {
   const options = durationOptionsFor(model);
@@ -602,6 +645,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const [speed, setSpeed] = useState(1);
   const [audioFormat, setAudioFormat] = useState("mp3");
   const [referenceImages, setReferenceImages] = useState([]);
+  const [referenceVideoSeconds, setReferenceVideoSeconds] = useState(0);
   const [openPanel, setOpenPanel] = useState(null);
   const [dropup, setDropup] = useState(false);
 
@@ -667,6 +711,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     resolution,
     quality,
     durationSec: duration,
+    referenceVideoSeconds: generationType === "video" && videoMode !== "frames" ? referenceVideoSeconds : 0,
     characterCount: generationType === "audio"
       ? billableCharacters(prompt, resolveCjkWeight(selectedModel?.pricing, selectedModel?.adapterKey))
       : prompt.length,
@@ -676,6 +721,14 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const creditShortage = Boolean(selectedModel) && Number.isFinite(balanceCredits) && creditCost > balanceCredits;
   useEffect(() => { activeSessionIdRef.current = activeSessionId; }, [activeSessionId]);
   useEffect(() => { if (availableModels.length && !availableModels.some((item) => String(item.id) === String(model))) setModel(String(availableModels[0].id)); }, [availableModels, model]);
+  // 参考视频秒数：读各参考视频时长求和（向上取整），计费并入按秒单价
+  useEffect(() => {
+    let alive = true;
+    sumReferenceVideoSeconds(referenceImages).then((seconds) => {
+      if (alive) setReferenceVideoSeconds(seconds);
+    });
+    return () => { alive = false; };
+  }, [referenceImages]);
   useEffect(() => {
     if (generationType !== "audio") return;
     const nextVoice = audioOptions.defaultVoice || voiceIds[0] || "alloy";
@@ -689,9 +742,10 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     if (next !== duration) setDuration(next);
   }, [selectedModel, duration]);
   useEffect(() => {
-    if (generationType !== "video") return;
-    const options = videoResolutionsFor(selectedModel);
-    if (!options.includes(resolution)) setResolution(options[0] || "720P");
+    // 分辨率必须落在当前类型的可选档位内：切换会话/模型/创作类型后仍可能残留旧值（如图片模式残留 720P）
+    const options = resolutionOptionsFor(selectedModel, generationType);
+    if (!options.length) return;
+    if (!options.includes(resolution)) setResolution(options[0]);
   }, [selectedModel, generationType, resolution]);
   useEffect(() => {
     if (!supportsLibrary) {
@@ -1180,6 +1234,10 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
       uploadedReferences = references;
       uploadedFrames = useFrames ? { firstFrame, lastFrame } : { firstFrame: null, lastFrame: null };
       if (!useFrames) setReferenceImages(references);
+      // 参考视频秒数：仅在服务端探测不到素材时长时兜底（服务端取较大值，前端报多报少都不会让我们亏本）
+      const referenceSeconds = currentType === "video" && !useFrames
+        ? await sumReferenceVideoSeconds(references)
+        : 0;
       const submitted = await submitGenerate({
         modelId: Number(currentModel.id),
         sessionId,
@@ -1189,6 +1247,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         resolution,
         quality,
         durationSec: currentType === "video" ? clampDurationForModel(currentModel, duration) : undefined,
+        referenceVideoSeconds: referenceSeconds || undefined,
         voiceId: currentType === "audio" ? voiceId : undefined,
         speed: currentType === "audio" ? speed : undefined,
         audioFormat: currentType === "audio" ? audioFormat : undefined,
@@ -1657,7 +1716,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
                   <section>
                     <h3>分辨率</h3>
                     <div className="quick-resolution-grid">
-                      {(generationType === "video" ? videoResolutionsFor(selectedModel) : ["1K", "2K", "4K"]).map((res) => {
+                      {resolutionOptionsFor(selectedModel, generationType).map((res) => {
                         const selected = resolution === res;
                         return (
                           <button

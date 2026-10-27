@@ -215,7 +215,68 @@ function isCjk(char) {
     || (code >= 0xf900 && code <= 0xfaff);     // 兼容表意文字
 }
 
-export function calculateCreditEstimate({ pricing, category, resolution, quality, durationSec, characterCount, copies = 1 }) {
+// 模型最高档单价（每单位）：取 sale.tiers 里最高的档价，与基准价取大者。
+// 参考视频按此价计费——上游对输入视频也按最高档扣费，任何能力组合都不能亏本。
+export function highestTierUnitPrice(pricing, fallbackUnitPrice = 0) {
+  let highest = Math.max(0, Number(fallbackUnitPrice) || 0);
+  const tiers = pricing?.sale?.tiers || {};
+  for (const value of Object.values(tiers)) {
+    const amount = configuredPricingAmount(value);
+    if (amount != null && amount > highest) highest = amount;
+  }
+  return highest;
+}
+
+/** 1 元 = 10 积分（充值口径）；售价积分 ÷ 10 = 售价金额（元）。 */
+export const CREDITS_PER_YUAN = 10;
+
+/**
+ * 能力统一价校验：能力之间不分价——同一模型的所有能力共用同一套「分辨率分档价」，
+ * 因此任一档的售价都必须覆盖该档成本，否则无论用户选哪个能力都会亏本。
+ * 返回错误文案，通过则返回空串。
+ */
+export function capabilityPricingError(pricing, category) {
+  if (!pricing) return "";
+  const sale = pricing.sale || {};
+  const cost = pricing.cost || {};
+  const tiers = sale.tiers || {};
+  const costTiers = cost.tiers || {};
+  const check = (label, saleRaw, costRaw) => {
+    const saleAmount = configuredPricingAmount(saleRaw);
+    const costAmount = configuredPricingAmount(costRaw);
+    if (saleAmount == null || costAmount == null || costAmount <= 0) return "";
+    if (saleAmount / CREDITS_PER_YUAN < costAmount) {
+      return `${label} 售价 ${saleAmount} 积分（约 ¥${(saleAmount / CREDITS_PER_YUAN).toFixed(2)}）低于成本 ¥${costAmount}，会亏本`;
+    }
+    return "";
+  };
+  const unitNames = TIER_UNITS[category] || [];
+  for (const unit of unitNames) {
+    const error = check(`${unit} 档`, tiers[unit], costTiers[unit]);
+    if (error) return error;
+  }
+  if (!unitNames.length || !Object.keys(tiers).length) {
+    return check("基准档", sale.output, cost.output);
+  }
+  return "";
+}
+
+/**
+ * 能力统一价的展示摘要：各能力共用同一套分辨率分档价，最高档价即「参考视频」的计费标准。
+ */
+export function capabilityPricingSummary(pricing, category) {
+  const unit = pricing?.unit || "";
+  const tiers = pricing?.sale?.tiers || {};
+  const unitNames = TIER_UNITS[category] || [];
+  const entries = unitNames
+    .filter((name) => tiers[name] != null && String(tiers[name]).trim() !== "")
+    .map((name) => ({ tier: name, price: configuredPricingAmount(tiers[name]) }));
+  const base = configuredPricingAmount(pricing?.sale?.output);
+  const highest = highestTierUnitPrice(pricing, base || 0);
+  return { unit, entries, highestTierPrice: highest };
+}
+
+export function calculateCreditEstimate({ pricing, category, resolution, quality, durationSec, referenceVideoSeconds = 0, characterCount, copies = 1 }) {
   const configured = configuredPricingAmount(pricing?.sale?.output ?? pricing?.sale);
   const unitPrice = configured == null ? (DEFAULT_UNIT_PRICE[category] || 0) : Math.max(0, configured);
   const res = String(resolution || "").toUpperCase();
@@ -234,12 +295,25 @@ export function calculateCreditEstimate({ pricing, category, resolution, quality
     : Math.max(0, tierPrice) * qualityMultiplier;
 
   let quantity = 1;
-  if (category === "video" && pricing?.unit === "秒") quantity = Math.max(1, Number(durationSec) || 1);
+  if (category === "video" && pricing?.unit === "秒") {
+    quantity = Math.max(1, Number(durationSec) || 1);
+  }
   if (category === "audio") {
     const count = Math.max(1, Number(characterCount) || 1);
     if (pricing?.unit === "千字符") quantity = count / 1000;
     if (pricing?.unit === "万字符") quantity = count / 10000;
   }
   const safeCopies = Math.min(4, Math.max(1, Number(copies) || 1));
+  if (category === "video" && pricing?.unit === "秒") {
+    // 输出部分：所选分辨率档价 × 时长 × 副本数。
+    let total = effectivePrice * quantity * safeCopies;
+    // 参考视频（r2v 的视频输入）：按模型最高档价计一次（同一份输入多副本不重复计）——
+    // 上游把输入视频 token 也按最高档价扣费，取最高标准保证任何能力组合都不亏本。
+    const refSeconds = Math.max(0, Number(referenceVideoSeconds) || 0);
+    if (refSeconds > 0) {
+      total += highestTierUnitPrice(pricing, unitPrice) * refSeconds;
+    }
+    return Math.ceil(total * qualityMultiplier);
+  }
   return Math.ceil(effectivePrice * quantity * safeCopies);
 }
