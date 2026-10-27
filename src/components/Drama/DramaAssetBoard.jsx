@@ -1138,6 +1138,39 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
             })}
           </div>
           <div className="asset-category-actions">
+            {batchSelectMode && (
+              <>
+                <label className={`asset-select-all${allAssetsIndeterminate ? " is-indeterminate" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={allAssetsChecked}
+                    disabled={!assets.length || batchRunning}
+                    aria-label="一键全选全部资产"
+                    ref={(node) => {
+                      if (node) node.indeterminate = allAssetsIndeterminate;
+                    }}
+                    onChange={toggleSelectAllAssets}
+                  />
+                  <span className="asset-checkbox" aria-hidden="true"><Check size={12} /></span>
+                  <span>一键全选</span>
+                </label>
+                <label className={`asset-select-all${typeIndeterminate ? " is-indeterminate" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={allTypeChecked}
+                    disabled={!filtered.length || batchRunning}
+                    aria-label={`一键全选${type}`}
+                    ref={(node) => {
+                      if (node) node.indeterminate = typeIndeterminate;
+                    }}
+                    onChange={toggleSelectAllInType}
+                  />
+                  <span className="asset-checkbox" aria-hidden="true"><Check size={12} /></span>
+                  <span>一键全选{type}</span>
+                </label>
+                <span className="asset-selected-count">已选 <strong>{checkedCount}</strong> 项</span>
+              </>
+            )}
             {!batchSelectMode ? (
               <button
                 className="asset-secondary-button"
@@ -1203,39 +1236,6 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
             }}
           />
           <div className="asset-toolbar-actions">
-            {batchSelectMode && (
-              <>
-                <label className={`asset-select-all${allAssetsIndeterminate ? " is-indeterminate" : ""}`}>
-                  <input
-                    type="checkbox"
-                    checked={allAssetsChecked}
-                    disabled={!assets.length || batchRunning}
-                    aria-label="一键全选全部资产"
-                    ref={(node) => {
-                      if (node) node.indeterminate = allAssetsIndeterminate;
-                    }}
-                    onChange={toggleSelectAllAssets}
-                  />
-                  <span className="asset-checkbox" aria-hidden="true"><Check size={12} /></span>
-                  <span>一键全选</span>
-                </label>
-                <label className={`asset-select-all${typeIndeterminate ? " is-indeterminate" : ""}`}>
-                  <input
-                    type="checkbox"
-                    checked={allTypeChecked}
-                    disabled={!filtered.length || batchRunning}
-                    aria-label={`一键全选${type}`}
-                    ref={(node) => {
-                      if (node) node.indeterminate = typeIndeterminate;
-                    }}
-                    onChange={toggleSelectAllInType}
-                  />
-                  <span className="asset-checkbox" aria-hidden="true"><Check size={12} /></span>
-                  <span>一键全选{type}</span>
-                </label>
-                <span className="asset-selected-count">已选 <strong>{checkedCount}</strong> 项</span>
-              </>
-            )}
             <button className="asset-primary-button" type="button" disabled={batchRunning} onClick={() => setCreating(true)}>
               <Plus size={17} />
               <span>新增{type}</span>
@@ -1761,7 +1761,8 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
               </label>
               <p className="drama-extend-hint">
                 分镜引用为「@{baseNameOf(extendSource.name)}·{extendStateName.trim() || "标签"}」。
-                延伸创作将自动保持样貌/身高等与基础版一致。
+                父版「{stateLabel(extendSource)}」提供参考图与当前外观底；仅脸型/身高体型与基础版对齐（同一人）。
+                服装、发型发色以父版参考图与本版变化描述为准，不强制跟基础版。
               </p>
             </div>
             <footer>
@@ -1816,7 +1817,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
             <div className="asset-image-modal-body">
               <div className="asset-modal-config">
                 <p className="drama-extend-hint">
-                  延伸创作将自动带上「样貌/身高等与基础版一致」的系统句；当前选中：{stateLabel(workspaceAsset)}
+                  延伸以当前选中版为父版（生图优先参考该版图）；样貌/身高等仍与基础版一致。当前选中：{stateLabel(workspaceAsset)}
                 </p>
                 <section className="asset-modal-section">
                   <div className="asset-modal-prompt-head">
