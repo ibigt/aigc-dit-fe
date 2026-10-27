@@ -1,6 +1,6 @@
 import { AudioLines, Box, Check, CheckCircle2, Download, Film, Image, Images, Maximize2, Pencil, Plus, RefreshCw, Save, Sparkles, Video, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { fetchAssets } from "../api/assets.js";
 import { createSession, deleteSession, fetchSession, fetchSessions, renameSession, saveCreationToAsset } from "../api/creations.js";
 import { IMAGE_POLL_TIMEOUT_MS, pollGenerateTask, submitGenerate, VIDEO_POLL_TIMEOUT_MS } from "../api/generate.js";
@@ -681,6 +681,8 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const generatingSessionRef = useRef(new Set());
   const regenerateRef = useRef(false);
   const sessionMenuRef = useRef(null);
+  const conversationRef = useRef(null);
+  const [historyScrollToken, setHistoryScrollToken] = useState(0);
   const watchingTasksRef = useRef(new Set());
   const activeSessionIdRef = useRef(activeSessionId);
   const activeSession = sessions.find((item) => item.id === activeSessionId) || sessions[0];
@@ -721,6 +723,14 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   const creditShortage = Boolean(selectedModel) && Number.isFinite(balanceCredits) && creditCost > balanceCredits;
   useEffect(() => { activeSessionIdRef.current = activeSessionId; }, [activeSessionId]);
   useEffect(() => { if (availableModels.length && !availableModels.some((item) => String(item.id) === String(model))) setModel(String(availableModels[0].id)); }, [availableModels, model]);
+
+  // 加载 / 切换历史会话后默认滚到最新消息；token 不变时消息异步到位也会再滚一次。
+  useLayoutEffect(() => {
+    if (!historyScrollToken) return;
+    const el = conversationRef.current;
+    if (!el || !activeSession.messages.length) return;
+    el.scrollTop = el.scrollHeight;
+  }, [historyScrollToken, activeSessionId, activeSession.messages]);
   // 参考视频秒数：读各参考视频时长求和（向上取整），计费并入按秒单价
   useEffect(() => {
     let alive = true;
@@ -791,6 +801,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
       setSessions(mapped);
       setActiveSessionId(first.id);
       activeSessionIdRef.current = first.id;
+      setHistoryScrollToken((token) => token + 1);
       const detail = await fetchSession(first.id);
       if (!cancelled && detail) applySessionDetail(detail);
       if (!cancelled && seed) queueCreationSeed(seed, first.id);
@@ -923,6 +934,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   }
 
   function switchSession(session) {
+    setHistoryScrollToken((token) => token + 1);
     setActiveSessionId(session.id);
     setGenerationType(session.generationType);
     fetchSession(session.id).then(applySessionDetail).catch(() => {});
@@ -1881,7 +1893,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         )}
         <div className={`quick-content ${activeSession.messages.length ? "has-history" : ""}`}>
           {activeSession.messages.length > 0 && (
-            <section className="quick-conversation" aria-label="会话消息">
+            <section ref={conversationRef} className="quick-conversation" aria-label="会话消息">
               <div className="quick-message-list">
                 {activeSession.messages.map((message, index) => message.type === "user"
                   ? <div className="quick-message quick-message--user" key={`${activeSession.id}-${index}`}>
