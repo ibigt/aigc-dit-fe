@@ -724,12 +724,51 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
   useEffect(() => { activeSessionIdRef.current = activeSessionId; }, [activeSessionId]);
   useEffect(() => { if (availableModels.length && !availableModels.some((item) => String(item.id) === String(model))) setModel(String(availableModels[0].id)); }, [availableModels, model]);
 
-  // 加载 / 切换历史会话后默认滚到最新消息；token 不变时消息异步到位也会再滚一次。
+  // 加载 / 切换历史会话后贴底；媒体异步撑高时继续跟到底，用户上滑则停止。
   useLayoutEffect(() => {
     if (!historyScrollToken) return;
     const el = conversationRef.current;
     if (!el || !activeSession.messages.length) return;
-    el.scrollTop = el.scrollHeight;
+
+    let locked = true;
+    const stickToBottom = () => {
+      if (!locked) return;
+      el.scrollTop = el.scrollHeight;
+    };
+    stickToBottom();
+
+    const onScroll = () => {
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (distance > 64) locked = false;
+    };
+    const onMedia = (event) => {
+      const tag = event.target?.tagName;
+      if (tag === "IMG" || tag === "VIDEO" || tag === "AUDIO") stickToBottom();
+    };
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("load", onMedia, true);
+    el.addEventListener("loadedmetadata", onMedia, true);
+    el.addEventListener("loadeddata", onMedia, true);
+
+    const target = el.querySelector(".quick-message-list") || el;
+    const observer = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(() => stickToBottom())
+      : null;
+    observer?.observe(target);
+
+    // 兜底：慢网络下媒体晚到仍能贴底；超时后不再强行跟随。
+    const release = window.setTimeout(() => { locked = false; }, 4000);
+
+    return () => {
+      window.clearTimeout(release);
+      locked = false;
+      observer?.disconnect();
+      el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("load", onMedia, true);
+      el.removeEventListener("loadedmetadata", onMedia, true);
+      el.removeEventListener("loadeddata", onMedia, true);
+    };
   }, [historyScrollToken, activeSessionId, activeSession.messages]);
   // 参考视频秒数：读各参考视频时长求和（向上取整），计费并入按秒单价
   useEffect(() => {
