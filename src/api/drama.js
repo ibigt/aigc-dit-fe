@@ -127,6 +127,11 @@ export function generateDramaAssetImage(assetId, payload = {}) {
   return api.post(`/drama/assets/${assetId}/generate`, payload);
 }
 
+/** 外部图 → 图生文 → Seedream 5.0（打回后补救；HTTP 内同步图生文，返回后再轮询 T2I）。 */
+export function convertDramaAssetToSeedream(assetId, payload = {}) {
+  return api.post(`/drama/assets/${assetId}/convert-to-seedream`, payload, { timeout: 300000 });
+}
+
 export function fetchDramaAssetGenerateTask(assetId, taskId) {
   return api.get(`/drama/assets/${assetId}/generate/tasks/${taskId}`);
 }

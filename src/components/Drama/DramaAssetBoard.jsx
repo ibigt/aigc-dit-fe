@@ -31,6 +31,7 @@ import {
   fetchDramaAssetGenerations,
   fetchDramaAssets,
   fetchDramaImageModels,
+  convertDramaAssetToSeedream,
   generateDramaAssetImage,
   importDramaAssetGeneration,
   pollDramaAssetGenerate,
@@ -376,8 +377,18 @@ function imageModelLabel(item) {
   return `${item.name}${item.provider ? ` · ${item.provider}` : ""}`;
 }
 
+function originStatusLabel(status) {
+  if (status === "active") return "origin 有效";
+  if (status === "expiring_soon") return "origin 即将过期";
+  if (status === "expired") return "origin 已过期";
+  if (status === "absent") return "无 origin";
+  return "";
+}
+
 function historyPreviewDetail(record) {
-  return [record?.modelName, record?.resolution].filter(Boolean).join(" · ");
+  return [record?.modelName, record?.resolution, originStatusLabel(record?.originStatus)]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function ImageModelSelect({
@@ -843,6 +854,30 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
       invalidate();
     } finally {
       markBusy(asset.id, "generate", false);
+    }
+  }
+
+  /** 打回后补救 / origin 过期续链：有图即可，不要求提示词。 */
+  async function convertToSeedream(asset) {
+    if (!asset?.id) return;
+    if (!hasImage(asset)) {
+      showToast("请先上传或选用参考图");
+      return;
+    }
+    markBusy(asset.id, "convert", true);
+    try {
+      showToast("正在转资产图…");
+      const result = await convertDramaAssetToSeedream(asset.id, { resolution });
+      if (!result?.task?.id) {
+        throw new Error("转资产图未返回任务");
+      }
+      await pollDramaAssetGenerate(asset.id, result.task.id);
+      invalidate();
+      showToast("转资产图完成");
+    } catch (err) {
+      showToast(err.message || "转资产图失败");
+    } finally {
+      markBusy(asset.id, "convert", false);
     }
   }
 
@@ -1652,6 +1687,15 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                   >
                     {selectedGenerating ? "正在生成…" : <><Sparkles size={16} /> 开始生成</>}
                   </button>
+                  <button
+                    type="button"
+                    className="asset-modal-generate"
+                    disabled={!modelBound || !hasImage(detailAsset) || isBusy(detailAsset.id, "convert") || selectedGenerating}
+                    title="真人打回后的补救，或 origin 过期后续链"
+                    onClick={() => convertToSeedream(detailAsset)}
+                  >
+                    {isBusy(detailAsset.id, "convert") ? "转资产图中…" : "转资产图"}
+                  </button>
                 </div>
               </div>
               <aside className="asset-history-panel">
@@ -1663,7 +1707,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                     <>
                       “当前选中”即页面正在使用的图片。
                       <br />
-                      点击缩略图可看大图、生成时间与模型来源。
+                      点击缩略图可看大图、生成时间与模型来源；roundtrip 图会显示 origin 状态。
                     </>
                   )}
                   switchLabel="切换当前资产"
@@ -1675,7 +1719,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                   selecting={finalSelectMode}
                   selectedBadge="当前选中"
                   itemName={detailAsset.name}
-                  busy={isBusy(detailAsset.id, "history") || generationsQuery.isLoading || selectedGenerating}
+                  busy={isBusy(detailAsset.id, "history") || generationsQuery.isLoading || selectedGenerating || isBusy(detailAsset.id, "convert")}
                   onSwitchClick={() => setFinalSelectMode((current) => !current)}
                   onSelect={(record) => selectGeneration(record)}
                   onPreview={(record) => setPreview({
@@ -1853,6 +1897,18 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                       {(Boolean(workspaceAsset.generating) || isBusy(workspaceAsset.id, "generate"))
                         ? "生成中…"
                         : "图片生成"}
+                    </button>
+                    <button
+                      type="button"
+                      className="asset-generate-button"
+                      disabled={!modelBound || !hasImage(workspaceAsset) || isBusy(workspaceAsset.id, "convert")}
+                      title="真人打回后的补救，或 origin 过期后续链"
+                      onClick={() => {
+                        setActiveVersion(workspaceAsset);
+                        convertToSeedream(workspaceAsset);
+                      }}
+                    >
+                      {isBusy(workspaceAsset.id, "convert") ? "转资产图中…" : "转资产图"}
                     </button>
                     <button type="button" className="asset-generate-button" onClick={() => pickUpload(workspaceAsset)}>
                       上传图片
