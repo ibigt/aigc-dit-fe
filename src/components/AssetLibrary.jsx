@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteAsset, fetchAssets, uploadAsset } from "../api/assets.js";
 import { MediaCover } from "../lib/MediaCover.jsx";
-import { formatDateTime, MEDIA_THUMB_WIDTH, mediaUrl } from "../lib/media.js";
+import { downloadMediaFile, formatDateTime, MEDIA_THUMB_WIDTH, mediaDownloadName, mediaUrl } from "../lib/media.js";
 import { validateAssetFile } from "../lib/assetUpload.js";
 import { formatMediaMeta, runBatchDelete } from "../lib/assetBatch.js";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
@@ -482,7 +482,28 @@ export function AssetLibrary() {
                 <p>上传于 {selected.createdAt}</p>
               </div>
               <div className="work-preview-dialog__actions">
-                <a className="works-download-button" href={selected.src} download><Download size={16} /> 下载素材</a>
+                <button
+                  type="button"
+                  className="works-download-button"
+                  onClick={async () => {
+                    try {
+                      await downloadMediaFile(
+                        selected.src,
+                        mediaDownloadName({
+                          title: selected.title,
+                          fallback: "素材",
+                          type: selected.type,
+                          storageKey: selected.storageKey,
+                          src: selected.src,
+                        }),
+                      );
+                    } catch (error) {
+                      window.alert(error.message || "下载失败");
+                    }
+                  }}
+                >
+                  <Download size={16} /> 下载素材
+                </button>
                 <button type="button" className="works-download-button is-danger" onClick={() => confirmDelete(selected)}><Trash2 size={16} /> 删除</button>
               </div>
             </footer>

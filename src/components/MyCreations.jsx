@@ -5,7 +5,7 @@ import { deleteCreation, fetchCreations, saveCreationToAsset } from "../api/crea
 import { creationTitleForDisplay, promptForDisplay } from "../lib/createFlow.js";
 import { ImageLightbox } from "../lib/ImageLightbox.jsx";
 import { MediaCover } from "../lib/MediaCover.jsx";
-import { formatDateTime, MEDIA_THUMB_WIDTH, mediaUrl } from "../lib/media.js";
+import { downloadMediaFile, formatDateTime, MEDIA_THUMB_WIDTH, mediaDownloadName, mediaUrl } from "../lib/media.js";
 import { zipStore } from "../lib/zipStore.js";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { DemoSelect } from "./DemoSelect.jsx";
@@ -148,26 +148,16 @@ function createdFrom(range) {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
-function extensionOf(item) {
-  const source = String(item.storageKey || item.src || "").split("?")[0];
-  const match = source.match(/\.([a-z0-9]{2,5})$/i);
-  if (match) return match[1].toLowerCase();
-  if (item.type === "video") return "mp4";
-  if (item.type === "audio") return "mp3";
-  return "png";
-}
-
 function fileNameOf(item, used) {
-  const base = String(creationTitleForDisplay(item) || "作品").replace(/[\\/:*?"<>|]/g, " ").trim().slice(0, 40) || "作品";
-  const ext = extensionOf(item);
-  let name = `${base}.${ext}`;
-  let index = 2;
-  while (used.has(name)) {
-    name = `${base}-${index}.${ext}`;
-    index += 1;
-  }
-  used.add(name);
-  return name;
+  return mediaDownloadName({
+    title: creationTitleForDisplay(item),
+    fallback: "作品",
+    type: item.type,
+    storageKey: item.storageKey,
+    src: item.src,
+    createdAt: item.createdAt || item.createdAtLabel,
+    used,
+  });
 }
 
 export function MyCreations({ onReuse }) {
@@ -316,6 +306,19 @@ export function MyCreations({ onReuse }) {
     setSelected(null);
   }
 
+  async function downloadOne(item) {
+    if (!item?.src) {
+      setNotice({ tone: "error", text: "该作品暂无可下载文件" });
+      return;
+    }
+    try {
+      await downloadMediaFile(item.src, fileNameOf(item));
+      setNotice({ tone: "ok", text: "已开始下载" });
+    } catch (error) {
+      setNotice({ tone: "error", text: error.message || "下载失败" });
+    }
+  }
+
   async function downloadPicked() {
     const items = visible.filter((item) => picked.includes(item.id) && item.src);
     if (!items.length) {
@@ -329,7 +332,7 @@ export function MyCreations({ onReuse }) {
       const files = [];
       for (const item of items) {
         const response = await fetch(item.src);
-        if (!response.ok) throw new Error(`下载失败：${item.title || "作品"}`);
+        if (!response.ok) throw new Error(`下载失败：${creationTitleForDisplay(item)}`);
         files.push({ name: fileNameOf(item, used), data: new Uint8Array(await response.arrayBuffer()) });
       }
       const blob = zipStore(files);
@@ -447,7 +450,7 @@ export function MyCreations({ onReuse }) {
                 <footer className="work-card-footer">
                   <span><CalendarDays size={12} /> {item.createdAtLabel} · {item.elapsed}</span>
                   <div className="work-actions">
-                    <a href={item.src} download aria-label={`下载${title}`} title="下载"><Download size={16} /></a>
+                    <button type="button" aria-label={`下载${title}`} title="下载" onClick={() => downloadOne(item)}><Download size={16} /></button>
                     <button type="button" className="is-danger" aria-label={`删除${title}`} title="删除" onClick={() => confirmDelete(item)}><Trash2 size={16} /></button>
                   </div>
                 </footer>
@@ -473,7 +476,7 @@ export function MyCreations({ onReuse }) {
                       <span>{item.model || "未记录模型"}</span>
                     </div>
                     <div className="work-actions">
-                      <a href={item.src} download aria-label={`下载${title}`} title="下载"><Download size={16} /></a>
+                      <button type="button" aria-label={`下载${title}`} title="下载" onClick={() => downloadOne(item)}><Download size={16} /></button>
                       <button type="button" className="is-danger" aria-label={`删除${title}`} title="删除" onClick={() => confirmDelete(item)}><Trash2 size={16} /></button>
                     </div>
                   </div>
@@ -537,7 +540,7 @@ export function MyCreations({ onReuse }) {
                   {savedIds.includes(selected.id) ? "已存入素材库" : "存入素材库"}
                 </button>
                 <button type="button" className="works-download-button" onClick={() => reuse(selected)}><Sparkles size={16} /> 基于此生成</button>
-                <a className="works-download-button" href={selected.src} download><Download size={16} /> 下载作品</a>
+                <button type="button" className="works-download-button" onClick={() => downloadOne(selected)}><Download size={16} /> 下载作品</button>
                 <button type="button" className="works-download-button is-danger" onClick={() => confirmDelete(selected)} aria-label={`删除${creationTitleForDisplay(selected)}`} title="删除"><Trash2 size={16} /> 删除</button>
               </div>
             </footer>

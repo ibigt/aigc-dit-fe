@@ -1,24 +1,77 @@
-import { ArrowLeft, ChevronDown, ChevronRight, CircleCheck, Download, Film, Pencil, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, CircleCheck, Download, Film, Pencil, X } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   bindDramaVideoModel,
   createDramaEpisode,
   deleteDramaEpisode,
+  exportDramaFilmBurned,
   fetchDramaFilm,
   fetchDramaSeriesDetail,
   fetchDramaVideoModels,
   updateDramaSeries,
 } from "../../api/drama.js";
 import { DramaAssetBoard } from "./DramaAssetBoard.jsx";
-import { DramaFilmPanel, downloadDramaFilm } from "./DramaFilmPanel.jsx";
+import { DramaFilmPanel, downloadAuthenticatedText, downloadDramaFilm } from "./DramaFilmPanel.jsx";
 import { DramaScriptPanel } from "./DramaScriptPanel.jsx";
 import { DramaStoryboard } from "./DramaStoryboard.jsx";
 import { DramaStylePicker } from "./DramaStylePicker.jsx";
 import { dramaStyleOf } from "./dramaStyles.js";
 import { preferredResolution, resolutionOptionsFor } from "./dramaSpecs.js";
 import { modelLogoSrc } from "../../lib/modelLogos.js";
+import { authenticatedApiUrl, dramaFilmDownloadName, mediaUrl, safeDownloadBase } from "../../lib/media.js";
+import { zipStore } from "../../lib/zipStore.js";
+
+const EXPORT_SCOPES = [
+  { id: "current", title: "导出当前集" },
+  { id: "all", title: "导出全集" },
+];
+const EXPORT_CAPTIONS = [
+  { id: "burned", title: "带字幕成片" },
+  { id: "plain", title: "成片（无字幕）" },
+];
+
+function episodeExportLabel(ep) {
+  return safeDownloadBase(ep?.name || `第${ep?.episodeNumber || 1}集`, `第${ep?.episodeNumber || 1}集`);
+}
+
+function uniqueZipName(usedNames, base, ext) {
+  let name = `${base}.${ext}`;
+  let n = 2;
+  while (usedNames.has(name)) {
+    name = `${base}-${n}.${ext}`;
+    n += 1;
+  }
+  usedNames.add(name);
+  return name;
+}
+
+async function fetchMediaBytes(urlOrKey) {
+  const src = mediaUrl(urlOrKey) || urlOrKey;
+  const response = await fetch(src);
+  if (!response.ok) throw new Error("下载失败");
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+async function fetchAuthTextBytes(path) {
+  const src = authenticatedApiUrl(path);
+  const response = await fetch(src, { credentials: "include" });
+  if (!response.ok) throw new Error("下载字幕失败");
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+function triggerBlobDownload(blob, filename) {
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(href);
+}
 
 const STEPS = [
   { id: "script", label: "剧本" },
@@ -60,9 +113,10 @@ function stepFromSearch(searchParams) {
 }
 
 function DramaDialog({ title, eyebrow, onClose, children }) {
-  return (
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <div className="drama-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="drama-dialog" role="dialog" aria-modal="true" aria-labelledby="drama-workspace-dialog-title">
+      <section className="drama-dialog drama-dialog--export" role="dialog" aria-modal="true" aria-labelledby="drama-workspace-dialog-title">
         <header>
           <div>
             {eyebrow && <span>{eyebrow}</span>}
@@ -73,7 +127,8 @@ function DramaDialog({ title, eyebrow, onClose, children }) {
 
         {children}
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -303,9 +358,155 @@ export function DramaWorkbench({ seriesId }) {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameDraft, setRenameDraft] = useState("");
   const [exportOpen, setExportOpen] = useState(false);
+  const [exportScope, setExportScope] = useState("current");
+  const [exportCaption, setExportCaption] = useState("burned");
+  const [exportIncludeVtt, setExportIncludeVtt] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState("");
+  const renameInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!renameOpen) return;
+    const input = renameInputRef.current;
+    if (!input) return;
+    // preventScroll：避免 autoFocus 带动整页滚动，露出浅色缝/白横条。
+    input.focus({ preventScroll: true });
+    input.select();
+  }, [renameOpen]);
 
   const goLibrary = () => navigate("/console/drama");
+
+  async function runExportDownload() {
+    if (!series?.id) {
+      showNotice("请先打开项目", true);
+      return;
+    }
+    const targets = exportScope === "all"
+      ? (episodes.length ? episodes : (episode ? [episode] : []))
+      : (episode ? [episode] : []);
+    if (!targets.length) {
+      showNotice("请先打开剧集", true);
+      return;
+    }
+    const wantVtt = exportCaption === "plain" && exportIncludeVtt;
+    setExporting(true);
+    setExportStatus(exportCaption === "burned" ? "准备烧录…" : "准备下载…");
+    try {
+      const usedNames = new Set();
+      const zipFiles = [];
+      let packed = 0;
+      let skipped = 0;
+      let vttPacked = 0;
+      let vttMissing = 0;
+      let staleHint = false;
+
+      for (let index = 0; index < targets.length; index += 1) {
+        const ep = targets[index];
+        const epLabel = episodeExportLabel(ep);
+        setExportStatus(`处理 ${epLabel}（${index + 1}/${targets.length}）…`);
+        const film = await queryClient.fetchQuery({
+          queryKey: ["drama-film", ep.id],
+          queryFn: () => fetchDramaFilm(ep.id),
+        });
+        if (film?.stale) staleHint = true;
+
+        if (!film?.filmUrl) {
+          skipped += 1;
+          continue;
+        }
+
+        let filmUrl = film.filmUrl;
+        let suffix = "";
+        if (exportCaption === "burned") {
+          if (!film?.hasCaptions) {
+            skipped += 1;
+            continue;
+          }
+          setExportStatus(`烧录 ${epLabel}（${index + 1}/${targets.length}）…`);
+          const burned = await exportDramaFilmBurned(ep.id);
+          if (!burned?.filmUrl) {
+            skipped += 1;
+            continue;
+          }
+          filmUrl = burned.filmUrl;
+          suffix = "带字幕";
+        }
+
+        if (exportScope === "current") {
+          await downloadDramaFilm(
+            filmUrl,
+            dramaFilmDownloadName({ seriesName: series.name, episode: ep, suffix }),
+          );
+          packed += 1;
+          if (wantVtt) {
+            if (film?.hasCaptions) {
+              // 稍候再触发第二个文件，降低浏览器拦截连续下载的概率
+              await new Promise((resolve) => window.setTimeout(resolve, 350));
+              await downloadAuthenticatedText(
+                `/api/drama/episodes/${ep.id}/film/captions.vtt`,
+                dramaFilmDownloadName({ seriesName: series.name, episode: ep, suffix: "字幕", ext: "vtt" }),
+              );
+              vttPacked += 1;
+            } else {
+              vttMissing += 1;
+            }
+          }
+          break;
+        }
+
+        const bytes = await fetchMediaBytes(filmUrl);
+        zipFiles.push({ name: uniqueZipName(usedNames, epLabel, "mp4"), data: bytes });
+        packed += 1;
+        if (wantVtt) {
+          if (film?.hasCaptions) {
+            const vttBytes = await fetchAuthTextBytes(`/api/drama/episodes/${ep.id}/film/captions.vtt`);
+            zipFiles.push({ name: uniqueZipName(usedNames, `${epLabel}-字幕`, "vtt"), data: vttBytes });
+            vttPacked += 1;
+          } else {
+            vttMissing += 1;
+          }
+        }
+      }
+
+      if (exportScope === "all") {
+        if (!zipFiles.length) {
+          showNotice(
+            exportCaption === "burned"
+              ? "没有可导出的字幕成片，请先拼接并生成字幕"
+              : "没有已成片的剧集，请先拼接成片",
+            true,
+          );
+          return;
+        }
+        setExportStatus("正在打包 ZIP…");
+        const zipName = `${safeDownloadBase(series.name, "短剧")}.zip`;
+        triggerBlobDownload(zipStore(zipFiles), zipName);
+      }
+
+      if (packed === 0) {
+        showNotice(
+          exportCaption === "burned"
+            ? "当前集暂无可用字幕，请先生成字幕"
+            : "请先拼接成片",
+          true,
+        );
+        return;
+      }
+
+      setExportOpen(false);
+      const parts = [`已开始下载${exportScope === "all" ? `（${packed} 集）` : ""}`];
+      if (wantVtt && vttPacked > 0) parts.push(`含 ${vttPacked} 个字幕文件`);
+      if (wantVtt && vttMissing > 0) parts.push(`${vttMissing} 集无字幕可附带`);
+      if (skipped > 0) parts.push(`跳过 ${skipped} 集`);
+      if (staleHint && exportCaption === "plain") parts.push("部分成片可能已过期");
+      showNotice(parts.join(" · "));
+    } catch (error) {
+      showNotice(error.message || "导出失败", true);
+    } finally {
+      setExporting(false);
+      setExportStatus("");
+    }
+  }
 
   function showNotice(message, isError = false) {
     setNoticeError(isError);
@@ -316,7 +517,14 @@ export function DramaWorkbench({ seriesId }) {
   function commitRename() {
     const name = renameDraft.trim();
     if (!name) {
-      showNotice("请输入项目名称");
+      setRenameDraft(series.name || "");
+      setRenameOpen(false);
+      showNotice("请输入项目名称", true);
+      return;
+    }
+    // 未改动时直接收起，避免无意义请求和浅色 toast 白条。
+    if (name === (series.name || "").trim()) {
+      setRenameOpen(false);
       return;
     }
     renameMutation.mutate(name);
@@ -366,7 +574,11 @@ export function DramaWorkbench({ seriesId }) {
           <div className="drama-project-title">
             {renameOpen ? (
               <input
-                autoFocus
+                ref={renameInputRef}
+                type="text"
+                name="drama-series-title"
+                autoComplete="off"
+                spellCheck={false}
                 className={`workspace-name-input${renameDraft.trim() ? "" : " is-invalid"}`}
                 aria-invalid={!renameDraft.trim()}
                 aria-label="修改项目名称"
@@ -408,7 +620,17 @@ export function DramaWorkbench({ seriesId }) {
             onError={(message) => showNotice(message, true)}
           />
           {step === "film" && (
-            <button className="button button--primary" type="button" onClick={() => setExportOpen(true)}>
+            <button
+              className="button button--primary"
+              type="button"
+              onClick={() => {
+                setExportScope("current");
+                setExportCaption("burned");
+                setExportIncludeVtt(false);
+                setExportStatus("");
+                setExportOpen(true);
+              }}
+            >
               <Download size={16} /> 导出
             </button>
           )}
@@ -482,44 +704,83 @@ export function DramaWorkbench({ seriesId }) {
         />
       )}
       {exportOpen && (
-        <DramaDialog title="导出成片" eyebrow={episode?.name || series.name} onClose={() => setExportOpen(false)}>
+        <DramaDialog
+          title="导出成片"
+          eyebrow={series.name}
+          onClose={() => !exporting && setExportOpen(false)}
+        >
           <div className="export-options">
-            <button
-              type="button"
-              disabled={exporting}
-              onClick={async () => {
-                if (!episode?.id) {
-                  showNotice("请先打开剧集");
-                  return;
-                }
-                setExporting(true);
-                try {
-                  const film = await queryClient.fetchQuery({
-                    queryKey: ["drama-film", episode.id],
-                    queryFn: () => fetchDramaFilm(episode.id),
-                  });
-                  if (!film?.filmUrl) {
-                    setExportOpen(false);
-                    showNotice("请先拼接成片");
-                    return;
-                  }
-                  await downloadDramaFilm(film.filmUrl, `${series.name || "成片"}.mp4`);
-                  setExportOpen(false);
-                  showNotice(film.stale ? "已下载当前成片，分镜已更新请重新拼接" : "成片已开始下载");
-                } catch (error) {
-                  showNotice(error.message || "导出失败");
-                } finally {
-                  setExporting(false);
-                }
-              }}
-            >
-              <Film size={20} />
-              <span>
-                <strong>{exporting ? "导出中…" : "导出成片"}</strong>
-                <small>MP4 · 不导出剪映草稿</small>
-              </span>
-              <ChevronRight size={17} />
-            </button>
+            <section className="export-section" aria-label="导出范围">
+              <h3>导出范围</h3>
+              {EXPORT_SCOPES.map((item) => {
+                const selected = exportScope === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={selected ? "is-selected" : ""}
+                    aria-pressed={selected}
+                    disabled={exporting}
+                    onClick={() => setExportScope(item.id)}
+                  >
+                    <Film size={20} />
+                    <span>
+                      <strong>{item.title}</strong>
+                    </span>
+                    <Check size={17} className="export-check" aria-hidden={!selected} />
+                  </button>
+                );
+              })}
+            </section>
+            <section className="export-section" aria-label="字幕选项">
+              <h3>字幕选项</h3>
+              {EXPORT_CAPTIONS.map((item) => {
+                const selected = exportCaption === item.id;
+                return (
+                  <div key={item.id} className={`export-caption-row${selected ? " is-selected" : ""}`}>
+                    <button
+                      type="button"
+                      className={selected ? "is-selected" : ""}
+                      aria-pressed={selected}
+                      disabled={exporting}
+                      onClick={() => {
+                        setExportCaption(item.id);
+                        if (item.id !== "plain") setExportIncludeVtt(false);
+                      }}
+                    >
+                      <Film size={20} />
+                      <span>
+                        <strong>{item.title}</strong>
+                      </span>
+                      <Check size={17} className="export-check" aria-hidden={!selected} />
+                    </button>
+                    {item.id === "plain" && selected && (
+                      <label className={`export-vtt-check${exportIncludeVtt ? " is-checked" : ""}`}>
+                        <input
+                          type="checkbox"
+                          checked={exportIncludeVtt}
+                          disabled={exporting}
+                          onChange={(event) => setExportIncludeVtt(event.target.checked)}
+                        />
+                        <span>
+                          <strong>同时下载字幕文件</strong>
+                        </span>
+                      </label>
+                    )}
+                  </div>
+                );
+              })}
+            </section>
+            {exportStatus && <p className="export-status" role="status">{exportStatus}</p>}
+            <footer className="export-footer">
+              <button type="button" className="button button--ghost" disabled={exporting} onClick={() => setExportOpen(false)}>
+                取消
+              </button>
+              <button type="button" className="button button--primary" disabled={exporting} onClick={runExportDownload}>
+                <Download size={15} />
+                {exporting ? (exportStatus || "下载中…") : "下载"}
+              </button>
+            </footer>
           </div>
         </DramaDialog>
       )}

@@ -308,8 +308,26 @@ export function deleteDramaShotGeneration(shotId, generationId) {
   return api.delete(`/drama/shots/${shotId}/generations/${generationId}`);
 }
 
+export function retryDramaShotCaptions(shotId) {
+  return api.post(`/drama/shots/${shotId}/captions/retry`);
+}
+
+export function fetchDramaShotCaptions(shotId) {
+  return api.get(`/drama/shots/${shotId}/captions`);
+}
+
+export function saveDramaShotCaptions(shotId, { cues }) {
+  return api.put(`/drama/shots/${shotId}/captions`, { cues });
+}
+
+export function burnDramaShotCaptions(shotId) {
+  return api.post(`/drama/shots/${shotId}/captions/burn`);
+}
+
 /** 拼接可能走重编码，超时需覆盖后端 ffmpeg encode 上限。 */
 const FILM_ASSEMBLE_TIMEOUT_MS = 16 * 60 * 1000;
+/** 带字成片需先逐镜烧录再拼接，超时更长。 */
+const FILM_EXPORT_BURNED_TIMEOUT_MS = 30 * 60 * 1000;
 
 export function fetchDramaFilm(episodeId) {
   return api.get(`/drama/episodes/${episodeId}/film`);
@@ -324,6 +342,21 @@ export function assembleDramaFilm(episodeId, { shotIds } = {}) {
     `/drama/episodes/${episodeId}/film/assemble`,
     { shotIds: ids },
     { timeout: FILM_ASSEMBLE_TIMEOUT_MS },
+  );
+}
+
+export function exportDramaFilmBurned(episodeId, shotIds) {
+  const body = Array.isArray(shotIds)
+    ? {
+      shotIds: shotIds
+        .map((id) => (typeof id === "number" ? id : Number(id)))
+        .filter((id) => Number.isFinite(id)),
+    }
+    : undefined;
+  return api.post(
+    `/drama/episodes/${episodeId}/film/export-burned`,
+    body,
+    { timeout: FILM_EXPORT_BURNED_TIMEOUT_MS },
   );
 }
 
