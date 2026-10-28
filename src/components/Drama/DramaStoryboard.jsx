@@ -2126,6 +2126,7 @@ export function DramaStoryboard({ series, episode }) {
   const selectedBatchLocked = Boolean(selected?.id && batchLockedIds.has(selected.id));
   const generating = Boolean(selected && isShotGenerating(selected, busy, selectedBatchLocked));
   const drafting = autoDrafting || draftMutation.isPending;
+  const boardBusy = boardQuery.isLoading || drafting;
   const frozenByRecompile = recompiling;
   const batchCheckedCount = shots.filter((shot) => selectedIds.has(shot.id)).length;
   const allShotsSelected = batchCheckedCount > 0 && batchCheckedCount === shots.length;
@@ -2230,6 +2231,7 @@ export function DramaStoryboard({ series, episode }) {
 
       <div className="youxi-shots-center">
         <div className="youxi-shots-center__body">
+        {!boardBusy && (
         <div className="youxi-story-banners">
         {!scriptLocked && (
           <div className="drama-asset-gate youxi-story-gate">
@@ -2256,7 +2258,7 @@ export function DramaStoryboard({ series, episode }) {
             <Lock size={16} />
             <div>
               <strong>还没有可用参考图</strong>
-              <p>可先拆镜。出片只上传镜头说明里 @ 到的参考图。</p>
+              <p>出片只上传镜头说明里 @ 到的参考图。</p>
             </div>
           </div>
         )}
@@ -2299,24 +2301,11 @@ export function DramaStoryboard({ series, episode }) {
           </div>
         )}
         </div>
+        )}
 
-        {boardQuery.isLoading ? (
-          <p className="drama-asset-empty">正在读取分镜…</p>
-        ) : drafting ? (
-          <div className="youxi-storyboard-main">
-            <div className="youxi-story-preview">
-              <div className="youxi-story-empty-preview" data-ratio={ratio}>
-                <div className="youxi-story-empty-state">
-                  <Wand2 size={24} />
-                  <strong>{shots.length ? "正在重新拆镜中" : "正在自动拆镜中"}</strong>
-                  <span>
-                    {shots.length
-                      ? "正在按当前剧本重新拆镜头，完成后会替换本集分镜，请稍候。"
-                      : "分析已完成。正在按对白和动作给每镜估时长并拆镜头，请稍候。"}
-                  </span>
-                </div>
-              </div>
-            </div>
+        {boardBusy ? (
+          <div className="youxi-storyboard-main youxi-storyboard-main--loading" aria-busy="true">
+            <p className="youxi-storyboard-loading" role="status">分镜信息加载中</p>
           </div>
         ) : !shots.length ? (
           <div className="youxi-storyboard-main">
