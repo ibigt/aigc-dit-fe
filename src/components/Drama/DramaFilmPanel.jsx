@@ -2,14 +2,23 @@ import { Check, ChevronDown, Film, Scissors } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { assembleDramaFilm, fetchDramaFilm } from "../../api/drama.js";
-import { authenticatedApiUrl, mediaUrl } from "../../lib/media.js";
+import { authenticatedApiUrl, downloadMediaFile, dramaFilmDownloadName, mediaUrl } from "../../lib/media.js";
 
 export async function downloadDramaFilm(filmUrl, filename = "成片.mp4") {
-  const src = mediaUrl(filmUrl);
-  if (!src) return;
-  const response = await fetch(src);
-  if (!response.ok) {
+  try {
+    await downloadMediaFile(filmUrl, filename);
+  } catch {
     throw new Error("下载成片失败");
+  }
+}
+
+/** 带鉴权的文本资源下载（如成片 VTT）；path 走 authenticatedApiUrl。 */
+export async function downloadAuthenticatedText(path, filename = "captions.vtt") {
+  const src = authenticatedApiUrl(path);
+  if (!src) return;
+  const response = await fetch(src, { credentials: "include" });
+  if (!response.ok) {
+    throw new Error("下载字幕失败");
   }
   const blob = await response.blob();
   const href = URL.createObjectURL(blob);
@@ -78,7 +87,8 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
   const includedKey = includedIds.join(",");
   const readyCount = film?.readyShotCount ?? readyIds.length;
   const filmVersion = film?.assembledAt || "";
-  const filmSrc = withCacheBust(mediaUrl(film?.filmUrl), filmVersion);
+  const filmFileName = dramaFilmDownloadName({ seriesName: series?.name, episode });
+  const filmSrc = withCacheBust(mediaUrl(film?.filmUrl, { filename: filmFileName }), filmVersion);
   const posterSrc = withCacheBust(mediaUrl(film?.posterUrl), filmVersion);
   const captionSrc = filmSrc && film?.hasCaptions && !film?.stale
     ? authenticatedApiUrl(`/api/drama/episodes/${episodeId}/film/captions.vtt?v=${encodeURIComponent(filmVersion)}`)
@@ -285,6 +295,7 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
               <video
                 key={`${filmSrc}|${filmVersion}`}
                 controls
+                controlsList="nodownload"
                 playsInline
                 preload="metadata"
                 data-ratio={ratio}

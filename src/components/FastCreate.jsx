@@ -5,7 +5,7 @@ import { fetchAssets } from "../api/assets.js";
 import { createSession, deleteSession, fetchSession, fetchSessions, renameSession, saveCreationToAsset } from "../api/creations.js";
 import { IMAGE_POLL_TIMEOUT_MS, pollGenerateTask, submitGenerate, VIDEO_POLL_TIMEOUT_MS } from "../api/generate.js";
 import { friendlyGenerateError, FRAMES_EMPTY_PROMPT_LABEL, materialToAsset, promptForDisplay, promptForResult, tasksToMessages, taskToResultMessage } from "../lib/createFlow.js";
-import { formatDateTime, mediaUrl, storageKeyOf } from "../lib/media.js";
+import { downloadMediaFile, formatDateTime, mediaDownloadName, mediaUrl, storageKeyOf } from "../lib/media.js";
 import { billableCharacters, calculateCreditEstimate, resolveCjkWeight } from "../lib/pricing.js";
 import { modelCatalogMessage } from "../lib/modelCatalog.js";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
@@ -332,52 +332,6 @@ function makeInitialSession() {
   };
 }
 
-function extensionFromName(value) {
-  const source = String(value || "");
-  let name = source.split("#")[0];
-  try {
-    if (source.includes("key=")) {
-      const key = new URL(source, window.location.origin).searchParams.get("key");
-      if (key) name = key;
-    }
-  } catch {
-    // 地址无法解析时退回路径本身
-  }
-  const match = name.split("?")[0].match(/\.([a-z0-9]{2,5})$/i);
-  return match ? match[1].toLowerCase() : "";
-}
-
-function extensionFromContentType(contentType) {
-  const mime = String(contentType || "").split(";")[0].trim().toLowerCase();
-  const known = {
-    "image/png": "png",
-    "image/jpeg": "jpg",
-    "image/jpg": "jpg",
-    "image/webp": "webp",
-    "image/gif": "gif",
-    "video/mp4": "mp4",
-    "video/webm": "webm",
-    "video/quicktime": "mov",
-    "audio/mpeg": "mp3",
-    "audio/mp3": "mp3",
-    "audio/wav": "wav",
-    "audio/mp4": "m4a",
-    "audio/aac": "aac",
-  };
-  return known[mime] || "";
-}
-
-function extensionOf(url, type, contentType) {
-  const fromName = extensionFromName(url);
-  if (fromName && fromName !== "bin") return fromName;
-  const fromType = extensionFromContentType(contentType);
-  if (fromType) return fromType;
-  if (type === "video") return "mp4";
-  if (type === "audio") return "mp3";
-  if (type === "image") return "png";
-  return "bin";
-}
-
 const MAX_REFERENCE_ASSETS = 15;
 
 function QuickAudioPopover({ voices, formats, voiceId, setVoiceId, audioFormat, setAudioFormat, speed, setSpeed, minSpeed, maxSpeed }) {
@@ -469,22 +423,21 @@ function ResultMessage({ message, onReuse, onSave, savedIds = [], savingId }) {
   async function downloadAll() {
     if (!downloadable.length || downloading) return;
     setDownloading(true);
+    const used = new Set();
+    const promptTitle = promptForDisplay(message.prompt) || message.prompt || "";
     try {
       for (let index = 0; index < downloadable.length; index += 1) {
         const file = downloadable[index];
         try {
-          const response = await fetch(file.src);
-          if (!response.ok) throw new Error("下载失败");
-          const blob = await response.blob();
-          const href = URL.createObjectURL(blob);
-          const link = document.createElement("a");
-          link.href = href;
-          const ext = extensionOf(file.src, file.type, blob.type || response.headers.get("content-type"));
-          link.download = `${message.model || "作品"}${downloadable.length > 1 ? `-${index + 1}` : ""}.${ext}`;
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
-          URL.revokeObjectURL(href);
+          const filename = mediaDownloadName({
+            title: file.title || promptTitle || message.model,
+            fallback: message.model || "作品",
+            type: file.type,
+            src: file.src,
+            index: downloadable.length > 1 ? index + 1 : undefined,
+            used,
+          });
+          await downloadMediaFile(file.src, filename);
         } catch {
           window.open(file.src, "_blank");
         }

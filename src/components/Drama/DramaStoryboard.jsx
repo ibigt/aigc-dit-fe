@@ -15,6 +15,7 @@ import {
   deleteDramaShotGeneration,
   draftDramaStoryboard,
   fetchDramaAssetGenerateTask,
+  fetchDramaShotCaptions,
   fetchDramaShotGenerations,
   fetchDramaStoryboard,
   fetchDramaVideoModels,
@@ -22,6 +23,8 @@ import {
   generateDramaShot,
   pollDramaShotBatchGenerate,
   pollDramaShotGenerate,
+  retryDramaShotCaptions,
+  saveDramaShotCaptions,
   selectDramaShotGeneration,
   startDramaShotBatchGenerate,
   updateDramaSeries,
@@ -32,7 +35,7 @@ import {
   useDramaShotAssetFirstFrame,
 } from "../../api/drama.js";
 import { fetchAssets } from "../../api/assets.js";
-import { MEDIA_THUMB_WIDTH, mediaUrl } from "../../lib/media.js";
+import { MEDIA_THUMB_WIDTH, authenticatedApiUrl, mediaUrl } from "../../lib/media.js";
 import { ImageLightbox } from "../../lib/ImageLightbox.jsx";
 import { isRetryableRequestError } from "../../api/client.js";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
@@ -1082,6 +1085,170 @@ function ShotPromptPane({
   );
 }
 
+function captionStatusLabel(status, sourceType, fallbackReason) {
+  if (status === "PENDING" || status === "RUNNING") return "字幕处理中…";
+  if (status === "NO_SPEECH") return "未检测到语音";
+  if (status === "FAILED") return null;
+  if (status === "READY") {
+    const estimated = sourceType === "ESTIMATED"
+      || (typeof fallbackReason === "string" && fallbackReason.includes("ESTIMATED"));
+    return estimated ? "字幕已就绪（估算，可能不准）" : "字幕已就绪";
+  }
+  return "";
+}
+
+function msToSecInput(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n)) return "";
+  return (Math.round(n / 100) / 10).toFixed(1);
+}
+
+function secInputToMs(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.round(n * 1000);
+}
+
+function CaptionCueEditor({ open, shot, busy, onClose, onSaved, onError }) {
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [cues, setCues] = useState([]);
+  const [loadError, setLoadError] = useState("");
+
+  useEffect(() => {
+    if (!open || !shot?.id) return undefined;
+    let cancelled = false;
+    setLoading(true);
+    setLoadError("");
+    fetchDramaShotCaptions(shot.id)
+      .then((doc) => {
+        if (cancelled) return;
+        setCues((doc?.cues || []).map((cue, index) => ({
+          key: `${cue.startMs}-${cue.endMs}-${index}`,
+          startMs: Number(cue.startMs) || 0,
+          endMs: Number(cue.endMs) || 0,
+          text: cue.text || "",
+        })));
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setLoadError(error.message || "字幕加载失败");
+        setCues([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, shot?.id]);
+
+  if (!open || typeof document === "undefined") return null;
+
+  async function handleSave() {
+    if (!shot?.id || saving || busy) return;
+    setSaving(true);
+    try {
+      await saveDramaShotCaptions(shot.id, {
+        cues: cues.map((cue) => ({
+          startMs: cue.startMs,
+          endMs: cue.endMs,
+          text: cue.text,
+        })),
+      });
+      onSaved?.();
+    } catch (error) {
+      onError?.(error.message || "字幕保存失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function updateCue(index, patch) {
+    setCues((current) => current.map((cue, i) => (i === index ? { ...cue, ...patch } : cue)));
+  }
+
+  return createPortal(
+    <div
+      className="drama-dialog-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !saving && !busy) onClose?.();
+      }}
+    >
+      <section
+        className="drama-dialog drama-dialog--caption-editor"
+        role="dialog"
+        aria-modal="true"
+        aria-label="编辑字幕"
+      >
+        <header>
+          <div>
+            <span>字幕</span>
+            <h2>编辑镜 {shot?.shotIndex ?? ""} 字幕</h2>
+          </div>
+          <button type="button" aria-label="关闭" disabled={saving || busy} onClick={onClose}>
+            <X size={18} />
+          </button>
+        </header>
+        <div className="youxi-caption-editor">
+          {loading && <p className="youxi-caption-editor__empty">正在加载字幕…</p>}
+          {!loading && loadError && <p className="drama-form-error">{loadError}</p>}
+          {!loading && !loadError && !cues.length && (
+            <p className="youxi-caption-editor__empty">暂无字幕条目</p>
+          )}
+          {!loading && !loadError && cues.map((cue, index) => (
+            <div className="youxi-caption-editor__row" key={cue.key}>
+              <label>
+                <span>开始(s)</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={msToSecInput(cue.startMs)}
+                  disabled={saving}
+                  onChange={(event) => updateCue(index, { startMs: secInputToMs(event.target.value) })}
+                />
+              </label>
+              <label>
+                <span>结束(s)</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={msToSecInput(cue.endMs)}
+                  disabled={saving}
+                  onChange={(event) => updateCue(index, { endMs: secInputToMs(event.target.value) })}
+                />
+              </label>
+              <label className="youxi-caption-editor__text">
+                <span>文案</span>
+                <input
+                  type="text"
+                  value={cue.text}
+                  disabled={saving}
+                  onChange={(event) => updateCue(index, { text: event.target.value })}
+                />
+              </label>
+            </div>
+          ))}
+        </div>
+        <footer className="drama-dialog__actions">
+          <button type="button" disabled={saving || busy} onClick={onClose}>取消</button>
+          <button
+            type="button"
+            className="button button--primary"
+            disabled={saving || busy || loading || Boolean(loadError)}
+            onClick={handleSave}
+          >
+            {saving ? "保存中…" : "保存"}
+          </button>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 function ShotPreview({
   selected,
   generating,
@@ -1089,6 +1256,15 @@ function ShotPreview({
   poster,
   ratio,
   captionSrc,
+  captionStatus,
+  captionSourceType,
+  captionFallbackReason,
+  captionErrorMessage,
+  showCaptions,
+  onToggleCaptions,
+  onRetryCaptions,
+  onEditCaptions,
+  captionBusy,
   generations,
   generationsLoading,
   historyBusy,
@@ -1098,6 +1274,18 @@ function ShotPreview({
   onDeleteGeneration,
 }) {
   const locked = selected?.status === "已锁定";
+  const status = captionStatus || "";
+  const bannerText = captionStatusLabel(status, captionSourceType, captionFallbackReason);
+  const showCaptionBar = Boolean(videoSrc && !generating && status);
+  const canRetry = ["FAILED", "NO_SPEECH", "READY"].includes(status);
+  const canEdit = status === "READY";
+  const bannerWarn = status === "FAILED"
+    || status === "NO_SPEECH"
+    || (status === "READY" && (
+      captionSourceType === "ESTIMATED"
+      || (typeof captionFallbackReason === "string" && captionFallbackReason.includes("ESTIMATED"))
+    ));
+
   return (
     <aside className="youxi-inspector youxi-story-inspector">
       <div className="youxi-inspector-tabs">
@@ -1112,7 +1300,7 @@ function ShotPreview({
               {videoSrc && !generating ? (
                 <div className="youxi-story-preview__video-wrap">
                   <video
-                    key={videoSrc}
+                    key={`${videoSrc}|${captionSrc || "no-cap"}`}
                     controls
                     playsInline
                     preload="metadata"
@@ -1140,10 +1328,60 @@ function ShotPreview({
                   <div className="youxi-story-empty-state">
                     <Video size={24} />
                     <strong>{generating ? "正在生成视频" : "尚未生成视频"}</strong>
-                    <span>出片使用叙述里的参考图，不附带上一镜尾帧。</span>
+                    <span>出片使用叙述里的参考图</span>
                   </div>
                 </div>
               )}
+              {showCaptionBar ? (
+                <div className="youxi-story-caption-bar">
+                  <div className="drama-view-switch youxi-story-caption-toggle" role="group" aria-label="显示字幕">
+                    <button
+                      type="button"
+                      className={showCaptions ? "active" : ""}
+                      aria-pressed={showCaptions}
+                      onClick={() => onToggleCaptions?.(true)}
+                    >
+                      显示字幕
+                    </button>
+                    <button
+                      type="button"
+                      className={!showCaptions ? "active" : ""}
+                      aria-pressed={!showCaptions}
+                      onClick={() => onToggleCaptions?.(false)}
+                    >
+                      隐藏
+                    </button>
+                  </div>
+                  {status === "FAILED" ? (
+                    <p className="youxi-film-banner youxi-film-banner--warn">
+                      {captionErrorMessage || "字幕生成失败"}
+                    </p>
+                  ) : bannerText ? (
+                    <p className={`youxi-film-banner${bannerWarn ? " youxi-film-banner--warn" : ""}`}>
+                      {bannerText}
+                    </p>
+                  ) : null}
+                  {(canRetry || canEdit) ? (
+                    <div className="youxi-story-caption-actions">
+                      {canRetry ? (
+                        <button
+                          type="button"
+                          disabled={captionBusy}
+                          onClick={() => onRetryCaptions?.()}
+                        >
+                          <RefreshCw size={12} />
+                          {captionBusy ? "处理中…" : "重新生成字幕"}
+                        </button>
+                      ) : null}
+                      {canEdit ? (
+                        <button type="button" disabled={captionBusy} onClick={() => onEditCaptions?.()}>
+                          编辑字幕
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
             {!generationsLoading && (
               <GenerationHistoryPanel
@@ -1192,6 +1430,9 @@ export function DramaStoryboard({ series, episode }) {
   const [batchJob, setBatchJob] = useState(null);
   const [batchToast, setBatchToast] = useState("");
   const [batchSubmitting, setBatchSubmitting] = useState(false);
+  const [showCaptions, setShowCaptions] = useState(true);
+  const [captionEditorOpen, setCaptionEditorOpen] = useState(false);
+  const [captionBusy, setCaptionBusy] = useState(false);
   const wasRecompiling = useRef(false);
   const batchPollRef = useRef(0);
 
@@ -1217,6 +1458,7 @@ export function DramaStoryboard({ series, episode }) {
     setBatchModalOpen(false);
     setBatchJob(null);
     setBatchToast("");
+    setCaptionEditorOpen(false);
   }, [activeEpisodeId]);
 
   useEffect(() => {
@@ -1436,7 +1678,7 @@ export function DramaStoryboard({ series, episode }) {
       setDraftConfirmOpen(false);
       setActionError("");
       queryClient.setQueryData(["drama-storyboard", activeEpisodeId], (current) => (
-        current ? { ...current, drafting: true } : current
+        current ? { ...current, drafting: true, draftError: null } : current
       ));
     },
     onSuccess: (data) => {
@@ -1452,6 +1694,9 @@ export function DramaStoryboard({ series, episode }) {
     },
     onError: (error) => {
       setActionError(error.message || "拆镜失败");
+      queryClient.setQueryData(["drama-storyboard", activeEpisodeId], (current) => (
+        current ? { ...current, drafting: false } : current
+      ));
       queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
     },
   });
@@ -1546,11 +1791,12 @@ export function DramaStoryboard({ series, episode }) {
     if (recompiling) return "正在重新编译提示词，请稍候";
     if (!scriptLocked) return "请先锁定分场剧本再拆镜";
     if (!canUseTextModel) return "请先在剧本页绑定可用文本模型";
-    return shots.length ? "重新拆镜" : "智能分镜";
+    return "";
   }
 
   function requestDraft() {
     if (autoDrafting || draftMutation.isPending || recompiling || !scriptLocked || !canUseTextModel) return;
+    // 失败后无分镜：直接重试，不再弹确认。
     if (shots.length) {
       setDraftConfirmOpen(true);
       return;
@@ -1914,23 +2160,45 @@ export function DramaStoryboard({ series, episode }) {
     ? boardQuery.error
     : null;
   const persistedDraftError = !drafting && board?.draftError ? board.draftError : "";
+  const emptyDraftLabel = drafting
+    ? "拆镜中…"
+    : (persistedDraftError || actionError || shots.length ? "重新拆镜" : "智能分镜");
+  const draftActionTitle = draftBlockedReason() || emptyDraftLabel;
+  const draftActionDisabled = drafting || frozenByRecompile || !scriptLocked || !canUseTextModel;
   const error = queryError || bindMutation.error
     || (actionError ? { message: actionError } : null)
     || (persistedDraftError ? { message: persistedDraftError } : null);
-  const captionReady = selected?.captionStatus === "READY" && selected?.captionVideoUrl;
-  const selectedVideoUrl = mediaUrl(
-    captionReady ? selected.captionVideoUrl : (selected?.videoUrl || selected?.videoKey),
-  );
-  // captionVideoKey is intentionally stable per source video; add the processor
-  // version so a browser cannot reuse the previous VAD-burned object from cache.
-  const videoSrc = captionReady && selectedVideoUrl
-    ? `${selectedVideoUrl}${selectedVideoUrl.includes("?") ? "&" : "?"}captionVersion=caption-6`
-    : selectedVideoUrl;
-  // 暂关分镜预览字幕轨道，避免播放器自动叠中文字幕。
-  // const captionSrc = videoSrc && selected?.id && selected?.dialogue?.trim()
-  //   ? authenticatedApiUrl(`/api/drama/shots/${selected.id}/captions.vtt?v=${encodeURIComponent(selected.updatedAt || "")}`)
-  //   : "";
-  const captionSrc = "";
+  // Soft preview always uses the original clip; burned captionVideoUrl is for export only.
+  const videoSrc = mediaUrl(selected?.videoUrl || selected?.videoKey);
+  const captionSrc = showCaptions
+    && videoSrc
+    && selected?.id
+    && selected?.captionStatus === "READY"
+    ? authenticatedApiUrl(
+      `/api/drama/shots/${selected.id}/captions.vtt?v=${encodeURIComponent(selected.updatedAt || selected.subtitleJsonKey || "")}`,
+    )
+    : "";
+
+  async function handleRetryCaptions() {
+    if (!selected?.id || captionBusy) return;
+    setCaptionBusy(true);
+    setActionError("");
+    try {
+      await retryDramaShotCaptions(selected.id);
+      queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
+      queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
+    } catch (error) {
+      setActionError(error.message || "字幕重新生成失败");
+    } finally {
+      setCaptionBusy(false);
+    }
+  }
+
+  function handleCaptionSaved() {
+    setCaptionEditorOpen(false);
+    queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
+    queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
+  }
 
   return (
     <section className="youxi-storyboard-layout youxi-storyboard-layout--board">
@@ -2003,7 +2271,22 @@ export function DramaStoryboard({ series, episode }) {
           </div>
         )}
 
-        {(error || actionError) && <p className="drama-form-error youxi-story-error">{error?.message || actionError}</p>}
+        {(error || actionError) && (
+          <div className="youxi-story-error-row">
+            <p className="drama-form-error youxi-story-error">{error?.message || actionError}</p>
+            {persistedDraftError && !shots.length && (
+              <button
+                type="button"
+                className="youxi-story-error-retry"
+                disabled={draftActionDisabled}
+                title={draftActionTitle}
+                onClick={() => requestDraft()}
+              >
+                <Wand2 size={14} /> 重新拆镜
+              </button>
+            )}
+          </div>
+        )}
         {realPersonConvertShotId && selected?.id === realPersonConvertShotId && (
           <div className="youxi-story-gate" style={{ marginTop: 8 }}>
             <button
@@ -2044,7 +2327,7 @@ export function DramaStoryboard({ series, episode }) {
                   <strong>还没有分镜</strong>
                   <span>
                     {persistedDraftError || actionError
-                      ? "拆镜未完成，请检查文本模型后重试。"
+                      ? "拆镜未完成，可检查文本模型后重试。"
                       : "锁定剧本后点「智能分镜」，由文本模型按场排出本集镜头"}
                   </span>
                   <label className="youxi-shot-model">
@@ -2067,11 +2350,12 @@ export function DramaStoryboard({ series, episode }) {
                   </label>
                   <button
                     type="button"
-                    disabled={drafting || !scriptLocked || !canUseTextModel}
-                    title={draftBlockedReason()}
+                    className="youxi-story-empty-draft"
+                    disabled={draftActionDisabled}
+                    title={draftActionTitle}
                     onClick={() => requestDraft()}
                   >
-                    <Wand2 size={14} /> {drafting ? "拆镜中…" : "智能分镜"}
+                    <Wand2 size={14} /> {emptyDraftLabel}
                   </button>
                 </div>
               </div>
@@ -2144,8 +2428,8 @@ export function DramaStoryboard({ series, episode }) {
                 </button>
                 <button
                   type="button"
-                  disabled={drafting || frozenByRecompile || !scriptLocked || !canUseTextModel}
-                  title={draftBlockedReason()}
+                  disabled={draftActionDisabled}
+                  title={draftActionTitle}
                   onClick={() => requestDraft()}
                 >
                   <Wand2 size={14} /> {drafting ? "拆镜中…" : "重新拆镜"}
@@ -2292,6 +2576,16 @@ export function DramaStoryboard({ series, episode }) {
         poster={shotPoster(selected)}
         ratio={ratio}
         captionSrc={captionSrc}
+        captionStatus={selected?.captionStatus}
+        captionSourceType={selected?.captionSourceType}
+        captionFallbackReason={selected?.captionFallbackReason}
+        captionConfidence={selected?.captionConfidence}
+        captionErrorMessage={selected?.captionErrorMessage}
+        showCaptions={showCaptions}
+        onToggleCaptions={setShowCaptions}
+        onRetryCaptions={handleRetryCaptions}
+        onEditCaptions={() => setCaptionEditorOpen(true)}
+        captionBusy={captionBusy}
         generations={generations}
         generationsLoading={generationsQuery.isLoading}
         historyBusy={Boolean(selected && busy[selected.id] === "history")}
@@ -2306,6 +2600,14 @@ export function DramaStoryboard({ series, episode }) {
           title: `镜 ${selected?.shotIndex || ""} · ${record.label}`,
         })}
         onDeleteGeneration={requestDeleteShotGeneration}
+      />
+      <CaptionCueEditor
+        open={captionEditorOpen && Boolean(selected?.id)}
+        shot={selected}
+        busy={captionBusy}
+        onClose={() => setCaptionEditorOpen(false)}
+        onSaved={handleCaptionSaved}
+        onError={(message) => setActionError(message)}
       />
       <SwitchFinalModal
         open={switchFinalOpen}

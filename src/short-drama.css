@@ -58,10 +58,152 @@
 .drama-dialog-backdrop, .drama-overview-backdrop { position: fixed; z-index: 400; inset: 0; padding: 25px; display: grid; place-items: center; background: rgba(25,31,39,.35); backdrop-filter: blur(5px); }.drama-dialog { width: min(520px,94vw); max-height: 90vh; overflow-y: auto; border: 1px solid #e0e4e8; border-radius: 16px; color: #26303a; background: #fff; box-shadow: 0 24px 70px rgba(27,34,44,.2); }.drama-dialog > header { min-height: 66px; padding: 0 18px; border-bottom: 1px solid #edf0f2; display: flex; align-items: center; justify-content: space-between; }.drama-dialog > header div { display: flex; flex-direction: column; gap: 3px; }.drama-dialog > header span { color: #7a84dd; font-size: 11px; text-transform: uppercase; letter-spacing: .09em; }.drama-dialog > header h2 { margin: 0; font-size: 14px; }.drama-dialog > header button { width: 31px; height: 31px; border: 1px solid #e1e5e9; border-radius: 8px; display: grid; place-items: center; color: #747e89; background: #fff; }
 .drama-create-form, .director-form { padding: 17px 18px; display: flex; flex-direction: column; gap: 12px; }.drama-create-form > label, .director-form > label, .drama-create-form > div > label { display: flex; flex-direction: column; gap: 6px; color: #e8e8eb; font-size: 14px; }.drama-create-form > div { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }.drama-create-form input, .drama-create-form textarea, .drama-create-form select, .director-form textarea, .director-form select { width: 100%; min-height: 38px; padding: 9px 10px; border: 1px solid #dde2e7; border-radius: 8px; outline: 0; background: #fff; font-size: 12px; }.drama-create-form textarea, .director-form textarea { min-height: 80px; resize: vertical; }.drama-create-form footer, .director-form footer { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }.drama-create-form footer button, .director-form footer button { min-height: 33px; padding: 0 12px; border: 1px solid #dfe3e7; border-radius: 8px; background: #fff; font-size: 12px; }.drama-create-form footer .button--primary, .director-form footer .button--primary { color: #fff; border-color: transparent; background: var(--primary); }
 .drama-overview-backdrop { justify-items: end; padding: 0; }.drama-overview-panel { width: min(380px,92vw); height: 100%; overflow-y: auto; padding: 17px; color: #28323c; background: #fff; box-shadow: -20px 0 55px rgba(24,31,40,.18); }.drama-overview-panel > header { min-height: 48px; display: flex; justify-content: space-between; }.drama-overview-panel > header div { display: flex; flex-direction: column; gap: 3px; }.drama-overview-panel > header span { color: #9199a3; font-size: 11px; }.drama-overview-panel h2 { margin: 0; font-size: 15px; }.drama-overview-panel > header button { width: 30px; height: 30px; border: 1px solid #e1e5e9; border-radius: 8px; display: grid; place-items: center; background: #fff; }.drama-overview-cover { width: 100%; aspect-ratio: 1.65; border-radius: 11px; object-fit: cover; }.overview-progress { margin-top: 14px; display: grid; grid-template-columns: 1fr auto; gap: 7px; align-items: center; font-size: 12px; }.overview-progress strong { font-size: 11px; }.overview-progress > i { grid-column: 1 / 3; height: 5px; overflow: hidden; border-radius: 5px; background: #edf0f3; }.overview-progress b { display: block; height: 100%; border-radius: inherit; background: var(--primary); }.overview-metrics { display: grid; grid-template-columns: repeat(4,1fr); margin-top: 12px; border: 1px solid #e4e7eb; border-radius: 9px; }.overview-metrics span { padding: 10px 3px; border-right: 1px solid #e7eaed; display: flex; flex-direction: column; align-items: center; gap: 3px; color: #9098a2; font-size: 11px; }.overview-metrics span:last-child { border-right: 0; }.overview-metrics strong { color: #3b4550; font-size: 11px; }.drama-overview-panel h3 { margin: 18px 0 9px; font-size: 12px; }.overview-episode { width: 100%; height: 34px; padding: 0; border: 0; display: grid; grid-template-columns: 50px 1fr 32px; align-items: center; gap: 8px; color: #616b76; background: none; font-size: 12px; text-align: left; }.overview-episode i { height: 4px; overflow: hidden; border-radius: 4px; background: #edf0f3; }.overview-episode b { display: block; height: 100%; background: #7984ed; }.overview-episode em { color: #939ba4; font-style: normal; text-align: right; }.overview-activity { margin: 0; padding: 9px; border-radius: 8px; display: grid; grid-template-columns: 18px 1fr; color: #626c77; background: #f5f7f9; font-size: 12px; line-height: 1.5; }.overview-activity small { grid-column: 2; color: #979fa8; font-size: 11px; }
-.export-options { padding: 14px; display: flex; flex-direction: column; gap: 7px; }.export-options > button { min-height: 62px; padding: 10px 12px; border: 1px solid #e0e4e8; border-radius: 10px; display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 8px; color: #5c66cf; background: #fff; text-align: left; }.export-options > button:hover { border-color: #cbd0f2; background: #f7f8ff; }.export-options > button span { display: flex; flex-direction: column; gap: 3px; }.export-options strong { color: #313b46; font-size: 12px; }.export-options small { color: #929aa4; font-size: 11px; }
+.export-options { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+.export-section { display: flex; flex-direction: column; gap: 8px; }
+.export-section > h3 {
+  margin: 0;
+  padding: 0 2px;
+  color: #9aa6ff;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.export-options .export-section > button,
+.export-options .export-caption-row > button {
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  display: grid;
+  grid-template-columns: 30px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  color: #b8c0ff;
+  background: #20242c;
+  text-align: left;
+}
+.export-options .export-section > button:hover:not(:disabled),
+.export-options .export-caption-row > button:hover:not(:disabled) {
+  border-color: rgba(101, 114, 237, 0.45);
+  background: #262b36;
+}
+.export-options .export-section > button.is-selected,
+.export-options .export-caption-row > button.is-selected {
+  border-color: rgba(122, 132, 255, 0.7);
+  background: #262b3d;
+  box-shadow: inset 0 0 0 1px rgba(122, 132, 255, 0.25);
+}
+.export-options .export-section > button:disabled,
+.export-options .export-caption-row > button:disabled { opacity: 0.55; cursor: not-allowed; }
+.export-options .export-section > button span,
+.export-options .export-caption-row > button span,
+.export-options .export-vtt-check span { display: flex; flex-direction: column; gap: 4px; }
+.export-options .export-check { color: transparent; }
+.export-options .export-section > button.is-selected .export-check,
+.export-options .export-caption-row > button.is-selected .export-check { color: #aeb6ff; }
+.export-caption-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-radius: 10px;
+}
+.export-caption-row.is-selected .export-vtt-check {
+  border-color: rgba(122, 132, 255, 0.35);
+}
+.export-vtt-check {
+  margin-top: -2px;
+  padding: 10px 14px 10px 54px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #b8c0ff;
+  background: #1b1e27;
+  cursor: pointer;
+}
+.export-vtt-check.is-checked {
+  background: #222636;
+}
+.export-vtt-check input {
+  width: 15px;
+  height: 15px;
+  accent-color: #7a84ed;
+  flex: 0 0 auto;
+}
+.export-vtt-check strong { font-size: 12px; }
+.export-options strong { color: #e8ecf4; font-size: 13px; font-weight: 650; }
+.export-options small { color: #9aa3b2; font-size: 11px; line-height: 1.45; }
+.export-status {
+  margin: 0;
+  padding: 0 2px;
+  color: #9aa6ff;
+  font-size: 12px;
+}
+.export-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.export-footer .button {
+  min-height: 36px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.drama-dialog--export .export-footer .button--ghost {
+  color: #c5ccd6;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+}
+.drama-dialog--export .export-footer .button--ghost:hover:not(:disabled) {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+}
+.drama-dialog--export .export-footer .button--primary {
+  color: #fff;
+  border: 1px solid transparent;
+  background: linear-gradient(135deg, #6557e7, #7769f2);
+}
+.drama-dialog--export .export-footer .button--primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7163ed, #8375f7);
+}
+.drama-dialog--export .export-footer .button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.drama-dialog.drama-dialog--export {
+  width: min(480px, 94vw);
+  color: #e8ecf4;
+  background: #17191f;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  box-shadow: 0 26px 90px rgba(0, 0, 0, 0.62);
+}
+.drama-dialog.drama-dialog--export > header {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+  background: #191b21;
+}
+.drama-dialog.drama-dialog--export > header span { color: #9aa6ff; }
+.drama-dialog.drama-dialog--export > header h2 { color: #eef2f8; }
+.drama-dialog.drama-dialog--export > header button {
+  color: #aeb6c2;
+  border-color: transparent;
+  background: transparent;
+}
+.drama-dialog.drama-dialog--export > header button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+}
 /* Night variants for the story tools */
 .console-shell[data-theme="dark"] :is(.drama-library,.drama-workspace,.script-creation,.drama-script-step,.drama-subject-step,.drama-shots-step,.drama-film-step,.script-chat) { color: #e5eaf2; background: #0f141b; }
-.console-shell[data-theme="dark"] :is(.drama-project-card,.drama-workspace-header,.drama-episode-panel,.drama-settings-panel,.drama-script-editor,.drama-step-title,.subject-card,.shot-table-wrap,.storyboard-grid>article,.film-preview-panel,.film-details,.script-history,.script-document,.script-chat>header,.script-mode-cards button,.script-composer,.drama-dialog,.drama-overview-panel,.export-options>button) { color: #e4e9f1; background: #171d26; border-color: #303a47; }
+.console-shell[data-theme="dark"] :is(.drama-project-card,.drama-workspace-header,.drama-episode-panel,.drama-settings-panel,.drama-script-editor,.drama-step-title,.subject-card,.shot-table-wrap,.storyboard-grid>article,.film-preview-panel,.film-details,.script-history,.script-document,.script-chat>header,.script-mode-cards button,.script-composer,.drama-dialog,.drama-overview-panel,.export-options .export-section>button,.export-options .export-caption-row>button) { color: #e4e9f1; background: #171d26; border-color: #303a47; }
 .console-shell[data-theme="dark"] :is(.drama-project-new,.drama-settings-note,.film-timeline,.film-details dl div,.overview-activity,.script-history>label,.shot-table th,.shot-table textarea) { color: #b7c0cd; background: #202731; border-color: #303a47; }
 .console-shell[data-theme="dark"] :is(.drama-script-editor textarea,.script-document>textarea,.drama-create-form input,.drama-create-form textarea,.drama-create-form select,.director-form select,.director-form textarea,.drama-settings-panel select,.shot-table select) { color: #e5eaf2; background: #171d26; border-color: #303a47; }
 .console-shell[data-theme="dark"] :is(.drama-project-card__body>p,.drama-step-title p,.subject-card>small,.subject-card>p,.storyboard-grid p,.storyboard-grid small,.script-welcome>p,.script-mode-cards p,.script-message p) { color: #aab4c1; }
@@ -826,8 +968,32 @@
 .youxi-story-empty-state > svg { color: #6572ed; }
 .youxi-story-empty-state strong { font-size: 13px; }
 .youxi-story-empty-state > span { color: #6c7786; font-size: 11px; }
-.youxi-story-empty-state > button { height: 32px; margin-top: 3px; padding: 0 12px; display: inline-flex; align-items: center; gap: 5px; color: #fff; border: 0; border-radius: 8px; background: #6572ed; font-size: 11px; font-weight: 700; }
-.youxi-story-empty-state > button:disabled { opacity: .45; cursor: not-allowed; }
+/* 盖过 .youxi-story-preview > div button 的透明样式，避免空态 CTA 看起来像禁用 */
+.youxi-story-preview .youxi-story-empty-state > button,
+.youxi-story-empty-state > button.youxi-story-empty-draft {
+  height: 32px;
+  margin-top: 3px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  background: #6572ed;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.youxi-story-preview .youxi-story-empty-state > button:hover:not(:disabled),
+.youxi-story-empty-state > button.youxi-story-empty-draft:hover:not(:disabled) {
+  background: #7380f2;
+}
+.youxi-story-preview .youxi-story-empty-state > button:disabled,
+.youxi-story-empty-state > button.youxi-story-empty-draft:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
 .youxi-timeline { min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-rows: 28px minmax(0,1fr); background: #fff; }
 .youxi-timeline-ruler { min-width: 860px; height: 28px; padding: 0 18px; display: grid; grid-template-columns: repeat(41, 1fr); border-bottom: 1px solid #e7eaf0; background: #f8f9fb; }
 .youxi-timeline-ruler i { position: relative; height: 9px; align-self: end; border-left: 1px solid #cbd1da; }
@@ -1509,7 +1675,27 @@
 
 /* Creation-space atmosphere shared by script, subject, storyboard and final cut. */
 .youxi-creative-workspace { position: relative; isolation: isolate; overflow: hidden; }
-.youxi-creative-workspace > :not(.youxi-workspace-atmosphere) { position: relative; z-index: 1; }
+.youxi-creative-workspace > :not(.youxi-workspace-atmosphere, .drama-dialog-backdrop, .drama-toast, .drama-lightbox) { position: relative; z-index: 1; }
+/* 盖过上面的 position:relative，避免改名成功 toast 落入文档流变成整宽浅色白条 */
+.youxi-creative-workspace.youxi-workspace > .drama-toast {
+  position: fixed;
+  z-index: 60;
+  top: auto;
+  bottom: 88px;
+  left: 50%;
+  width: max-content;
+  max-width: min(420px, calc(100vw - 48px));
+  transform: translateX(-50%);
+  color: #b6e2c8;
+  border-color: #31503f;
+  background: #1b3329;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .35);
+}
+.youxi-creative-workspace.youxi-workspace > .drama-toast.drama-toast--error {
+  color: #f0a3a8;
+  border-color: #5a3338;
+  background: #322028;
+}
 .youxi-workspace-atmosphere { position: absolute; z-index: 0; inset: 70px 0 0; overflow: hidden; pointer-events: none; background: #f6f8fc; }
 .youxi-workspace-atmosphere::after { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 50% 40%,transparent 0,rgba(246,248,252,.2) 44%,rgba(246,248,252,.68) 100%); }
 .youxi-workspace-atmosphere video { display: none; width: 100%; height: 100%; object-fit: cover; opacity: .6; filter: saturate(1.2) contrast(1.08) brightness(.72); transform: scale(1.03); }
@@ -2212,6 +2398,107 @@
 }
 .youxi-story-preview__zoom:hover {
   background: rgba(17, 20, 27, .9);
+}
+.youxi-story-caption-bar {
+  width: 100%;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.youxi-story-caption-bar .youxi-film-banner {
+  font-size: 11px;
+  padding: 8px 10px;
+}
+.youxi-story-caption-toggle {
+  align-self: flex-start;
+  height: 30px;
+  padding: 2px;
+  gap: 2px;
+}
+.youxi-story-caption-toggle button {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 11px;
+  color: #677181;
+  border-radius: 6px;
+}
+.youxi-story-caption-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.youxi-story-caption-actions button {
+  height: 30px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #596374;
+  border: 1px solid var(--drama-line);
+  border-radius: 7px;
+  background: #fff;
+  font-size: 11px;
+}
+.youxi-story-caption-actions button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+.drama-dialog--caption-editor {
+  width: min(640px, 94vw);
+}
+.youxi-caption-editor {
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(52vh, 420px);
+  overflow: auto;
+}
+.youxi-caption-editor__empty {
+  margin: 0;
+  color: #8b94a0;
+  font-size: 12px;
+}
+.youxi-caption-editor__row {
+  display: grid;
+  grid-template-columns: 88px 88px minmax(0, 1fr);
+  gap: 8px;
+  align-items: end;
+}
+.youxi-caption-editor__row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.youxi-caption-editor__row label span {
+  color: #8b94a0;
+  font-size: 11px;
+}
+.youxi-caption-editor__row input {
+  width: 100%;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid #e0e4e8;
+  border-radius: 7px;
+  color: #313b46;
+  background: #fff;
+  font-size: 12px;
+}
+.youxi-caption-editor__text {
+  min-width: 0;
+}
+.console-shell[data-theme="dark"] .youxi-story-caption-actions button {
+  color: #c3ccd7;
+  background: #171d26;
+  border-color: #303a47;
+}
+.console-shell[data-theme="dark"] .youxi-caption-editor__row input {
+  color: #e4e9f1;
+  background: #121820;
+  border-color: #303a47;
 }
 .youxi-story-empty-preview[data-ratio="9:16"] {
   width: min(280px, calc(100% - 28px));
@@ -2998,7 +3285,11 @@
 .youxi-story-preview video::cue,
 .youxi-final-player video::cue {
   color: #fff;
-  background: rgba(0, 0, 0, 0.72);
+  background: transparent;
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.9),
+    0 1px 2px rgba(0, 0, 0, 0.85),
+    1px 1px 2px rgba(0, 0, 0, 0.75);
   font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
 }
 
@@ -3125,6 +3416,15 @@
 .drama-create-footer .button--primary:hover { background: linear-gradient(135deg,#7163ed,#8375f7); transform: translateY(-1px); }
 
 .youxi-workspace {
+  /* 覆盖上方遗留浅色 token，避免改名重排时缝隙露出白横条。 */
+  --drama-panel: #16161b;
+  --drama-soft: #1b1b1b;
+  --drama-line: rgba(255,255,255,.08);
+  --drama-text: var(--text-body, #e8e8eb);
+  --drama-muted: #8b8b96;
+  --drama-panel-bg: #16161b;
+  --drama-page-bg: var(--bg-page, #101010);
+  --drama-panel-border: 1px solid rgba(255,255,255,.08);
   width: 100%;
   height: 100%;
   min-width: 0;
@@ -3312,7 +3612,10 @@
 }
 .drama-project-card:focus-visible { box-shadow: 0 0 0 3px rgba(118,104,255,.2); border-color: var(--brand-primary); }
 .drama-project-title .workspace-name-input {
-  width: min(420px, 55vw);
+  width: min(240px, 100%);
+  max-width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
   height: 34px;
   padding: 0 10px;
   border: 1px solid var(--brand-primary);
@@ -3327,6 +3630,14 @@
 .drama-project-title .workspace-name-input.is-invalid {
   border-color: #ef747d;
   box-shadow: 0 0 0 3px rgba(239,116,125,.14);
+}
+.drama-project-title .workspace-name-input:-webkit-autofill,
+.drama-project-title .workspace-name-input:-webkit-autofill:hover,
+.drama-project-title .workspace-name-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #fff;
+  caret-color: #fff;
+  box-shadow: 0 0 0 1000px #202126 inset, 0 0 0 3px rgba(117,103,236,.14);
+  transition: background-color 99999s ease-out;
 }
 
 .drama-dialog.drama-dialog--create { width: min(960px, 100%); max-height: calc(100dvh - 126px); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; }
@@ -3421,7 +3732,7 @@
 .drama-workspace .drama-chapter.active { color: #fff; border-color: transparent; background: #3a2d86; }
 .drama-workspace .drama-chapter.active .drama-chapter__count { color: rgba(255,255,255,.72); }
 .drama-workspace .drama-chapter__count { color: #8d8d98; }
-.drama-workspace .drama-script__toolbar { position: relative; z-index: 6; border-bottom-color: rgba(255,255,255,.06); background: transparent; }
+.drama-workspace .drama-script__toolbar { position: relative; z-index: 6; border-bottom: 1px solid rgba(255,255,255,.06); background: #16161b; }
 .script-model-control { min-width: 0; display: flex; align-items: center; gap: 10px; }
 .script-model-control > label { color: #d5d5d9; font-size: 13px; white-space: nowrap; }
 .chapter-model-select { width: min(280px, 42vw); }
@@ -3628,7 +3939,7 @@
   cursor: pointer;
 }
 .console-shell[data-theme="dark"] .drama-workspace .drama-chapter.active { color: #fff; border-color: transparent; background: #3a2d86; }
-.console-shell[data-theme="dark"] .drama-workspace .drama-script__toolbar { border-bottom-color: rgba(255,255,255,.06); background: transparent; }
+.console-shell[data-theme="dark"] .drama-workspace .drama-script__toolbar { border-bottom-color: rgba(255,255,255,.06); background: #16161b; }
 .console-shell[data-theme="dark"] .drama-workspace .drama-analyze-btn { color: #fff; border-color: transparent; background: #6d5efc; }
 .console-shell[data-theme="dark"] .drama-workspace .drama-script-done { color: #f3f3f7; border-color: rgba(255,255,255,.08); background: rgba(18,18,22,.94); }
 .console-shell[data-theme="dark"] .drama-workspace .drama-script-done strong { color: #f3f3f7; }
@@ -4553,6 +4864,43 @@
 }
 .youxi-storyboard-layout--board .youxi-story-empty-state > svg { color: #8178ce; }
 .youxi-storyboard-layout--board .youxi-story-empty-state > span { color: #696972; }
+.youxi-storyboard-layout--board .youxi-story-preview .youxi-story-empty-state > button,
+.youxi-storyboard-layout--board .youxi-story-empty-state > button.youxi-story-empty-draft {
+  color: #fff;
+  background: #6d5efc;
+}
+.youxi-storyboard-layout--board .youxi-story-preview .youxi-story-empty-state > button:hover:not(:disabled),
+.youxi-storyboard-layout--board .youxi-story-empty-state > button.youxi-story-empty-draft:hover:not(:disabled) {
+  background: #7b6cff;
+}
+.youxi-storyboard-layout--board .youxi-story-error-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+}
+.youxi-storyboard-layout--board .youxi-story-error-retry {
+  height: 28px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  background: #6d5efc;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.youxi-storyboard-layout--board .youxi-story-error-retry:hover:not(:disabled) {
+  background: #7b6cff;
+}
+.youxi-storyboard-layout--board .youxi-story-error-retry:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
 .youxi-storyboard-layout--board .youxi-story-preview--side video,
 .youxi-storyboard-layout--board .youxi-history-grid video,
 .youxi-storyboard-layout--board .generation-thumb-hit video {
