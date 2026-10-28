@@ -36,7 +36,12 @@ import { isRetryableRequestError } from "../../api/client.js";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
 import { BatchGenerateModal } from "./BatchGenerateModal.jsx";
 import { PromptChipEditor } from "./PromptChipEditor.jsx";
-import { narrativeMentionCount, parsePromptToTokens, referenceIdsOf } from "../../lib/promptChips.js";
+import {
+  narrativeMentionCount,
+  parsePromptToTokens,
+  referenceIdsOf,
+  serializeTokensToPrompt,
+} from "../../lib/promptChips.js";
 import { modelLogoSrc } from "../../lib/modelLogos.js";
 import { GenerationHistoryPanel, SwitchFinalModal } from "./GenerationHistoryPanel.jsx";
 import { VideoLightbox } from "./VideoLightbox.jsx";
@@ -475,9 +480,13 @@ function ShotPromptPane({
   const [librarySlot, setLibrarySlot] = useState(null);
   const expandedEditorRef = useRef(null);
   const commitPromptRef = useRef(async () => {});
+  const draftRef = useRef(draft);
+  const promptCtxRef = useRef({ selected, lockedAssets, serverPrompt, onSave });
   const barRef = useRef(null);
   const firstInputRef = useRef(null);
   const endInputRef = useRef(null);
+  draftRef.current = draft;
+  promptCtxRef.current = { selected, lockedAssets, serverPrompt, onSave };
   const supportsI2v = modelSupportsI2v(selectedVideoModel);
   const supportsR2v = modelSupportsR2v(selectedVideoModel);
   const framesMode = shotGenerateMode(selected, selectedVideoModel) === "i2v";
@@ -546,23 +555,95 @@ function ShotPromptPane({
     };
   }, [promptExpanded]);
 
-  async function commitPrompt() {
-    const tokens = parsePromptToTokens(draft, {
-      lockedAssets,
-      referenceAssetIds: selected?.referenceAssetIds || [],
+  function refsEqual(left, right) {
+    const a = left || [];
+    const b = right || [];
+    if (a.length !== b.length) return false;
+    return a.every((id, index) => String(id) === String(b[index]));
+  }
+
+  async function commitPromptText(text, shot, assets, serverText, save) {
+    const persist = save || onSave;
+    if (!shot?.id || !persist) return;
+    const tokens = parsePromptToTokens(text, {
+      lockedAssets: assets || [],
+      referenceAssetIds: shot.referenceAssetIds || [],
     });
-    const visiblePrompt = tokens.map((token) => (token.kind === "text" ? token.value || "" : `@${token.name || ""}`)).join("");
-    if (visiblePrompt === serverPrompt) return;
+    const visiblePrompt = serializeTokensToPrompt(tokens);
+    const nextRefs = referenceIdsOf(tokens);
+    if (visiblePrompt === (serverText || "") && refsEqual(nextRefs, shot.referenceAssetIds)) {
+      return;
+    }
     try {
-      await onSave(selected, {
+      await persist(shot, {
         visiblePrompt,
-        referenceAssetIds: referenceIdsOf(tokens),
+        referenceAssetIds: nextRefs,
       });
     } catch {
       // 父组件已写入错误横幅
     }
   }
+
+  async function commitPrompt() {
+    const ctx = promptCtxRef.current;
+    await commitPromptText(
+      draftRef.current,
+      ctx.selected,
+      ctx.lockedAssets,
+      ctx.serverPrompt,
+      ctx.onSave,
+    );
+  }
   commitPromptRef.current = commitPrompt;
+
+  // 改 @ 角色版本后若不失焦就切页/刷新，原先不会落库。draft 与服务端不一致时短防抖自动保存。
+  useEffect(() => {
+    if (!selected?.id) return undefined;
+    const tokens = parsePromptToTokens(draft, {
+      lockedAssets,
+      referenceAssetIds: selected.referenceAssetIds || [],
+    });
+    const nextRefs = referenceIdsOf(tokens);
+    if (draft === serverPrompt && refsEqual(nextRefs, selected.referenceAssetIds)) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      commitPromptRef.current();
+    }, 320);
+    return () => window.clearTimeout(timer);
+  }, [draft, serverPrompt, lockedAssets, selected?.id, selected?.referenceAssetIds]);
+
+  // 切镜或离开分镜页时立刻刷盘；shot 用创建时快照，资产列表取最新以免解析不到版本 id。
+  useEffect(() => {
+    const shot = selected;
+    const serverText = serverPrompt;
+    return () => {
+      const ctx = promptCtxRef.current;
+      void commitPromptText(
+        draftRef.current,
+        shot,
+        ctx.lockedAssets,
+        serverText,
+        ctx.onSave,
+      );
+    };
+  }, [selected?.id]);
+
+  // 刷新 / 切标签页前再刷一次，兜住防抖窗口内的未提交改动。
+  useEffect(() => {
+    const flush = () => {
+      void commitPromptRef.current();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
 
   function closeExpandedPrompt() {
     setPromptExpanded(false);
