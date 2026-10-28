@@ -142,6 +142,16 @@
   color: #9aa6ff;
   font-size: 12px;
 }
+.export-error {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(232, 112, 120, 0.45);
+  border-radius: 8px;
+  color: #f0a3a8;
+  background: rgba(50, 24, 28, 0.9);
+  font-size: 12px;
+  line-height: 1.45;
+}
 .export-footer {
   display: flex;
   justify-content: flex-end;
