@@ -1627,7 +1627,8 @@ export function DramaStoryboard({ series, episode }) {
       const job = await startDramaShotBatchGenerate(activeEpisodeId, {
         shotIds: [...selectedIds],
         videoGenerateMode: config.videoGenerateMode,
-        chainPrevTail: Boolean(config.chainPrevTail),
+        // 参考图批量不再支持链式尾帧，始终并行；i2v 串行由 i2vFirstFrameMode 决定
+        chainPrevTail: false,
         i2vFirstFrameMode: config.i2vFirstFrameMode,
         firstShotAutoStill: config.firstShotAutoStill,
       });

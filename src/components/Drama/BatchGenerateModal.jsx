@@ -3,7 +3,7 @@ import { X } from "lucide-react";
 
 /**
  * 分镜批量出片设置弹窗。
- * i2v 无上传首帧；场首 + 引用尾帧时可选「场内第一镜自动生成首帧」。
+ * 参考图模式始终并行提交；首尾帧可选自动首帧或引用上一镜尾帧（后者串行）。
  */
 export function BatchGenerateModal({
   open,
@@ -16,7 +16,6 @@ export function BatchGenerateModal({
   busy = false,
 }) {
   const [mode, setMode] = useState("r2v");
-  const [chainPrevTail, setChainPrevTail] = useState(false);
   const [i2vFirstFrameMode, setI2vFirstFrameMode] = useState("auto");
   const [firstShotAutoStill, setFirstShotAutoStill] = useState(true);
   const defaultMode = supportsR2v ? "r2v" : "i2v";
@@ -24,7 +23,6 @@ export function BatchGenerateModal({
   useEffect(() => {
     if (!open) return;
     setMode(defaultMode);
-    setChainPrevTail(false);
     setI2vFirstFrameMode("auto");
     setFirstShotAutoStill(true);
   }, [open, defaultMode]);
@@ -36,7 +34,7 @@ export function BatchGenerateModal({
   function submit() {
     onConfirm?.({
       videoGenerateMode: mode,
-      chainPrevTail: mode === "r2v" ? chainPrevTail : false,
+      chainPrevTail: false,
       i2vFirstFrameMode: mode === "i2v" ? i2vFirstFrameMode : undefined,
       firstShotAutoStill: i2vPrevTail ? firstShotAutoStill : undefined,
     });
@@ -77,21 +75,6 @@ export function BatchGenerateModal({
               </option>
             </select>
           </label>
-
-          {mode === "r2v" && (
-            <label className="youxi-shot-chain">
-              <input
-                type="checkbox"
-                checked={chainPrevTail}
-                disabled={busy}
-                onChange={(event) => setChainPrevTail(event.target.checked)}
-              />
-              应用上一镜尾帧
-              {selectionHasFirstInChapter && (
-                <em className="youxi-batch-generate-hint">选中含场首镜时，场首自动忽略此项</em>
-              )}
-            </label>
-          )}
 
           {mode === "i2v" && supportsI2v && (
             <>
