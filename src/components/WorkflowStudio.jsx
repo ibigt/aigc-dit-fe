@@ -1,6 +1,7 @@
 import {
   Background,
   ConnectionLineType,
+  Controls,
   Handle,
   MarkerType,
   Panel,
@@ -15,6 +16,7 @@ import {
   ArrowLeft,
   Box,
   Check,
+  CheckSquare,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -22,9 +24,11 @@ import {
   CircleHelp,
   CirclePlay,
   Clipboard,
+  CalendarDays,
   Clapperboard,
-  Clock3,
   Columns3,
+  Copy,
+  Download,
   Film,
   FolderOpen,
   Group,
@@ -32,12 +36,11 @@ import {
   Image,
   Layers3,
   LayoutGrid,
-  ListFilter,
   MessageSquareText,
-  MoreHorizontal,
   MousePointer2,
   Music2,
   PackagePlus,
+  Pencil,
   Plus,
   Redo2,
   Rows3,
@@ -46,9 +49,12 @@ import {
   Search,
   SlidersHorizontal,
   Sparkles,
+  SquareStack,
   Table2,
+  Trash2,
   Type,
   Undo2,
+  Ungroup,
   Upload,
   Volume2,
   WandSparkles,
@@ -67,11 +73,19 @@ import SpecializedAudioNode from "./workflow/AudioGeneratorNode.jsx";
 import SpecializedPromptNode from "./workflow/PromptNode.jsx";
 import SpecializedEditingNode from "./workflow/VideoEditingNode.jsx";
 import { WorkflowNodeContext } from "./workflow/WorkflowNodeContext.jsx";
+import { NodeCollapseButton, NodeDeleteButton, NodeLockButton, nodeCollapsedClass } from "./workflow/NodeCardParts.jsx";
+import { ImportReport } from "./workflow/ImportReport.jsx";
 import { applyRunToCurrentNodes, applyWorkflowSnapshotToNodes, canConnectNodes, executeWorkflowRun, waitForWorkflowPoll, restoreWorkflowSnapshot, persistableWorkflowGraph as persistableGraph } from "./workflow/runtime.js";
 import { getWorkflowRuntimeSnapshot } from "../api/workflows.js";
 import { buildClipQueue } from "./workflow/timeline.js";
+import { buildTitleUpdateBody, isWorkflowTitleChanged, normalizeWorkflowTitle } from "../lib/workflowTitle.js";
 import { graphVariableScopes } from "./workflow/variables.js";
 import { estimatedNodeHeight, placeQuickNode } from "./workflow/layout.js";
+import { autoArrange } from "./workflow/autoLayout.js";
+import { deserializeWorkflow, exportFileName, isComfyWorkflowDocument, isStandardWorkflowDocument, serializeWorkflow } from "./workflow/serializer.js";
+import { ConfirmDialog } from "./ConfirmDialog.jsx";
+import { DemoSelect } from "./DemoSelect.jsx";
+import { WorksTypeIcon } from "./WorksTypeIcon.jsx";
 
 const GENERATOR_KINDS = ["ImageGenerator", "VideoGenerator", "AudioGenerator"];
 
@@ -195,45 +209,6 @@ function WorkflowThumbnail({ record, variant }) {
   );
 }
 
-const catalogGroups = [
-  {
-    name: "创意生成",
-    items: [
-      { name: "图像生成", meta: "提示词、模型与多副本生成", kind: "ImageGenerator", icon: Image, tone: "amber", inputs: [{ name: "prompt", label: "提示词", type: "STRING" }], outputs: [{ name: "IMAGE", label: "图像", type: "IMAGE" }] },
-      { name: "视频生成", meta: "图片与视频统一参考生成", kind: "VideoGenerator", icon: Film, tone: "green", inputs: [{ name: "prompt", label: "提示词", type: "STRING" }, { name: "reference", label: "参考素材", type: "MEDIA" }], outputs: [{ name: "VIDEO", label: "视频", type: "VIDEO" }] },
-      { name: "音频生成", meta: "配音、情感语速与音乐生成", kind: "AudioGenerator", icon: Volume2, tone: "violet", inputs: [{ name: "input", label: "输入", type: "DATA" }], outputs: [{ name: "AUDIO", label: "音频", type: "AUDIO" }] },
-    ],
-  },
-  {
-    name: "加载器",
-    items: [
-      { name: "加载模型", meta: "基础模型加载器", kind: "CheckpointLoaderSimple", icon: Box, tone: "rose", fields: [{ label: "模型文件", value: "sd_xl_base_1.0.safetensors" }], outputs: [{ name: "MODEL", label: "模型", type: "MODEL" }, { name: "CLIP", label: "文本编码器", type: "CLIP" }, { name: "VAE", label: "VAE", type: "VAE" }] },
-      { name: "加载图像", meta: "本地图像输入", kind: "LoadImage", icon: Image, tone: "amber", fields: [{ label: "图像", value: "transparent_rgb_gaming_mouse.png" }], outputs: [{ name: "IMAGE", label: "图像", type: "IMAGE" }, { name: "MASK", label: "遮罩", type: "MASK" }] },
-      { name: "参考音频", meta: "上传并预览参考音频", kind: "ReferenceAudio", icon: Volume2, tone: "violet", outputs: [{ name: "AUDIO", label: "音频", type: "AUDIO" }] },
-      { name: "加载 VAE", meta: "变分自编码器", kind: "VAELoader", icon: Layers3, tone: "red", fields: [{ label: "VAE 文件", value: "minimax_h3_video_vae_fp16.safetensors" }], outputs: [{ name: "VAE", label: "VAE", type: "VAE" }] },
-      { name: "加载文本编码器", meta: "提示词编码模型", kind: "CLIPLoader", icon: MessageSquareText, tone: "yellow", fields: [{ label: "编码器文件", value: "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors" }], outputs: [{ name: "CLIP", label: "文本编码器", type: "CLIP" }] },
-    ],
-  },
-  {
-    name: "条件与潜空间",
-    items: [
-      { name: "提示词编码", meta: "生成条件编码", kind: "CLIPTextEncode", icon: MessageSquareText, tone: "yellow", fields: [{ label: "提示词", value: "电影感光线，精细场景", multiline: true }], inputs: [{ name: "clip", label: "文本编码器", type: "CLIP" }], outputs: [{ name: "CONDITIONING", label: "条件", type: "CONDITIONING" }] },
-      { name: "空白图像潜空间", meta: "图像尺寸与批次", kind: "EmptyLatentImage", icon: LayoutGrid, tone: "pink", fields: [{ label: "宽度", value: "1024" }, { label: "高度", value: "1024" }], outputs: [{ name: "LATENT", label: "潜空间", type: "LATENT" }] },
-      { name: "空白视频潜空间", meta: "视频尺寸与帧数", kind: "EmptyHunyuanLatentVideo", icon: Film, tone: "pink", fields: [{ label: "宽度", value: "832" }, { label: "高度", value: "480" }, { label: "帧数", value: "81" }], outputs: [{ name: "LATENT", label: "潜空间", type: "LATENT" }] },
-      { name: "应用控制网络", meta: "姿态与结构控制", kind: "ControlNetApplyAdvanced", icon: SlidersHorizontal, tone: "violet", fields: [{ label: "强度", value: "0.80" }], inputs: [{ name: "conditioning", label: "条件", type: "CONDITIONING" }], outputs: [{ name: "CONDITIONING", label: "条件", type: "CONDITIONING" }] },
-    ],
-  },
-  {
-    name: "采样与输出",
-    items: [
-      { name: "K 采样器", meta: "扩散采样", kind: "KSampler", icon: WandSparkles, tone: "violet", fields: [{ label: "采样步数", value: "20" }, { label: "引导系数", value: "7.0" }, { label: "采样算法", value: "euler" }], inputs: [{ name: "model", label: "模型", type: "MODEL" }, { name: "positive", label: "正向条件", type: "CONDITIONING" }, { name: "negative", label: "反向条件", type: "CONDITIONING" }, { name: "latent_image", label: "潜空间", type: "LATENT" }], outputs: [{ name: "LATENT", label: "潜空间", type: "LATENT" }] },
-      { name: "VAE 解码", meta: "潜空间转图像", kind: "VAEDecode", icon: Sparkles, tone: "red", fields: [{ label: "分块尺寸", value: "512" }], inputs: [{ name: "samples", label: "采样结果", type: "LATENT" }, { name: "vae", label: "VAE", type: "VAE" }], outputs: [{ name: "IMAGE", label: "图像", type: "IMAGE" }] },
-      { name: "保存图像", meta: "写入输出目录", kind: "SaveImage", icon: Save, tone: "blue", fields: [{ label: "文件名前缀", value: "ComfyUI" }], inputs: [{ name: "images", label: "图像", type: "IMAGE" }] },
-      { name: "视频剪辑", meta: "预览并播放剪辑成片", kind: "VideoEditing", icon: Clapperboard, tone: "blue", inputs: [{ name: "video", label: "视频素材", type: "VIDEO" }, { name: "audio", label: "音频素材", type: "AUDIO" }] },
-    ],
-  },
-];
-
 const canvasQuickItems = [
   { id: "text", name: "文本", kind: "MarkdownNote", icon: Type, tone: "yellow", fields: [{ label: "内容", value: "输入文本内容…", multiline: true }], outputs: [{ name: "TEXT", label: "文本", type: "STRING" }] },
   { id: "table", name: "表格", kind: "DataTable", icon: Table2, tone: "blue", fields: [{ label: "用途", value: "分镜表" }, { label: "列", value: "镜号、画面、台词、时长" }], outputs: [{ name: "TABLE", label: "表格", type: "DATA" }] },
@@ -241,6 +216,47 @@ const canvasQuickItems = [
   { id: "video", name: "视频", kind: "VideoGenerator", icon: Film, tone: "green", badge: "MiniMax H3", inputs: [{ name: "prompt", label: "提示词", type: "STRING" }, { name: "reference", label: "参考素材", type: "MEDIA" }], outputs: [{ name: "VIDEO", label: "视频", type: "VIDEO" }] },
   { id: "audio", name: "音频", kind: "AudioGenerator", icon: Volume2, tone: "violet", inputs: [{ name: "input", label: "输入", type: "DATA" }], outputs: [{ name: "AUDIO", label: "音频", type: "AUDIO" }] },
   { id: "editing", name: "视频剪辑", kind: "VideoEditing", icon: Clapperboard, tone: "blue", badge: "新", inputs: [{ name: "video", label: "视频素材", type: "VIDEO" }, { name: "audio", label: "音频素材", type: "AUDIO" }] },
+];
+
+const catalogGroups = [
+  {
+    name: "创意生成",
+    items: [
+      { name: "文本", kind: "MarkdownNote", icon: Type, tone: "yellow", source: "canvas", fields: [{ label: "内容", value: "雨夜都市，慢速推镜，霓虹倒影", multiline: true }], outputs: [{ name: "TEXT", label: "提示词", type: "STRING" }] },
+      { name: "表格", kind: "DataTable", icon: Table2, tone: "blue", source: "canvas", fields: [{ label: "用途", value: "分镜表" }, { label: "列", value: "镜号、画面、台词、时长" }], outputs: [{ name: "TABLE", label: "分镜表", type: "DATA" }] },
+      { name: "图像生成", kind: "ImageGenerator", icon: Image, tone: "amber", source: "canvas", outputs: [{ name: "IMAGE", label: "图像", type: "IMAGE" }] },
+      { name: "视频生成", kind: "VideoGenerator", icon: Film, tone: "green", source: "canvas", inputs: [{ name: "prompt", label: "提示词", type: "STRING" }, { name: "reference", label: "参考素材", type: "MEDIA" }], outputs: [{ name: "VIDEO", label: "视频", type: "VIDEO" }] },
+      { name: "音频生成", kind: "AudioGenerator", icon: Volume2, tone: "violet", source: "canvas", inputs: [{ name: "input", label: "输入", type: "DATA" }], outputs: [{ name: "AUDIO", label: "音频", type: "AUDIO" }] },
+      { name: "视频剪辑", kind: "VideoEditing", icon: Clapperboard, tone: "blue", source: "canvas", inputs: [{ name: "video", label: "视频素材", type: "VIDEO" }] },
+      { name: "参考音频", kind: "ReferenceAudio", icon: Volume2, tone: "violet", source: "canvas", outputs: [{ name: "AUDIO", label: "音频", type: "AUDIO" }], media: { type: "reference-audio", name: "尚未上传音频", url: "" } },
+    ],
+  },
+  {
+    name: "加载器",
+    items: [
+      { name: "加载模型", kind: "CheckpointLoaderSimple", icon: Box, tone: "rose", fields: [{ label: "模型文件", value: "wan2.2_t2v_high_noise.safetensors", options: ["wan2.2_t2v_high_noise.safetensors", "ltx-video-2b-v0.9.5.safetensors", "sd_xl_base_1.0.safetensors"] }], outputs: [{ name: "MODEL", label: "模型", type: "MODEL" }, { name: "CLIP", label: "文本编码器", type: "CLIP" }, { name: "VAE", label: "VAE", type: "VAE" }] },
+      { name: "加载图像", kind: "LoadImage", icon: Image, tone: "amber", fields: [{ label: "图像文件", value: "transparent_rgb_gaming_mouse.png" }], outputs: [{ name: "IMAGE", label: "图像", type: "IMAGE" }, { name: "MASK", label: "遮罩", type: "MASK" }] },
+      { name: "加载 VAE", kind: "VAELoader", icon: Layers3, tone: "red", fields: [{ label: "VAE 名称", value: "wan2.2_vae.safetensors", options: ["wan2.2_vae.safetensors", "sdxl_vae.safetensors"] }], outputs: [{ name: "VAE", label: "VAE", type: "VAE" }] },
+    ],
+  },
+  {
+    name: "条件与潜空间",
+    items: [
+      { name: "正向提示词", kind: "CLIPTextEncode", icon: MessageSquareText, tone: "yellow", fields: [{ label: "提示词", value: "电影质感雨夜街景，柔和霓虹反光，稳定运镜", multiline: true }], inputs: [{ name: "clip", label: "文本编码器", type: "CLIP" }], outputs: [{ name: "CONDITIONING", label: "条件", type: "CONDITIONING" }] },
+      { name: "负向提示词", kind: "CLIPTextEncode", icon: MessageSquareText, tone: "yellow", fields: [{ label: "提示词", value: "低清、闪烁、畸变、水印、过曝", multiline: true }], inputs: [{ name: "clip", label: "文本编码器", type: "CLIP" }], outputs: [{ name: "CONDITIONING", label: "条件", type: "CONDITIONING" }] },
+      { name: "视频潜空间", kind: "EmptyHunyuanLatentVideo", icon: Film, tone: "pink", fields: [{ label: "宽度", value: "1280", inputType: "number" }, { label: "高度", value: "720", inputType: "number" }, { label: "帧数", value: "81", inputType: "number" }], outputs: [{ name: "LATENT", label: "潜空间", type: "LATENT" }] },
+      { name: "图像潜空间", kind: "EmptyLatentImage", icon: Image, tone: "pink", fields: [{ label: "宽度", value: "1024", inputType: "number" }, { label: "高度", value: "1024", inputType: "number" }, { label: "批次", value: "1", inputType: "number" }], outputs: [{ name: "LATENT", label: "潜空间", type: "LATENT" }] },
+    ],
+  },
+  {
+    name: "采样与输出",
+    items: [
+      { name: "K 采样器", kind: "KSampler", icon: WandSparkles, tone: "violet", fields: [{ label: "随机种子", value: "908172635", inputType: "number" }, { label: "采样步数", value: "24", inputType: "number" }, { label: "引导系数", value: "6.0", inputType: "number" }, { label: "采样算法", value: "euler", options: ["euler", "euler_ancestral", "dpmpp_2m", "uni_pc"] }], inputs: [{ name: "model", label: "模型", type: "MODEL" }, { name: "positive", label: "正向条件", type: "CONDITIONING" }, { name: "negative", label: "反向条件", type: "CONDITIONING" }, { name: "latent_image", label: "潜空间", type: "LATENT" }], outputs: [{ name: "LATENT", label: "潜空间", type: "LATENT" }] },
+      { name: "VAE 解码", kind: "VAEDecode", icon: Sparkles, tone: "red", fields: [{ label: "分块尺寸", value: "512", inputType: "number" }], inputs: [{ name: "samples", label: "采样结果", type: "LATENT" }, { name: "vae", label: "VAE", type: "VAE" }], outputs: [{ name: "IMAGE", label: "图像", type: "IMAGE" }] },
+      { name: "保存视频", kind: "SaveVideo", icon: Save, tone: "green", fields: [{ label: "文件名前缀", value: "LightFlow/video" }, { label: "格式", value: "mp4", options: ["mp4", "webm", "mov"] }], inputs: [{ name: "images", label: "图像序列", type: "IMAGE" }] },
+      { name: "保存图像", kind: "SaveImage", icon: Save, tone: "blue", fields: [{ label: "文件名前缀", value: "LightFlow/image" }], inputs: [{ name: "images", label: "图像", type: "IMAGE" }] },
+    ],
+  },
 ];
 
 const toneByType = {
@@ -319,6 +335,10 @@ const portLabelMap = {
 };
 
 function iconForType(type) {
+  if (type === "MarkdownNote" || type === "Prompt" || type === "Note") return Type;
+  if (type === "DataTable") return Table2;
+  if (type === "VideoEditing") return Clapperboard;
+  if (/Audio/i.test(type)) return Volume2;
   if (/Video/i.test(type)) return Film;
   if (/Image|VAE/i.test(type)) return Image;
   if (/Text|CLIP/i.test(type)) return MessageSquareText;
@@ -326,6 +346,19 @@ function iconForType(type) {
   if (/Save/i.test(type)) return Save;
   if (/Loader|Model|UNET/i.test(type)) return Box;
   return Sparkles;
+}
+
+function resolveNodeIcon(icon, kind) {
+  if (typeof icon === "function") return icon;
+  if (
+    icon &&
+    typeof icon === "object" &&
+    typeof icon.$$typeof === "symbol" &&
+    (typeof icon.render === "function" || typeof icon.type === "function")
+  ) {
+    return icon;
+  }
+  return iconForType(kind);
 }
 
 function widgetLabels(type) {
@@ -468,6 +501,25 @@ function normalizeWorkflow(json) {
   return { nodes: layoutWorkflow(normalizedNodes, edges), edges };
 }
 
+// 导入分派：标准工作台 JSON 走协议校验，ComfyUI JSON 走既有归一化
+// 返回 { ok, kind, graph, viewport, errors, warnings }；失败时不返回任何画布数据
+export function parseWorkflowDocument(json) {
+  if (isStandardWorkflowDocument(json)) {
+    const result = deserializeWorkflow(json);
+    if (!result.ok) return { ok: false, kind: "standard", errors: result.errors, warnings: result.warnings };
+    return { ok: true, kind: "standard", graph: result.graph, viewport: result.viewport, errors: [], warnings: result.warnings };
+  }
+  if (isComfyWorkflowDocument(json)) {
+    return { ok: true, kind: "comfy", graph: normalizeWorkflow(json), viewport: null, errors: [], warnings: [] };
+  }
+  return {
+    ok: false,
+    kind: "unknown",
+    errors: ["无法识别的文件格式：既不是高级工作台标准 JSON，也不是 ComfyUI 工作流"],
+    warnings: [],
+  };
+}
+
 function edgeColor(type = "") {
   if (/IMAGE|PIXEL/i.test(type)) return "#63b3ed";
   if (/MODEL/i.test(type)) return "#b794f4";
@@ -598,11 +650,14 @@ function videoEditingNode(id, position, options = {}) {
       enabled: true,
       inputs: options.inputs || [{ name: "video", label: "视频素材", type: "VIDEO" }],
       outputs: [],
+      // 空态默认（需求 4.2.5）：新建剪辑节点不携带演示成片，等上游视频连线后由 getClips 实时聚合
       editing: {
-        status: "等待剪辑",
+        status: options.status || "",
         mode: options.mode || "智能对齐",
-        duration: options.duration || "00:12",
-        resolution: options.resolution || "2K",
+        duration: options.duration || "",
+        resolution: options.resolution || "",
+        video: options.video || "",
+        poster: options.poster || "",
         clips: [],
       },
     },
@@ -705,6 +760,32 @@ function demoWorkflow(kind, models = []) {
     return { nodes: nodesWithOutput, edges };
   }
 
+  if (kind === "sdxl-restore") {
+    const nodes = [
+      { id: "restore-model", type: "comfy", position: { x: 0, y: 240 }, style: { width: 270 }, data: { title: "加载模型", kind: "CheckpointLoaderSimple", tone: "rose", icon: Box, source: "comfy-core", enabled: true, fields: [{ label: "模型文件", value: "sd_xl_base_1.0.safetensors" }], outputs: [{ name: "MODEL", label: "模型", type: "MODEL" }, { name: "CLIP", label: "文本编码器", type: "CLIP" }, { name: "VAE", label: "VAE", type: "VAE" }] } },
+      { id: "restore-positive", type: "comfy", position: { x: 0, y: 0 }, style: { width: 270 }, data: { title: "正向提示词", kind: "CLIPTextEncode", tone: "yellow", icon: MessageSquareText, source: "comfy-core", enabled: true, fields: [{ label: "提示词", value: "高清修复后的产品静物，锐利边缘，真实材质细节", multiline: true }], inputs: [{ name: "clip", label: "文本编码器", type: "CLIP" }], outputs: [{ name: "CONDITIONING", label: "条件", type: "CONDITIONING" }] } },
+      { id: "restore-negative", type: "comfy", position: { x: 0, y: 480 }, style: { width: 270 }, data: { title: "负向提示词", kind: "CLIPTextEncode", tone: "yellow", icon: MessageSquareText, source: "comfy-core", enabled: true, fields: [{ label: "提示词", value: "blurry, deformed fingers, watermark, low quality", multiline: true }], inputs: [{ name: "clip", label: "文本编码器", type: "CLIP" }], outputs: [{ name: "CONDITIONING", label: "条件", type: "CONDITIONING" }] } },
+      { id: "restore-source", type: "comfy", position: { x: 330, y: 240 }, style: { width: 286 }, data: { title: "加载图像", kind: "LoadImage", tone: "amber", icon: Image, source: "comfy-core", enabled: true, preview: "/media/quick-create/image-product.jpg", fields: [{ label: "图像", value: "transparent_rgb_gaming_mouse.png" }], outputs: [{ name: "IMAGE", label: "图像", type: "IMAGE" }, { name: "MASK", label: "遮罩", type: "MASK" }] } },
+      { id: "restore-scale", type: "comfy", position: { x: 660, y: 240 }, style: { width: 270 }, data: { title: "图像按总像素缩放", kind: "ImageScaleToTotalPixels", tone: "pink", icon: LayoutGrid, source: "comfy-core", enabled: true, fields: [{ label: "缩放算法", value: "lanczos" }, { label: "总百万像素", value: "4" }, { label: "尺寸倍数", value: "8" }], inputs: [{ name: "image", label: "图像", type: "IMAGE" }], outputs: [{ name: "IMAGE", label: "图像", type: "IMAGE" }] } },
+      { id: "restore-sampler", type: "comfy", position: { x: 990, y: 240 }, style: { width: 270 }, data: { title: "K 采样器", kind: "KSampler", tone: "violet", icon: WandSparkles, source: "comfy-core", enabled: true, fields: [{ label: "随机种子", value: "812734" }, { label: "采样步数", value: "28", inputType: "number" }, { label: "引导系数", value: "6.5", inputType: "number" }, { label: "采样算法", value: "dpmpp_2m" }], inputs: [{ name: "model", label: "模型", type: "MODEL" }, { name: "positive", label: "正向条件", type: "CONDITIONING" }, { name: "negative", label: "反向条件", type: "CONDITIONING" }, { name: "latent_image", label: "潜空间", type: "LATENT" }], outputs: [{ name: "LATENT", label: "潜空间", type: "LATENT" }] } },
+      { id: "restore-decode", type: "comfy", position: { x: 1310, y: 240 }, style: { width: 270 }, data: { title: "VAE 解码", kind: "VAEDecode", tone: "red", icon: Sparkles, source: "comfy-core", enabled: true, fields: [{ label: "分块尺寸", value: "512", inputType: "number" }], inputs: [{ name: "samples", label: "采样结果", type: "LATENT" }, { name: "vae", label: "VAE", type: "VAE" }], outputs: [{ name: "IMAGE", label: "图像", type: "IMAGE" }] } },
+      { id: "restore-save", type: "comfy", position: { x: 1630, y: 240 }, style: { width: 270 }, data: { title: "保存图像", kind: "SaveImage", tone: "blue", icon: Save, source: "comfy-core", enabled: true, fields: [{ label: "文件名前缀", value: "LightFlow/restored" }], inputs: [{ name: "images", label: "图像", type: "IMAGE" }] } },
+    ];
+    const edges = [
+      demoEdge("e-r-model-sampler", "restore-model", "restore-sampler", "MODEL", "MODEL", "model"),
+      demoEdge("e-r-model-positive", "restore-model", "restore-positive", "CLIP", "CLIP", "clip"),
+      demoEdge("e-r-model-negative", "restore-model", "restore-negative", "CLIP", "CLIP", "clip"),
+      demoEdge("e-r-source-scale", "restore-source", "restore-scale", "IMAGE", "IMAGE", "image"),
+      demoEdge("e-r-scale-sampler", "restore-scale", "restore-sampler", "IMAGE", "IMAGE", "latent_image"),
+      demoEdge("e-r-positive-sampler", "restore-positive", "restore-sampler", "CONDITIONING", "CONDITIONING", "positive"),
+      demoEdge("e-r-negative-sampler", "restore-negative", "restore-sampler", "CONDITIONING", "CONDITIONING", "negative"),
+      demoEdge("e-r-sampler-decode", "restore-sampler", "restore-decode", "LATENT", "LATENT", "samples"),
+      demoEdge("e-r-model-decode", "restore-model", "restore-decode", "VAE", "VAE", "vae"),
+      demoEdge("e-r-decode-save", "restore-decode", "restore-save", "IMAGE", "IMAGE", "images"),
+    ];
+    return { nodes, edges };
+  }
+
   const nodes = [
     promptNode("text", { x: 0, y: 180 }, "视频提示词", "晨雾中的山谷列车缓慢穿行，航拍镜头平稳推进，真实自然光。"),
     mediaNode("video", "video", { x: 450, y: 90 }, models, { model: kind === "text-to-video" ? "Wan2.2" : undefined, inputs: [{ name: "prompt", label: "提示词", type: "STRING" }] }),
@@ -740,13 +821,10 @@ const NodeEditContext = createContext({
   openReferencePicker: () => {},
 });
 
-const inputHandleStyle = { top: "50%", left: 0, right: "auto", transform: "translate(-50%, -50%)" };
-const outputHandleStyle = { top: "50%", right: 0, left: "auto", transform: "translate(50%, -50%)" };
-
 function UnifiedHandles({ hasInput, hasOutput }) {
   return <>
-    {hasInput && <Handle id="input" type="target" position={Position.Left} className="comfy-node__unified-handle comfy-node__unified-handle--input" style={inputHandleStyle} />}
-    {hasOutput && <Handle id="output" type="source" position={Position.Right} className="comfy-node__unified-handle comfy-node__unified-handle--output" style={outputHandleStyle} />}
+    {hasInput && <Handle id="input" type="target" position={Position.Left} className="comfy-node__unified-handle comfy-node__unified-handle--input" />}
+    {hasOutput && <Handle id="output" type="source" position={Position.Right} className="comfy-node__unified-handle comfy-node__unified-handle--output" />}
   </>;
 }
 
@@ -764,7 +842,13 @@ function ComfyField({ nodeId, field, index }) {
       {field.inputType === "boolean" ? (
         <input className="nodrag" type="checkbox" checked={field.value === true || field.value === "true"} onChange={(event) => updateField(nodeId, index, event.target.checked)} onPointerDown={(event) => event.stopPropagation()} />
       ) : field.options ? (
-        <select {...common}>{field.options.map((option) => <option key={option}>{option}</option>)}</select>
+        <DemoSelect
+          className="nodrag nowheel workflow-node-select"
+          ariaLabel={field.label}
+          value={field.value}
+          onChange={(val) => updateField(nodeId, index, val)}
+          options={field.options.map((option) => ({ value: option, label: option }))}
+        />
       ) : field.multiline ? (
         <textarea {...common} rows={field.label === "说明" ? 7 : 5} />
       ) : (
@@ -780,9 +864,9 @@ function ReferenceAudioNode({ id, data, selected }) {
   const uploadRef = useRef(null);
   const media = data.media || {};
   return (
-    <div className={`comfy-node reference-audio-node comfy-node--violet ${selected ? "comfy-node--selected" : ""}`}>
+    <div className={`comfy-node reference-audio-node comfy-node--violet ${selected ? "comfy-node--selected" : ""} ${nodeCollapsedClass(data)}`}>
       <UnifiedHandles hasInput={false} hasOutput />
-      <header><span><ChevronDown size={12} /></span><strong>{data.title || "参考音频"}</strong><Volume2 size={14} /></header>
+      <header><NodeCollapseButton id={id} collapsed={data.collapsed} /><strong>{data.title || "参考音频"}</strong><Volume2 size={14} /><NodeLockButton id={id} locked={data.locked} /></header>
       <div className="reference-audio-node__body nodrag nowheel" onPointerDown={(event) => event.stopPropagation()}>
         <button className="reference-audio-node__upload" onClick={() => uploadRef.current?.click()}><Upload size={14} />{media.url ? "更换音频" : "上传参考音频"}</button>
         <div className={`reference-audio-node__preview ${media.url ? "has-audio" : ""}`}>
@@ -811,92 +895,231 @@ function ComfyNode({ id, data, selected }) {
   if (data.kind === "AudioGenerator") return <SpecializedAudioNode id={id} data={data} selected={selected} />;
   if (data.kind === "ReferenceAudio") return <ReferenceAudioNode id={id} data={data} selected={selected} />;
   if (data.kind === "VideoEditing") return <SpecializedEditingNode id={id} data={data} selected={selected} />;
-  if (["MarkdownNote", "Prompt"].includes(data.kind)) return <SpecializedPromptNode id={id} data={data} selected={selected} />;
-  const Icon = data.icon || Sparkles;
+  const Icon = resolveNodeIcon(data.icon, data.kind);
   const hasInputs = Array.isArray(data.inputs) ? data.inputs.length > 0 : !["CheckpointLoaderSimple", "LoadImage", "MarkdownNote", "ReferenceAsset"].includes(data.kind);
   const hasOutputs = Array.isArray(data.outputs) ? data.outputs.length > 0 : !["SaveImage", "SaveVideo", "VideoEditing"].includes(data.kind);
+  const fields = (data.fields && data.fields.length)
+    ? data.fields
+    : ["MarkdownNote", "Prompt"].includes(data.kind)
+      ? [{ label: "内容", value: data.prompt || data.media?.prompt || "输入文本内容…", multiline: true }]
+      : [];
   return (
-    <div className={`comfy-node comfy-node--${data.tone || "blue"} ${selected ? "comfy-node--selected" : ""} ${data.enabled === false ? "comfy-node--disabled" : ""}`}>
+    <div className={`comfy-node comfy-node--${data.tone || "blue"} ${selected ? "comfy-node--selected" : ""} ${data.enabled === false ? "comfy-node--disabled" : ""} ${nodeCollapsedClass(data)}`}>
       <UnifiedHandles hasInput={hasInputs} hasOutput={hasOutputs} />
       <header>
-        <span><ChevronDown size={12} /></span>
+        <NodeCollapseButton id={id} collapsed={data.collapsed} />
         <strong>{data.title}</strong>
         <Icon size={14} />
+        <NodeLockButton id={id} locked={data.locked} />
       </header>
       {data.preview && (data.kind === "ReferenceAsset" ? <div className="comfy-node__asset-preview"><img src={data.preview} alt={`${data.title}预览`} />{data.assetType === "VIDEO" && <span><Film size={12} />视频素材</span>}</div> : <img className="comfy-node__preview" src={data.preview} alt="节点输入预览" />)}
       <div className="comfy-node__fields">
-        {(data.fields || []).map((field, index) => <ComfyField key={`${field.label}-${index}`} nodeId={id} field={field} index={index} />)}
+        {fields.map((field, index) => <ComfyField key={`${field.label}-${index}`} nodeId={id} field={field} index={index} />)}
       </div>
       <footer><span>{data.source === "canvas" ? "光驭画布节点" : "ComfyUI 节点"}</span><small>{data.source === "comfy-core" ? "核心" : data.source === "canvas" ? "画布" : data.source || "扩展"}</small></footer>
     </div>
   );
 }
 
+const GROUP_COLORS = ["#7584ff", "#349064", "#be5570", "#b97a14", "#aa559f", "#4e66cf"];
+
 function GroupFrame({ data, selected }) {
-  return <div className={`canvas-group-frame ${selected ? "is-selected" : ""}`}><span><Group size={13} />{data.label || "节点组合"}</span></div>;
+  const frameStyle = data.color ? { borderColor: data.color, background: `${data.color}14` } : undefined;
+  return <div className={`canvas-group-frame ${selected ? "is-selected" : ""}`} style={frameStyle}><span><Group size={13} />{data.label || "节点组合"}</span></div>;
 }
 
 const nodeTypes = { comfy: ComfyNode, groupFrame: GroupFrame };
 
+const WORKFLOW_KINDS = { image: "图片", video: "视频", audio: "语音", import: "导入", template: "模板" };
+
+// 主页沿用「我的创作」（works-page）的卡片、类型页签与搜索框风格
 function WorkflowLibrary({ records, status, onOpen, onCreate, onImport, onOpenTemplates, onDelete }) {
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
-  const inputRef = useRef(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
+  const fileRef = useRef(null);
+  const searchRef = useRef(null);
   const visible = records.filter((item) => (filter === "all" || item.type === filter) && `${item.title}${item.model}`.toLowerCase().includes(query.toLowerCase()));
 
+  // "/" 聚焦搜索框（与搜索框内的 kbd 提示一致）
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey) return;
+      const node = document.activeElement;
+      if (node && (node.tagName === "INPUT" || node.tagName === "TEXTAREA" || node.isContentEditable)) return;
+      event.preventDefault();
+      searchRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await onDelete(deleteTarget);
+      setDeleteTarget(null);
+    } catch (error) {
+      setDeleteError(error.message || "删除失败");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
-    <div className="workflow-library">
-      <header className="workflow-library__hero">
-        <div><h1>高级工作台</h1><p>选择一个工作流继续编辑，或从空白与 ComfyUI 文件开始。</p></div>
-        <div className="workflow-library__actions">
-          <button onClick={onOpenTemplates}><Layers3 size={16} /> 模板</button>
-          <button onClick={() => inputRef.current?.click()}><Upload size={16} /> 导入工作流</button>
-          <button className="button button--primary" onClick={onCreate}><Plus size={16} /> 新建工作流</button>
-          <input ref={inputRef} hidden type="file" accept=".json" onChange={(event) => onImport(event.target.files?.[0])} />
+    <section className="page standard-content-page works-page workflow-library-page">
+      <header className="page-header works-header">
+        <div><h1>高级工作台</h1><p>选择一个工作流继续编辑，或从空白与模板开始搭建。</p></div>
+        <div className="workflow-library-actions">
+          <button type="button" onClick={onOpenTemplates}><Layers3 size={16} /> 模板库</button>
+          <button type="button" onClick={() => fileRef.current?.click()}><Upload size={16} /> 导入工作流</button>
+          <button type="button" className="primary" onClick={onCreate}><Plus size={16} /> 新建工作流</button>
+          <input ref={fileRef} hidden type="file" accept=".json" onChange={(event) => { onImport(event.target.files?.[0]); event.target.value = ""; }} />
         </div>
       </header>
 
-      <div className="workflow-library__toolbar">
-        <div className="workflow-filter">
-          <button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}><ListFilter size={14} /> 全部</button>
-          <button className={filter === "video" ? "active" : ""} onClick={() => setFilter("video")}><Film size={14} /> 视频</button>
-          <button className={filter === "image" ? "active" : ""} onClick={() => setFilter("image")}><Image size={14} /> 图片</button>
+      <div className="works-controls">
+        <div className="works-type-tabs" role="tablist" aria-label="工作流类型">
+          {[["all", "全部"], ["video", "视频"], ["image", "图片"]].map(([value, label]) => (
+            <button key={value} type="button" role="tab" aria-selected={filter === value} className={`works-type-tab${filter === value ? " is-active" : ""}`} onClick={() => setFilter(value)}>
+              <WorksTypeIcon type={value} />
+              <span>{label}</span>
+            </button>
+          ))}
         </div>
-        <label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索名称或模型" /></label>
+        <div className="works-filter-group">
+          <label className="works-search">
+            <Search size={17} aria-hidden="true" />
+            <span className="visually-hidden">搜索工作流</span>
+            <input ref={searchRef} type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索工作流或模型" autoComplete="off" />
+            <kbd aria-hidden="true">/</kbd>
+          </label>
+        </div>
       </div>
 
       {status && <p className={`workflow-library__status${status.error ? " is-error" : ""}`}>{status.text}</p>}
-      <div className="workflow-record-grid">
-        <button className="workflow-new-card" onClick={onCreate}><span><Plus size={22} /></span><strong>空白工作流</strong><small>从节点库开始搭建</small></button>
-        {visible.map((record, index) => (
-          <article className="workflow-record-card" key={record.id}>
-            <button className="workflow-record-card__cover" onClick={() => onOpen(record)} aria-label={`打开工作流：${record.title}`}>
-              <WorkflowThumbnail record={record} variant={index} />
-              <span className="workflow-origin">{record.origin}</span>
-              <span className="workflow-open"><CirclePlay size={18} /> 打开工作流</span>
+
+      {!status && records.length === 0 ? (
+        <div className="works-empty">
+          <div className="works-empty-icon" aria-hidden="true"><Layers3 size={28} /></div>
+          <h2>暂无工作流</h2>
+          <p>从空白画布开始搭建，或导入 ComfyUI / 工作台 JSON 模板。</p>
+        </div>
+      ) : (
+        <>
+          <div className="works-result-summary">
+            <span>{filter === "all" ? "全部工作流" : `找到 ${visible.length} 个工作流`}</span>
+            <span>按更新时间排序</span>
+          </div>
+          <div className="works-grid">
+            <button type="button" className="workflow-new-card" onClick={onCreate}>
+              <span aria-hidden="true"><Plus size={22} /></span>
+              <strong>空白工作流</strong>
+              <small>从节点库开始搭建</small>
             </button>
-            <div className="workflow-record-card__body">
-              <div><strong>{record.title}</strong><button aria-label={record.builtin ? `示例工作流：${record.title}` : `删除工作流：${record.title}`} onClick={() => onDelete(record)}><MoreHorizontal size={16} /></button></div>
-              <p>{record.description}</p>
-              <footer><span><Layers3 size={13} /> {record.nodes} 个节点</span><span><Clock3 size={13} /> {record.updated}</span><b>{record.model}</b></footer>
-            </div>
-          </article>
-        ))}
-      </div>
-    </div>
+          {visible.map((record, index) => (
+            <article className="work-card workflow-record-card" key={record.id}>
+              <button type="button" className="work-thumb workflow-cover" onClick={() => onOpen(record)} aria-label={`打开工作流：${record.title}`}>
+                <WorkflowThumbnail record={record} variant={index} />
+                <span className="work-spec">{record.nodes} 个节点</span>
+                <span className="work-kind">{record.builtin ? "官方示例" : WORKFLOW_KINDS[record.type] || "工作流"}</span>
+                <span className="workflow-cover-open" aria-hidden="true"><CirclePlay size={15} /> 打开工作流</span>
+              </button>
+              <div className="work-card-body">
+                <h3 title={record.title}>{record.title}</h3>
+                <div className="work-model" title={record.model}>{record.model}</div>
+                <p>{record.description || (record.builtin ? "官方示例工作流，可直接运行。" : "暂无描述。")}</p>
+              </div>
+              <footer className="work-card-footer">
+                <span><CalendarDays size={12} /> {record.updated}</span>
+                {!record.builtin && (
+                  <div className="work-actions">
+                    <button type="button" className="is-danger" aria-label={`删除工作流：${record.title}`} title="删除" onClick={() => { setDeleteError(null); setDeleteTarget(record); }}><Trash2 size={16} /></button>
+                  </div>
+                )}
+              </footer>
+            </article>
+          ))}
+          </div>
+        </>
+      )}
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="删除工作流？"
+        message={deleteTarget
+          ? deleteError
+            ? `删除失败：${deleteError}`
+            : `「${deleteTarget.title}」删除后将无法恢复，请确认是否继续。`
+          : ""}
+        confirmLabel="删除"
+        busy={deleting}
+        busyLabel="删除中…"
+        onClose={() => { if (!deleting) setDeleteTarget(null); }}
+        onConfirm={confirmDelete}
+      />
+    </section>
   );
 }
 
-function WorkflowEditor({ record, initialGraph, onBack, onImport, models, selectedModel, onModelChange, onRecordChange }) {
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialGraph.nodes.map((node) => ({ ...node, data: { ...node.data, runtime: undefined } })));
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialGraph.edges);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+function hydrateStoredNode(node, models) {
+  if (!node || node.type === "groupFrame") return node;
+  const data = { ...(node.data || {}), runtime: undefined };
+  const kind = data.kind || node.type || "MarkdownNote";
+  data.kind = kind;
+  data.icon = resolveNodeIcon(data.icon, kind);
+  if (["MarkdownNote", "Prompt"].includes(kind) && (!Array.isArray(data.fields) || !data.fields.length)) {
+    data.fields = [{ label: "内容", value: data.prompt || data.media?.prompt || "输入文本内容…", multiline: true }];
+  }
+  if (["ImageGenerator", "VideoGenerator"].includes(kind)) {
+    const isVideo = kind === "VideoGenerator";
+    const fallbackMedia = mediaNode("preview", isVideo ? "video" : "image", { x: 0, y: 0 }, models).data.media;
+    data.media = {
+      ...fallbackMedia,
+      ...(data.media || {}),
+      models: data.media?.models?.length ? data.media.models : fallbackMedia.models,
+    };
+  } else if (kind === "AudioGenerator") {
+    const fallbackAudio = audioMedia(models);
+    data.media = {
+      ...fallbackAudio,
+      ...(data.media || {}),
+      models: data.media?.models?.length ? data.media.models : fallbackAudio.models,
+    };
+  } else if (kind === "VideoEditing") {
+    const fallbackEditing = videoEditingNode("preview", { x: 0, y: 0 }).data.editing;
+    data.editing = {
+      ...fallbackEditing,
+      ...(data.editing || {}),
+    };
+  }
+  const defaultWidth =
+    kind === "VideoGenerator"
+      ? 356
+      : kind === "ImageGenerator"
+        ? 332
+        : ["AudioGenerator", "VideoEditing"].includes(kind)
+          ? 382
+          : undefined;
+  const style = defaultWidth && !node.style?.width ? { ...(node.style || {}), width: defaultWidth } : node.style;
+  return { ...node, type: "comfy", style, data };
+}
+
+function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, onModelChange, onRecordChange, appendRequest, onAppendApplied }) {
+  const [nodes, setNodes, onNodesChange] = useNodesState(() => (initialGraph.nodes || []).map((node) => hydrateStoredNode(node, models)));
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialGraph.edges || []);
   const [canvasTool, setCanvasTool] = useState("select");
-  const [query, setQuery] = useState("");
   const [running, setRunning] = useState(false);
   const [runProgress, setRunProgress] = useState(0);
   const [runTotal, setRunTotal] = useState(0);
   const [saved, setSaved] = useState(true);
+  // 返回拦截：dirty 画布直接返回会丢草稿，先弹三选一确认
+  const [backGuard, setBackGuard] = useState(false);
+  const [savingBack, setSavingBack] = useState(false);
   const [flowInstance, setFlowInstance] = useState(null);
   const [toast, setToast] = useState("");
   const [addMenu, setAddMenu] = useState(null);
@@ -906,6 +1129,15 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
   const [tidyMenuOpen, setTidyMenuOpen] = useState(false);
   const [includeConnected, setIncludeConnected] = useState(false);
   const [referencePickerNodeId, setReferencePickerNodeId] = useState(null);
+  const [importReport, setImportReport] = useState(null);
+  // 标题行内重命名：草稿 + 编辑态，提交后回写 record 并按需落库
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(() => normalizeWorkflowTitle(record?.title));
+  const titleInputRef = useRef(null);
+  const titleEditingRef = useRef(false);
+  // TC-008 环路高亮：瞬态渲染态，不参与撤销栈与持久化
+  const [cycleHighlight, setCycleHighlight] = useState(null);
+  const cycleHighlightTimer = useRef(null);
   const fileRef = useRef(null);
   const materialRef = useRef(null);
   const materialPoint = useRef(null);
@@ -917,8 +1149,64 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
   const stageRef = useRef(null);
   const historyRef = useRef([]);
   const futureRef = useRef([]);
-  useEffect(() => () => { runAbortRef.current?.abort(); }, []);
-  const visibleCatalog = useMemo(() => catalogGroups.map((group) => ({ ...group, items: group.items.filter((item) => `${item.name}${item.kind}`.toLowerCase().includes(query.toLowerCase())) })).filter((group) => group.items.length), [query]);
+  const nodeClipboardRef = useRef(null);
+  useEffect(() => () => { runAbortRef.current?.abort(); window.clearTimeout(cycleHighlightTimer.current); }, []);
+  // 标题行内重命名：进入编辑态后自动聚焦并全选，失焦/回车提交，Esc 取消
+  useEffect(() => {
+    if (!editingTitle) return;
+    const input = titleInputRef.current;
+    if (!input) return;
+    input.focus();
+    input.select();
+  }, [editingTitle]);
+  function startTitleEdit() {
+    titleEditingRef.current = true;
+    setTitleDraft(normalizeWorkflowTitle(record?.title));
+    setEditingTitle(true);
+  }
+  function cancelTitleEdit() {
+    titleEditingRef.current = false;
+    setEditingTitle(false);
+    setTitleDraft(normalizeWorkflowTitle(record?.title));
+  }
+  // 仅改标题的落库：PUT 会整体覆盖 graph，所以先取服务端已存画布再回写，保证只变标题
+  // 返回 "saved" | "skip"（未落库的新画布/官方示例）| "error"
+  async function persistTitleOnly(nextTitle) {
+    const numericId = Number(record?.id);
+    const owned = Number.isFinite(numericId) && numericId > 0 && !record.builtin;
+    if (!owned) return "skip";
+    try {
+      const detail = await getWorkflow(numericId);
+      await updateWorkflowRecord(numericId, buildTitleUpdateBody(detail, nextTitle, record));
+      return "saved";
+    } catch (error) {
+      showToast(error.message || "名称保存失败", 2800);
+      return "error";
+    }
+  }
+  async function commitTitle() {
+    if (!titleEditingRef.current) return;
+    titleEditingRef.current = false;
+    setEditingTitle(false);
+    const next = normalizeWorkflowTitle(titleDraft);
+    const previous = normalizeWorkflowTitle(record?.title);
+    if (!isWorkflowTitleChanged(previous, next)) {
+      setTitleDraft(previous);
+      return;
+    }
+    onRecordChange?.({ ...record, title: next });
+    const result = await persistTitleOnly(next);
+    if (result === "error") {
+      onRecordChange?.({ ...record, title: previous });
+      setTitleDraft(previous);
+      return;
+    }
+    if (result === "saved") showToast("已重命名", 2000);
+    else {
+      setSaved(false);
+      showToast("名称已更新，点击「保存」生效", 2400);
+    }
+  }
   const focusNodes = useMemo(() => {
     const primary = nodes.filter((node) => !["MarkdownNote", "ImageScaleToTotalPixels", "GetImageSize"].includes(node.data.kind));
     return primary.length ? primary : nodes;
@@ -926,6 +1214,51 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
   const snapshotGraph = useCallback(() => ({ nodes: nodes.map((node) => ({ ...node, position: { ...node.position }, data: { ...node.data } })), edges: edges.map((edge) => ({ ...edge })) }), [nodes, edges]);
   const rememberGraph = useCallback(() => { historyRef.current = [...historyRef.current.slice(-39), snapshotGraph()]; futureRef.current = []; }, [snapshotGraph]);
   const showToast = useCallback((message, duration = 1800) => { setToast(message); window.setTimeout(() => setToast(""), duration); }, []);
+  // TC-008 环路高亮的渲染期派生：仅在渲染层叠加 className/样式，不触碰 nodes/edges 状态，
+  // 因此不进入撤销栈，也不会随 persistableWorkflowGraph / 序列化导出污染画布数据
+  const displayNodes = useMemo(() => {
+    // 锁定节点（需求 4.1.2.5）：仅渲染层禁用拖拽/删除，不触碰 nodes 状态，序列化不受影响
+    const applyLock = (node) => (node.data?.locked ? { ...node, draggable: false, deletable: false } : node);
+    if (!cycleHighlight) return nodes.map(applyLock);
+    return nodes.map((node) => {
+      const locked = applyLock(node);
+      return cycleHighlight.nodeIds.has(node.id)
+        ? { ...locked, className: `workflow-node--cycle ${locked.className || ""}`.trim() }
+        : locked;
+    });
+  }, [nodes, cycleHighlight]);
+  const displayEdges = useMemo(() => {
+    if (!cycleHighlight) return edges;
+    return edges.map((edge) => cycleHighlight.edgeIds.has(edge.id)
+      ? { ...edge, animated: true, style: { ...(edge.style || {}), stroke: "#ef4444", strokeWidth: 2.6 } }
+      : edge);
+  }, [edges, cycleHighlight]);
+  // 追加模板到当前画布（需求 4.3.1.6）：节点平移到现有画布右侧，不覆盖已有节点
+  useEffect(() => {
+    if (!appendRequest?.graph?.nodes?.length) return;
+    const incoming = appendRequest.graph.nodes;
+    const incomingEdges = appendRequest.graph.edges || [];
+    const maxX = nodes.reduce((acc, node) => Math.max(acc, node.position?.x || 0), 0);
+    const offsetX = Math.round((maxX + 320) / 8) * 8 + 96;
+    const usedIds = new Set(nodes.map((node) => node.id));
+    const remap = new Map();
+    const addedNodes = incoming.map((node) => {
+      const id = usedIds.has(node.id) ? `${node.id}-${appendRequest.token || Date.now()}` : node.id;
+      usedIds.add(id);
+      remap.set(node.id, id);
+      return { ...node, id, position: { x: (node.position?.x || 0) + offsetX, y: node.position?.y || 0 } };
+    });
+    const addedEdges = incomingEdges
+      .filter((edge) => remap.has(edge.source) && remap.has(edge.target))
+      .map((edge) => ({ ...edge, id: `${edge.id}-${appendRequest.token || Date.now()}`, source: remap.get(edge.source), target: remap.get(edge.target) }));
+    rememberGraph();
+    setNodes((items) => [...items, ...addedNodes]);
+    setEdges((items) => [...items, ...addedEdges]);
+    setSaved(false);
+    showToast(`已追加 ${addedNodes.length} 个模板节点到当前画布`, 2600);
+    window.setTimeout(() => flowInstance?.fitView({ padding: 0.12, duration: 320 }), 80);
+    onAppendApplied?.();
+  }, [appendRequest?.token]);
   useEffect(() => {
     const workflowId = Number(record.id);
     if (!Number.isFinite(workflowId) || workflowId <= 0 || record.builtin) return;
@@ -949,7 +1282,8 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
   }, [record.id, record.builtin, setNodes, showToast]);
   const onConnect = useCallback((params) => {
     if (!canConnectNodes(nodes, params)) {
-      showToast("视频剪辑是终点节点，不能连接到下游");
+      const sourceNode = nodes.find((node) => node.id === params.source);
+      showToast(sourceNode?.data?.kind === "VideoEditing" ? "视频剪辑是终点节点，不可作为上游连接下游" : "连线不兼容：端口类型不匹配，无法连接");
       return;
     }
     rememberGraph();
@@ -962,12 +1296,17 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
     setSaved(false);
   }, [nodes, rememberGraph, setEdges, showToast]);
 
-  function addCatalogNode(item, position, avoidOverlap = false) {
+  const isValidConnection = useCallback((connection) => canConnectNodes(nodes, connection), [nodes]);
+
+  function addCatalogNode(item, position) {
     rememberGraph();
     const id = `node-${Date.now()}-${Math.round(Math.random() * 1000)}`;
     const resolvedMedia = item.media || (item.kind === "AudioGenerator" ? audioMedia(models) : ["ImageGenerator", "VideoGenerator"].includes(item.kind) ? mediaNode("preview", item.kind === "VideoGenerator" ? "video" : "image", { x: 0, y: 0 }, models).data.media : undefined);
     const nextNode = { id, type: "comfy", position: position || { x: 260 + nodes.length * 22, y: 220 + (nodes.length % 4) * 88 }, style: { width: item.kind === "VideoGenerator" ? 356 : item.kind === "ImageGenerator" ? 332 : ["AudioGenerator", "VideoEditing"].includes(item.kind) ? 382 : 270 }, data: { title: item.name, kind: item.kind, icon: item.icon, tone: item.tone, fields: (item.fields || []).map((field) => ({ ...field })), inputs: (item.inputs || []).map((port) => ({ ...port })), outputs: (item.outputs || []).map((port) => ({ ...port })), enabled: true, source: item.source || "comfy-core", media: resolvedMedia ? { ...resolvedMedia, models: [...(resolvedMedia.models || [])] } : undefined, editing: item.kind === "VideoEditing" ? videoEditingNode("preview", { x: 0, y: 0 }).data.editing : item.editing, preview: item.preview || (item.kind === "LoadImage" ? "/comfyui-workflows/minimax-h3/transparent_rgb_gaming_mouse.png" : undefined) } };
-    setNodes((items) => [...items, avoidOverlap && position ? { ...nextNode, position: placeQuickNode(position, items, nextNode) } : nextNode]);
+    // 落位一律做重叠避让（需求 9.1.4）：默认级联位置与拖放点都可能压住已有卡片，
+    // 叠压的后画卡片会盖住先画节点的连线句柄，导致无法连线
+    const preferred = position || { x: 260 + nodes.length * 22, y: 220 + (nodes.length % 4) * 88 };
+    setNodes((items) => [...items, { ...nextNode, position: placeQuickNode(preferred, items, nextNode) }]);
     setSaved(false);
     setAddMenu(null);
     setContextMenu(null);
@@ -981,7 +1320,7 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
       : ["ImageGenerator", "VideoGenerator"].includes(item.kind)
       ? { ...item, source: "canvas", media: mediaNode("preview", item.kind === "VideoGenerator" ? "video" : "image", { x: 0, y: 0 }, models).data.media }
       : { ...item, source: "canvas" };
-    addCatalogNode(configuredItem, position, addMenu?.origin !== "context");
+    addCatalogNode(configuredItem, position);
   }
 
   function undoGraph() {
@@ -1021,24 +1360,144 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
     }
   }
 
+  // ---- 节点级复制 / 粘贴 / 全选 / 反选（需求 4.1.4.6）----
+  const cloneWorkflowNodes = useCallback((sourceNodes, sourceEdges, idSet) => {
+    const idMap = new Map();
+    const clonedNodes = sourceNodes
+      .filter((node) => idSet.has(node.id))
+      .map((node) => {
+        const id = `node-${Date.now()}-${Math.round(Math.random() * 1000)}`;
+        idMap.set(node.id, id);
+        return {
+          ...node,
+          id,
+          selected: false,
+          dragging: false,
+          parentId: undefined,
+          extent: undefined,
+          position: { x: node.position.x, y: node.position.y },
+          style: node.style ? { ...node.style } : undefined,
+          data: {
+            ...node.data,
+            fields: node.data.fields ? node.data.fields.map((field) => ({ ...field })) : node.data.fields,
+            inputs: node.data.inputs ? node.data.inputs.map((port) => ({ ...port })) : node.data.inputs,
+            outputs: node.data.outputs ? node.data.outputs.map((port) => ({ ...port })) : node.data.outputs,
+            media: node.data.media ? { ...node.data.media, models: node.data.media.models ? [...node.data.media.models] : node.data.media.models } : node.data.media,
+            editing: node.data.editing ? { ...node.data.editing } : node.data.editing,
+          },
+        };
+      });
+    const clonedEdges = sourceEdges
+      .filter((edge) => idMap.has(edge.source) && idMap.has(edge.target))
+      .map((edge) => ({ ...edge, id: `edge-${Date.now()}-${Math.round(Math.random() * 1000)}`, source: idMap.get(edge.source), target: idMap.get(edge.target) }));
+    return { nodes: clonedNodes, edges: clonedEdges };
+  }, []);
+
+  const pasteClonedNodes = useCallback((cloned, offset = { x: 0, y: 0 }, basePosition) => {
+    if (!cloned.nodes.length) return [];
+    const minX = Math.min(...cloned.nodes.map((node) => node.position.x));
+    const minY = Math.min(...cloned.nodes.map((node) => node.position.y));
+    const placed = cloned.nodes.map((node) => {
+      const position = basePosition
+        ? { x: basePosition.x + (node.position.x - minX), y: basePosition.y + (node.position.y - minY) }
+        : { x: node.position.x + offset.x, y: node.position.y + offset.y };
+      return { ...node, position, selected: true };
+    });
+    rememberGraph();
+    setNodes((items) => [...items.map((node) => ({ ...node, selected: false })), ...placed]);
+    setEdges((items) => [...items, ...cloned.edges.map((edge) => ({ ...edge, selected: false }))]);
+    setSelectedNodeIds(placed.map((node) => node.id));
+    setSaved(false);
+    showToast(`已粘贴 ${placed.length} 个节点`);
+    return placed.map((node) => node.id);
+  }, [rememberGraph, setNodes, setEdges, setSelectedNodeIds, setSaved, showToast]);
+
+  const copySelectedNodes = useCallback(() => {
+    const idSet = new Set(selectedNodeIds);
+    if (!idSet.size) { showToast("请先选中节点再复制"); return; }
+    nodeClipboardRef.current = cloneWorkflowNodes(nodes, edges, idSet);
+    showToast(`已复制 ${nodeClipboardRef.current.nodes.length} 个节点`);
+  }, [selectedNodeIds, nodes, edges, cloneWorkflowNodes, showToast]);
+
+  const duplicateSelectedNodes = useCallback(() => {
+    const idSet = new Set(selectedNodeIds);
+    if (!idSet.size) { showToast("请先选中节点再复制"); return; }
+    const cloned = cloneWorkflowNodes(nodes, edges, idSet);
+    pasteClonedNodes(cloned, { x: 28, y: 28 });
+  }, [selectedNodeIds, nodes, edges, cloneWorkflowNodes, pasteClonedNodes]);
+
+  const pasteNodes = useCallback(() => {
+    const clip = nodeClipboardRef.current;
+    if (!clip || !clip.nodes.length) { showToast("剪贴板中没有可粘贴的节点"); return; }
+    const rect = stageRef.current?.getBoundingClientRect();
+    const base = flowInstance
+      ? flowInstance.screenToFlowPosition({ x: (rect?.left || 0) + (rect?.width || 900) / 2, y: (rect?.top || 0) + (rect?.height || 700) / 2 })
+      : { x: 320, y: 220 };
+    pasteClonedNodes(clip, { x: 0, y: 0 }, base);
+  }, [flowInstance, pasteClonedNodes]);
+
+  const handlePaste = useCallback(() => {
+    if (nodeClipboardRef.current && nodeClipboardRef.current.nodes.length) pasteNodes();
+    else pasteToCanvas();
+  }, [pasteNodes, pasteToCanvas]);
+
+  const selectAll = useCallback(() => {
+    const ids = nodes.filter((node) => node.type !== "groupFrame").map((node) => node.id);
+    if (!ids.length) return;
+    setNodes((items) => items.map((node) => ({ ...node, selected: node.type !== "groupFrame" })));
+    setSelectedNodeIds(ids);
+    showToast(`已全选 ${ids.length} 个节点`);
+  }, [nodes, setNodes, setSelectedNodeIds, showToast]);
+
+  const invertSelection = useCallback(() => {
+    const current = new Set(selectedNodeIds);
+    const nextIds = nodes.filter((node) => node.type !== "groupFrame" && !current.has(node.id)).map((node) => node.id);
+    setNodes((items) => items.map((node) => ({ ...node, selected: node.type !== "groupFrame" && !current.has(node.id) })));
+    setSelectedNodeIds(nextIds);
+    showToast(`已反选，选中 ${nextIds.length} 个节点`);
+  }, [selectedNodeIds, nodes, setNodes, setSelectedNodeIds, showToast]);
+
+  // 导入：标准工作台 JSON 与 ComfyUI JSON 自动识别；校验失败不触碰当前画布
+  async function importIntoCanvas(file) {
+    if (!file) return;
+    let parsed;
+    try {
+      const text = await file.text();
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        throw new Error("文件不是合法的 JSON");
+      }
+      parsed = parseWorkflowDocument(json);
+    } catch (error) {
+      setImportReport({ fileName: file.name, errors: [error.message || "文件读取失败"], warnings: [] });
+      return;
+    }
+    if (!parsed.ok) {
+      setImportReport({ fileName: file.name, errors: parsed.errors, warnings: parsed.warnings });
+      return;
+    }
+    rememberGraph();
+    setNodes(parsed.graph.nodes);
+    setEdges(parsed.graph.edges);
+    setSaved(false);
+    window.setTimeout(() => {
+      if (parsed.viewport) flowInstance?.setViewport(parsed.viewport, { duration: 320 });
+      else flowInstance?.fitView({ padding: 0.14, duration: 320 });
+    }, 80);
+    if (parsed.warnings.length) setImportReport({ fileName: file.name, errors: [], warnings: parsed.warnings });
+    showToast(parsed.kind === "standard" ? "已导入工作流 JSON，可撤销" : "已导入 ComfyUI 工作流，可撤销", 2600);
+  }
+
   function createComfyWorkflow() {
     rememberGraph();
     setNodes([]);
     setEdges([]);
-    setSidebarOpen(true);
     setSaved(false);
     setAddMenu(null);
     setComfyMenuOpen(false);
     showToast("已创建空白 ComfyUI 工作流");
-  }
-
-  function onDrop(event) {
-    event.preventDefault();
-    if (!flowInstance) return;
-    const payload = event.dataTransfer.getData("application/lightflow-node");
-    if (!payload) return;
-    const item = JSON.parse(payload);
-    addCatalogNode({ ...item, icon: iconForType(item.kind) }, flowInstance.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
   }
 
   const updateNodeField = useCallback((nodeId, fieldIndex, value) => {
@@ -1073,6 +1532,16 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
 
   const selectOutput = useCallback((nodeId, index) => updateNodeMedia(nodeId, { selectedOutputIndex: index, outputIndex: index }), [updateNodeMedia]);
 
+  // 删除节点（需求 4.2.5）：连同挂接的连线一起清理；先记历史，Ctrl+Z 可撤销
+  const removeNodeById = useCallback((nodeId) => {
+    rememberGraph();
+    setNodes((items) => items.filter((node) => node.id !== nodeId));
+    setEdges((items) => items.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+    setSelectedNodeIds((ids) => ids.filter((id) => id !== nodeId));
+    setSaved(false);
+    showToast("已删除节点，Ctrl+Z 可撤销");
+  }, [rememberGraph, setNodes, setEdges, setSelectedNodeIds, setSaved, showToast]);
+
   const updatePrompt = useCallback((nodeId, patch) => {
     setNodes((items) => items.map((node) => node.id === nodeId ? { ...node, data: {
       ...node.data,
@@ -1094,8 +1563,39 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
   const getClips = useCallback((nodeId) => {
     const editing = nodes.find((node) => node.id === nodeId);
     const videoNodes = nodes.filter((node) => node.data?.kind === "VideoGenerator" && node.data?.runtime?.status === "SUCCEEDED");
-    return buildClipQueue(videoNodes, edges, editing?.data?.media?.clips || editing?.data?.editing?.clips || [], nodeId, nodes);
+    // 返回完整片段列表（含禁用项），由节点内部区分"展示"与"参与播放"
+    return buildClipQueue(videoNodes, edges, editing?.data?.media?.clips || editing?.data?.editing?.clips || [], nodeId, nodes, { includeDisabled: true });
   }, [nodes, edges]);
+
+  // 剪辑节点的上游视频源清单（需求 4.2.5.6）：沿连线收集全部上游视频生成节点（含失败/生成中/停用），
+  // 供剪辑节点区分"未连线 / 等待生成 / 上游失败"等状态并给出可理解提示
+  const getEditingSources = useCallback((nodeId) => {
+    const ancestors = new Set();
+    const queue = [nodeId];
+    while (queue.length) {
+      const current = queue.shift();
+      for (const edge of edges) {
+        if (edge.target !== current || ancestors.has(edge.source)) continue;
+        ancestors.add(edge.source);
+        queue.push(edge.source);
+      }
+    }
+    return nodes
+      .filter((node) => ancestors.has(node.id) && node.data?.kind === "VideoGenerator")
+      .map((node) => ({ id: node.id, title: node.data?.title || node.id, status: node.data?.runtime?.status || "", enabled: node.data?.enabled !== false }));
+  }, [nodes, edges]);
+
+  // 节点锁定（需求 4.1.2.5）：锁定后画布层 draggable/deletable=false，仅保留选中与连线
+  const toggleLock = useCallback((nodeId) => {
+    setNodes((items) => items.map((node) => node.id === nodeId ? { ...node, data: { ...node.data, locked: !node.data?.locked } } : node));
+    setSaved(false);
+  }, [setNodes, setSaved]);
+
+  // 节点折叠（需求 4.1.2.6）：折叠后仅显示标题栏与端口
+  const toggleCollapse = useCallback((nodeId) => {
+    setNodes((items) => items.map((node) => node.id === nodeId ? { ...node, data: { ...node.data, collapsed: !node.data?.collapsed } } : node));
+    setSaved(false);
+  }, [setNodes, setSaved]);
 
   const uploadAudio = useCallback(async (file) => {
     const validation = validateAssetFile(file);
@@ -1105,7 +1605,18 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
     return { storageKey: asset.storageKey, url: asset.url || asset.src || mediaUrl(asset.storageKey), name: asset.name || file.name, duration: asset.durationMs ? asset.durationMs / 1000 : undefined };
   }, []);
 
-  const generateNodeMedia = useCallback((nodeId) => runGraph(nodeId), [nodes, edges, selectedModel, record, running]);
+  const generateNodeMedia = useCallback((nodeId, fallbackPreview) => {
+    if (fallbackPreview) {
+      setNodes((items) => items.map((node) => node.id === nodeId ? {
+        ...node,
+        data: { ...node.data, preview: node.data.preview || fallbackPreview },
+      } : node));
+      setSaved(false);
+      showToast("生成任务已完成，结果已写入当前节点");
+      return;
+    }
+    return runGraph(nodeId);
+  }, [nodes, edges, selectedModel, record, running, setNodes, showToast]);
 
   const getReferences = useCallback((targetId) => edges
     .filter((edge) => edge.target === targetId && isVisualReferenceNode(nodes.find((node) => node.id === edge.source)))
@@ -1189,7 +1700,9 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
   const fitOptions = useMemo(() => ({ padding: 0.13, nodes: focusNodes }), [focusNodes]);
   const edgeDefaults = useMemo(() => ({ type: "bezier", interactionWidth: 22, markerEnd: { type: MarkerType.ArrowClosed, color: "#7584ff", width: 14, height: 14 }, style: { stroke: "#7584ff", strokeWidth: 2.2 } }), []);
   const selectionKeys = useMemo(() => ["Shift", "Control", "Meta"], []);
-  const canvasPanButtons = useMemo(() => [1, 2], []);
+  // 平移只挂中键：@xyflow v12 在 panOnDrag 数组含 2（右键）时会吞掉 contextmenu，
+  // 右键要留给画布快捷菜单（onPaneContextMenu → openPaneMenu）
+  const canvasPanButtons = useMemo(() => [1], []);
 
   const arrangementIds = useMemo(() => {
     const ids = new Set(selectedNodeIds);
@@ -1247,6 +1760,43 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
     showToast("所选节点已组合，可整体拖动");
   }
 
+  const selectedGroupId = useMemo(() => selectedNodeIds.find((id) => {
+    const node = nodes.find((item) => item.id === id);
+    return node && node.type === "groupFrame";
+  }), [selectedNodeIds, nodes]);
+
+  const selectedGroupNode = useMemo(() => (selectedGroupId ? nodes.find((node) => node.id === selectedGroupId) || null : null), [selectedGroupId, nodes]);
+
+  const ungroupSelection = useCallback(() => {
+    if (!selectedGroupId) return;
+    const id = selectedGroupId;
+    rememberGraph();
+    setNodes((items) => {
+      const group = items.find((node) => node.id === id);
+      if (!group) return items;
+      const base = group.position;
+      return items
+        .filter((node) => node.id !== id)
+        .map((node) => (node.parentId === id ? { ...node, parentId: undefined, extent: undefined, position: { x: base.x + node.position.x, y: base.y + node.position.y }, selected: true } : node));
+    });
+    setSelectedNodeIds((ids) => ids.filter((item) => item !== id));
+    setSaved(false);
+    showToast("已解散组合，节点回到画布");
+  }, [selectedGroupId, rememberGraph, setNodes, setSelectedNodeIds, setSaved, showToast]);
+
+  const renameGroup = useCallback((id, label) => {
+    setNodes((items) => items.map((node) => (node.id === id ? { ...node, data: { ...node.data, label } } : node)));
+    setSaved(false);
+  }, [setNodes, setSaved]);
+
+  const setGroupColor = useCallback((color) => {
+    if (!selectedGroupId) return;
+    rememberGraph();
+    setNodes((items) => items.map((node) => (node.id === selectedGroupId ? { ...node, data: { ...node.data, color } } : node)));
+    setSaved(false);
+    showToast("已更新组合颜色");
+  }, [selectedGroupId, rememberGraph, setNodes, setSaved, showToast]);
+
   const nodeEditApi = useMemo(() => ({
     updateField: updateNodeField,
     updateMedia: updateNodeMedia,
@@ -1263,14 +1813,20 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
     updatePrompt,
     updateClips,
     selectOutput,
+    generateMedia: generateNodeMedia,
     execute: generateNodeMedia,
+    notify: showToast,
+    remove: removeNodeById,
     uploadAudio,
     getClips,
+    getEditingSources,
+    toggleLock,
+    toggleCollapse,
     getReferences,
     removeReference,
     openReferencePicker: setReferencePickerNodeId,
     models,
-  }), [nodes, edges, updateNodeMedia, updatePrompt, updateClips, selectOutput, generateNodeMedia, uploadAudio, getClips, getReferences, removeReference, models]);
+  }), [nodes, edges, updateNodeMedia, updatePrompt, updateClips, selectOutput, generateNodeMedia, showToast, removeNodeById, uploadAudio, getClips, getEditingSources, toggleLock, toggleCollapse, getReferences, removeReference, models]);
 
   const canvasReferenceNodes = useMemo(() => nodes.filter((node) => node.id !== referencePickerNodeId && node.data?.preview && node.data?.outputs?.some((port) => ["IMAGE", "VIDEO"].includes(port.type))), [nodes, referencePickerNodeId]);
 
@@ -1293,7 +1849,7 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
         if (node.data?.kind !== "VideoEditing") return node;
         const videos = nodes.filter((candidate) => candidate.data?.kind === "VideoGenerator" && candidate.data?.runtime?.status === "SUCCEEDED");
         const queue = buildClipQueue(videos, edges, node.data?.media?.clips || node.data?.editing?.clips || [], node.id, nodes);
-        const clips = queue.map((clip, order) => ({ sourceNodeId: clip.sourceNodeId, outputIndex: clip.outputIndex, order, trimStart: clip.trimStart, trimEnd: clip.trimEnd, muted: Boolean(clip.muted), volume: clip.volume }));
+        const clips = queue.map((clip, order) => ({ sourceNodeId: clip.sourceNodeId, outputIndex: clip.outputIndex, order, trimStart: clip.trimStart, trimEnd: clip.trimEnd, muted: Boolean(clip.muted), volume: clip.volume, enabled: clip.enabled !== false }));
         return { ...node, data: { ...node.data, media: { ...node.data.media, clips }, editing: { ...node.data.editing, clips } } };
       });
       const nextEditing = new Map(nextNodes.filter((node) => node.data?.kind === "VideoEditing").map((node) => [node.id, node.data.editing]));
@@ -1345,6 +1901,59 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
     }
   }
 
+  function exportWorkflowFile() {
+    try {
+      const viewport = flowInstance?.getViewport?.();
+      const document_ = serializeWorkflow(nodes, edges, {
+        viewport: viewport ? { x: viewport.x, y: viewport.y, zoom: viewport.zoom } : undefined,
+        title: record.title || "未命名工作流",
+        description: record.description || "",
+      });
+      const blob = new Blob([JSON.stringify(document_, null, 2)], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = window.document.createElement("a");
+      anchor.href = url;
+      anchor.download = exportFileName(record.title || "未命名工作流");
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+      showToast("已导出工作流 JSON", 2200);
+    } catch (error) {
+      showToast(error.message || "导出失败", 2800);
+    }
+  }
+
+  // 智能排版：对当前画布（或选中子图）做 DAG 分层，环状结构不排版并高亮环路（TC-008）
+  function autoArrangeCanvas() {
+    setCycleHighlight(null);
+    window.clearTimeout(cycleHighlightTimer.current);
+    const scope = selectedNodeIds.length >= 2 ? nodes.filter((node) => selectedNodeIds.includes(node.id) && node.type !== "groupFrame") : nodes;
+    if (!scope.length) {
+      showToast("画布上没有可整理的节点");
+      return;
+    }
+    const scopeIds = new Set(scope.map((node) => node.id));
+    const scopeEdges = edges.filter((edge) => scopeIds.has(edge.source) && scopeIds.has(edge.target));
+    const result = autoArrange(scope, scopeEdges);
+    if (result.cycleIds.length) {
+      const names = result.cycleIds.map((id) => scope.find((node) => node.id === id)?.data?.title || id);
+      showToast(`检测到环状连线，无法自动排版：${names.join("、")}`, 4200);
+      // 环路高亮是瞬态视觉反馈：只影响渲染，不进撤销栈、不进持久化 graph
+      setCycleHighlight({ nodeIds: new Set(result.cycleIds), edgeIds: new Set(result.cycleEdgeIds || []) });
+      cycleHighlightTimer.current = window.setTimeout(() => setCycleHighlight(null), 5200);
+      window.setTimeout(() => flowInstance?.fitView({ nodes: result.cycleIds.map((id) => ({ id })), padding: 0.3, duration: 320 }), 60);
+      return;
+    }
+    rememberGraph();
+    setNodes((items) => items.map((node) => {
+      const position = result.positions[node.id];
+      return position ? { ...node, position } : node;
+    }));
+    setSaved(false);
+    setTidyMenuOpen(false);
+    window.setTimeout(() => flowInstance?.fitView({ padding: 0.14, duration: 320 }), 80);
+    showToast(selectedNodeIds.length >= 2 ? "已按连线自动规整所选节点" : "已按连线自动规整画布", 2400);
+  }
+
   async function saveWorkflow() {
     const modelId = Number(selectedModel);
     const graph = persistableGraph(nodes, edges);
@@ -1365,9 +1974,30 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
       onRecordChange?.(toWorkflowCard(saved));
       setSaved(true);
       showToast("工作流已保存", 2200);
+      return true;
     } catch (error) {
       showToast(error.message || "保存失败", 2800);
+      return false;
     }
+  }
+
+  // 记录是否已在库里：自己的（数字 id）或官方示例（builtin）返回后仍在；新建/导入/模板草稿不在
+  const ownedId = Number(record.id);
+  const owned = Number.isFinite(ownedId) && ownedId > 0 && !record.builtin;
+  const inLibrary = owned || Boolean(record.builtin);
+  const dirty = !saved;
+
+  function requestBack() {
+    if (inLibrary && !dirty) onBack();
+    else setBackGuard(true);
+  }
+
+  // 保存成功才返回；失败留在画布，原因由保存 toast 提示
+  async function saveAndBack() {
+    setSavingBack(true);
+    const ok = await saveWorkflow();
+    setSavingBack(false);
+    if (ok) onBack();
   }
 
   function paintZoom(zoom) {
@@ -1426,7 +2056,10 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
       if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
       if (event.key === "Escape") { setAddMenu(null); setContextMenu(null); setComfyMenuOpen(false); }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") { event.preventDefault(); event.shiftKey ? redoGraph() : undoGraph(); }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") { event.preventDefault(); pasteToCanvas(); }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") { event.preventDefault(); handlePaste(); }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") { event.preventDefault(); copySelectedNodes(); }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "d") { event.preventDefault(); duplicateSelectedNodes(); }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") { event.preventDefault(); selectAll(); }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -1434,25 +2067,19 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
 
   return (
     <div className="studio-layout studio-layout--editor">
-      <aside className={`node-panel ${sidebarOpen ? "" : "node-panel--closed"}`}>
-        <header><div><strong>节点库</strong><small>点击或拖拽插入节点</small></div><button aria-label="收起节点库" onClick={() => setSidebarOpen(false)}><ChevronLeft size={16} /></button></header>
-        <label className="node-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索节点" /></label>
-        <div className="node-catalog-scroll">{visibleCatalog.map((group) => <section key={group.name}><span>{group.name}</span>{group.items.map((item) => { const Icon = item.icon; return <button draggable key={item.kind} onDragStart={(event) => { event.dataTransfer.setData("application/lightflow-node", JSON.stringify({ ...item, icon: undefined })); event.dataTransfer.effectAllowed = "move"; }} onClick={() => addCatalogNode(item)}><i className={`catalog-icon catalog-icon--${item.tone}`}><Icon size={15} /></i><span><strong>{item.name}</strong><small>{item.meta}</small></span><Plus size={14} /></button>; })}</section>)}</div>
-        <button className="import-shortcut" onClick={() => fileRef.current?.click()}><Upload size={16} /> 导入 ComfyUI JSON</button>
-        <input ref={fileRef} hidden type="file" accept=".json" onChange={(event) => onImport(event.target.files?.[0])} />
-      </aside>
-
-      <section ref={stageRef} className="flow-stage flow-stage--minimax" onDrop={onDrop} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }} onDoubleClick={(event) => { if (!event.target.closest(".react-flow__pane")) return; openPaneMenu(event); }}>
+      <section ref={stageRef} className="flow-stage flow-stage--minimax" onDoubleClick={(event) => { if (!event.target.closest(".react-flow__pane")) return; const rect = stageRef.current?.getBoundingClientRect(); setContextMenu(null); setComfyMenuOpen(false); setAddMenu({ origin: "context", x: Math.max(10, Math.min(event.clientX - (rect?.left || 0), (rect?.width || 900) - 260)), y: Math.max(10, Math.min(event.clientY - (rect?.top || 0), (rect?.height || 700) - 446)), clientX: event.clientX, clientY: event.clientY }); }}>
         <NodeEditContext.Provider value={nodeEditApi}><WorkflowNodeContext.Provider value={workflowNodeApi}><ReactFlow
           key={record.id}
-          nodes={nodes}
-          edges={edges}
+          nodes={displayNodes}
+          edges={displayEdges}
           nodeTypes={nodeTypes}
           onInit={(instance) => { setFlowInstance(instance); paintZoom(instance.getViewport().zoom); }}
           onMove={(_, viewport) => paintZoom(viewport.zoom)}
           onNodesChange={(changes) => { const settled = changes.some((change) => change.type === "remove" || (change.type === "position" && change.dragging === false)); if (settled) rememberGraph(); onNodesChange(changes); if (settled) setSaved(false); }}
           onEdgesChange={(changes) => { if (changes.some((change) => change.type === "remove")) rememberGraph(); onEdgesChange(changes); if (changes.some((change) => change.type === "remove")) setSaved(false); }}
           onConnect={onConnect}
+          onConnectEnd={(_, connectionState) => { if (connectionState?.isValid === false) showToast("连线不兼容：端口类型不匹配，无法连接", 2400); }}
+          isValidConnection={isValidConnection}
           onEdgeClick={(_, edge) => deleteEdge(edge)}
           onSelectionChange={handleSelectionChange}
           selectionOnDrag={canvasTool === "select"}
@@ -1467,22 +2094,55 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
           onPaneContextMenu={openPaneMenu}
           fitView
           fitViewOptions={fitOptions}
-          minZoom={0.15}
-          maxZoom={2}
+          minZoom={0.2}
+          maxZoom={3}
+          onlyRenderVisibleElements
           deleteKeyCode={["Backspace", "Delete"]}
           defaultEdgeOptions={edgeDefaults}
         >
           <Background color="#cfd4dc" gap={22} size={1.1} />
+          <Controls position="bottom-right" showInteractive={false} />
           <Panel position="top-left" className="flow-title">
-            <button className="flow-back" onClick={onBack}><ArrowLeft size={15} /> 工作流记录</button>
-            {!sidebarOpen && <button className="open-node-panel" onClick={() => setSidebarOpen(true)}><Box size={15} /> 节点库</button>}
-            <div><span className={saved ? "status-dot" : "status-dot status-dot--warn"} /><strong>{record.title}</strong><small>{saved ? "已保存" : "有未保存更改"} · {nodes.length} 个节点</small></div>
+            <button className="flow-back" onClick={requestBack}><ArrowLeft size={15} /> 返回</button>
+            <div>
+              <span className={saved && inLibrary ? "status-dot" : "status-dot status-dot--warn"} />
+              {editingTitle ? (
+                <input
+                  ref={titleInputRef}
+                  className="flow-title__input"
+                  value={titleDraft}
+                  maxLength={128}
+                  aria-label="工作流名称"
+                  placeholder="输入工作流名称"
+                  onChange={(event) => setTitleDraft(event.target.value)}
+                  onBlur={commitTitle}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") { event.preventDefault(); commitTitle(); }
+                    if (event.key === "Escape") { event.preventDefault(); cancelTitleEdit(); }
+                  }}
+                />
+              ) : (
+                <button type="button" className="flow-title__name" title="点击重命名" onClick={startTitleEdit}>
+                  <strong>{record.title}</strong><Pencil size={12} />
+                </button>
+              )}
+              <small>{!inLibrary ? "尚未保存到工作台" : (saved ? "已保存" : "有未保存更改")} · {nodes.length} 个节点</small>
+            </div>
           </Panel>
           <Panel position="top-right" className="flow-toolbar">
-            <label className="workflow-model-select"><Sparkles size={15} /><select aria-label="工作流运行模型" value={selectedModel} onChange={(event) => onModelChange(event.target.value)}>{models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}</select><ChevronDown size={13} /></label>
+            <div className="workflow-model-select">
+              <DemoSelect
+                ariaLabel="工作流运行模型"
+                value={selectedModel}
+                onChange={(val) => onModelChange(val)}
+                options={models.map((model) => ({ value: model.id, label: model.name }))}
+              />
+            </div>
             <button onClick={() => fileRef.current?.click()}><Upload size={15} /> 导入</button>
+            <button onClick={exportWorkflowFile}><Download size={15} /> 导出</button>
             <button onClick={saveWorkflow}><Save size={15} /> 保存</button>
             <button className="run-workflow" onClick={() => runGraph()} disabled={running || !nodes.length}>{running ? <><Zap size={15} className="spin" /> {runProgress}/{runTotal || 1}</> : <><CirclePlay size={16} /> 运行</>}</button>
+            <span className="flow-zoom" ref={zoomLabelRef} aria-live="polite" title="画布缩放比例">100%</span>
           </Panel>
         </ReactFlow></WorkflowNodeContext.Provider></NodeEditContext.Provider>
         {referencePickerNodeId && <div className="reference-picker nodrag nowheel" role="dialog" aria-modal="true" aria-label="添加参考素材" onMouseDown={(event) => event.stopPropagation()}>
@@ -1529,51 +2189,71 @@ function WorkflowEditor({ record, initialGraph, onBack, onImport, models, select
           <div className="canvas-selection-actions__bar">
             <button className={tidyMenuOpen ? "active" : ""} onClick={() => setTidyMenuOpen((value) => !value)}><LayoutGrid size={15} />整理<ChevronDown size={12} /></button>
             <button onClick={groupSelection}><Group size={15} />组合</button>
+            <button onClick={duplicateSelectedNodes}><Copy size={15} />复制</button>
             <button onClick={() => showToast(`已将 ${selectedNodeIds.length} 个节点保存为画布资产`)}><PackagePlus size={15} />保存为资产</button>
           </div>
           {tidyMenuOpen && <div className="canvas-tidy-menu">
+            <button onClick={autoArrangeCanvas}><WandSparkles size={15} /><span>自动规整（按连线）</span></button>
             <button onClick={() => arrangeSelection("grid")}><LayoutGrid size={15} /><span>网格排列</span></button>
             <button onClick={() => arrangeSelection("horizontal")}><Columns3 size={15} /><span>横向排列</span></button>
             <button onClick={() => arrangeSelection("vertical")}><Rows3 size={15} /><span>纵向排列</span></button>
             <label><input type="checkbox" checked={includeConnected} onChange={(event) => setIncludeConnected(event.target.checked)} /><span>同时整理相连的上下游节点</span><CircleHelp size={13} /></label>
           </div>}
         </div>}
+        {selectedGroupNode && selectedNodeIds.length === 1 && (
+          <div className="canvas-group-actions" onMouseDown={(event) => event.stopPropagation()}>
+            <input className="canvas-group-actions__title" value={selectedGroupNode.data.label || ""} onChange={(event) => renameGroup(selectedGroupNode.id, event.target.value)} placeholder="组合名称" aria-label="组合名称" />
+            <button onClick={ungroupSelection}><Ungroup size={14} />解散</button>
+            <div className="canvas-group-actions__colors">{GROUP_COLORS.map((color) => <button key={color} type="button" className={selectedGroupNode.data.color === color ? "is-active" : ""} style={{ background: color }} aria-label={`颜色 ${color}`} onClick={() => setGroupColor(color)} />)}</div>
+          </div>
+        )}
         <div className="canvas-dock" aria-label="画布工具栏">
-          <button className={`canvas-dock__add ${addMenu?.origin === "dock" ? "active" : ""}`} aria-label="添加节点" aria-expanded={addMenu?.origin === "dock"} onClick={() => { setContextMenu(null); setComfyMenuOpen(false); setAddMenu((value) => value?.origin === "dock" ? null : { origin: "dock" }); }}><Plus size={22} /></button>
-          <button type="button" className={canvasTool === "select" ? "active" : ""} aria-label="框选工具" aria-pressed={canvasTool === "select"} onClick={() => setCanvasTool("select")}><MousePointer2 size={17} /></button>
-          <button type="button" className={canvasTool === "pan" ? "active" : ""} aria-label="平移画布" aria-pressed={canvasTool === "pan"} onClick={() => setCanvasTool("pan")}><Hand size={17} /></button>
-          <span className="canvas-dock__split" />
-          <button type="button" aria-label="缩小画布" onClick={() => flowInstance?.zoomOut({ duration: 180 })}><ZoomOut size={16} /></button>
-          <span className="canvas-zoom" ref={zoomLabelRef} aria-live="polite">100%</span>
-          <button type="button" aria-label="放大画布" onClick={() => flowInstance?.zoomIn({ duration: 180 })}><ZoomIn size={16} /></button>
-          <button type="button" aria-label="自适应全屏" onClick={() => flowInstance?.fitView({ ...fitOptions, duration: 280 })}><Scan size={16} /></button>
-          <span className="canvas-dock__split" />
-          <button type="button" aria-label={sidebarOpen ? "收起节点库" : "展开节点库"} onClick={() => setSidebarOpen((value) => !value)}>{sidebarOpen ? <ChevronDown size={15} /> : <ChevronUp size={15} />}</button>
-          <button type="button" aria-label="导入工作流" onClick={() => fileRef.current?.click()}><FolderOpen size={18} /></button>
-          <button type="button" aria-label="画布帮助" onClick={() => showToast("滚轮或双指缩放，手型工具平移画布；悬停连线后点击即可删除。双击或右键打开快捷菜单。")}><CircleHelp size={17} /></button>
+          <button className={`canvas-dock__add ${addMenu?.origin === "dock" ? "active" : ""}`} aria-label="添加节点" onClick={() => { setContextMenu(null); setComfyMenuOpen(false); setAddMenu((value) => value?.origin === "dock" ? null : { origin: "dock" }); }}><Plus size={22} /></button>
+          <button className={canvasTool === "select" ? "active" : ""} aria-label="选择工具" onClick={() => setCanvasTool("select")}><MousePointer2 size={17} /></button>
+          <button className={canvasTool === "pan" ? "active" : ""} aria-label="切换工具" onClick={() => setCanvasTool((current) => current === "pan" ? "select" : "pan")}><ChevronUp size={15} /></button>
+          <button aria-label="导入工作流" onClick={() => fileRef.current?.click()}><FolderOpen size={18} /></button>
+          <button aria-label="画布帮助" onClick={() => showToast("框选节点、点击连线删除、双击或右键打开快捷菜单。")}><CircleHelp size={17} /></button>
         </div>
         {addMenu && <div className={`canvas-add-menu ${addMenu.origin === "context" ? "is-contextual" : ""} ${addMenu.origin === "context" && addMenu.x > (stageRef.current?.clientWidth || 900) - 520 ? "submenu-left" : ""}`} style={addMenu.origin === "context" ? { left: addMenu.x, top: addMenu.y } : undefined} onMouseDown={(event) => event.stopPropagation()}>
           <header>添加节点</header>
           <div className="canvas-add-menu__items">{canvasQuickItems.map((item) => { const Icon = item.icon; return <button key={item.id} onClick={() => addQuickNode(item)}><i><Icon size={18} /></i><span>{item.name}</span>{item.badge && <em className={item.badge === "MiniMax H3" ? "is-model" : ""}>{item.badge}</em>}</button>; })}</div>
-          <div className="canvas-add-submenu-shell" onMouseEnter={() => setComfyMenuOpen(true)} onMouseLeave={() => setComfyMenuOpen(false)}><button className="canvas-add-menu__comfy" onClick={() => setComfyMenuOpen((value) => !value)}><i><Layers3 size={18} /></i><span>ComfyUI</span><em>新</em><ChevronRight size={15} /></button>{comfyMenuOpen && <div className="canvas-add-submenu"><header><button onClick={() => setSidebarOpen(true)}>探索更多</button></header><button onClick={createComfyWorkflow}><i><Plus size={17} /></i><span><strong>新建工作流</strong><small>创建空白 ComfyUI 工作流</small></span></button></div>}</div>
+          <div className="canvas-add-submenu-shell" onMouseEnter={() => setComfyMenuOpen(true)} onMouseLeave={() => setComfyMenuOpen(false)}><button className="canvas-add-menu__comfy" onClick={() => setComfyMenuOpen((value) => !value)}><i><Layers3 size={18} /></i><span>ComfyUI</span><em>新</em><ChevronRight size={15} /></button>{comfyMenuOpen && <div className="canvas-add-submenu"><header><button type="button">探索更多</button></header><button onClick={createComfyWorkflow}><i><Plus size={17} /></i><span><strong>新建工作流</strong><small>创建空白 ComfyUI 工作流</small></span></button></div>}</div>
         </div>}
         {contextMenu && <div className="canvas-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseDown={(event) => event.stopPropagation()}>
           <button onClick={openMaterialUpload}><Upload size={15} /><span>上传素材</span></button>
           <button onClick={() => { const next = { origin: "context", x: Math.min(contextMenu.x + 150, Math.max(10, (stageRef.current?.clientWidth || 900) - 260)), y: Math.max(10, Math.min(contextMenu.y, (stageRef.current?.clientHeight || 700) - 446)), clientX: contextMenu.clientX, clientY: contextMenu.clientY }; setContextMenu(null); setAddMenu(next); }}><Plus size={15} /><span>添加节点</span></button>
           <hr />
+          <button disabled={!selectedNodeIds.length} onClick={copySelectedNodes}><Copy size={15} /><span>复制</span><kbd>Ctrl+C</kbd></button>
           <button disabled={!historyRef.current.length} onClick={undoGraph}><Undo2 size={15} /><span>撤销</span><kbd>Ctrl+Z</kbd></button>
           <button disabled={!futureRef.current.length} onClick={redoGraph}><Redo2 size={15} /><span>重做</span><kbd>Ctrl+Shift+Z</kbd></button>
           <hr />
-          <button onClick={pasteToCanvas}><Clipboard size={15} /><span>粘贴</span><kbd>Ctrl+V</kbd></button>
+          <button onClick={handlePaste}><Clipboard size={15} /><span>粘贴</span><kbd>Ctrl+V</kbd></button>
+          <button onClick={selectAll}><CheckSquare size={15} /><span>全选</span><kbd>Ctrl+A</kbd></button>
+          <button onClick={invertSelection}><SquareStack size={15} /><span>反选</span></button>
         </div>}
+        <input ref={fileRef} hidden type="file" accept=".json" onChange={(event) => { importIntoCanvas(event.target.files?.[0]); event.target.value = ""; }} />
         <input ref={materialRef} hidden type="file" accept="image/*,video/*,audio/*" onChange={placeUploadedMaterial} />
         {toast && <div className="run-toast"><Check size={16} /> {toast}</div>}
+        {backGuard && <div className="flow-back-guard" role="dialog" aria-modal="true" aria-label="未保存更改" onMouseDown={(event) => event.stopPropagation()}>
+          <div className="flow-back-guard__card">
+            <strong>{inLibrary ? "未保存的更改" : "尚未保存"}</strong>
+            <p>{inLibrary
+              ? `「${record.title || "未命名工作流"}」还有未保存的更改，直接返回将丢失本次编辑。`
+              : `「${record.title || "未命名工作流"}」还没有保存到工作台，直接返回将丢失这个工作流。`}</p>
+            <div className="flow-back-guard__actions">
+              <button type="button" disabled={savingBack} onClick={onBack}>直接返回</button>
+              <button type="button" disabled={savingBack} onClick={() => setBackGuard(false)}>取消</button>
+              <button type="button" className="primary" disabled={savingBack} onClick={saveAndBack}>{savingBack ? "正在保存…" : "保存并返回"}</button>
+            </div>
+          </div>
+        </div>}
+        <ImportReport report={importReport} onClose={() => setImportReport(null)} />
       </section>
     </div>
   );
 }
 
-export function WorkflowStudio({ onOpenTemplates, templateLaunch, models = [] }) {
+export function WorkflowStudio({ onOpenTemplates, templateLaunch, importRequest, onImportApplied, models = [] }) {
   const [view, setView] = useState(templateLaunch ? "editor" : "library");
   const workflowModels = useMemo(() => models.filter((model) => model.enabled !== false && (model.capabilities?.includes("workflow") || ["image", "video", "audio"].includes(model.category))), [models]);
   const [selectedModel, setSelectedModel] = useState(() => workflowModels[0]?.id || "");
@@ -1583,13 +2263,66 @@ export function WorkflowStudio({ onOpenTemplates, templateLaunch, models = [] })
   const [loading, setLoading] = useState(false);
   const [records, setRecords] = useState([]);
   const [libraryStatus, setLibraryStatus] = useState(null);
+  const [appendRequest, setAppendRequest] = useState(null);
+  const [importReport, setImportReport] = useState(null);
 
+  // 模板弹窗导入本地工作流 JSON（需求 4.4.2）：先校验再落画布，失败时逐项报错且不改动画布
   useEffect(() => {
-    if (!templateLaunch) return;
-    setRecord(templateRecord(templateLaunch, workflowModels));
-    setGraph(localWorkflow());
+    if (!importRequest?.json) return;
+    const parsed = parseWorkflowDocument(importRequest.json);
+    if (!parsed.ok) {
+      setImportReport({ fileName: importRequest.fileName, errors: parsed.errors, warnings: parsed.warnings || [] });
+      onImportApplied?.();
+      return;
+    }
+    const mode = importRequest.mode === "append" ? "append" : "new";
+    if (mode === "append") {
+      setAppendRequest({ graph: parsed.graph, token: importRequest.token || Date.now() });
+      setView("editor");
+      if (parsed.warnings.length) setImportReport({ fileName: importRequest.fileName, errors: [], warnings: parsed.warnings });
+      onImportApplied?.();
+      return;
+    }
+    setRecord({
+      id: `import-${importRequest.token || Date.now()}`,
+      title: String(importRequest.fileName || "导入工作流").replace(/\.json$/i, ""),
+      type: "import",
+      model: parsed.kind === "standard" ? "工作台 JSON" : "ComfyUI JSON",
+      origin: parsed.kind === "standard" ? "工作台 JSON 导入" : "ComfyUI 导入",
+      builtin: false,
+    });
+    setGraph(parsed.graph);
     setEditorKey((key) => key + 1);
     setView("editor");
+    if (parsed.warnings.length) setImportReport({ fileName: importRequest.fileName, errors: [], warnings: parsed.warnings });
+    onImportApplied?.();
+  }, [importRequest]);
+
+  // 模板实例化（需求 4.3.1.5/4.3.1.6）：新建画布或追加到当前画布，都不覆盖已有节点
+  useEffect(() => {
+    if (!templateLaunch) return;
+    let cancelled = false;
+    const mode = templateLaunch.mode === "append" ? "append" : "new";
+    (async () => {
+      let nextGraph;
+      try {
+        nextGraph = await resolveTemplateGraph(templateLaunch, workflowModels);
+      } catch (error) {
+        if (!cancelled) window.alert(error.message || "模板加载失败");
+        return;
+      }
+      if (cancelled) return;
+      if (mode === "append") {
+        setAppendRequest({ graph: nextGraph, token: templateLaunch.token || Date.now() });
+        setView("editor");
+        return;
+      }
+      setRecord(templateRecord(templateLaunch, workflowModels));
+      setGraph(nextGraph);
+      setEditorKey((key) => key + 1);
+      setView("editor");
+    })();
+    return () => { cancelled = true; };
   }, [templateLaunch, workflowModels]);
   useEffect(() => { if (workflowModels.length && !workflowModels.some((model) => String(model.id) === String(selectedModel))) setSelectedModel(workflowModels[0].id); }, [workflowModels, selectedModel]);
   useEffect(() => {
@@ -1638,48 +2371,89 @@ export function WorkflowStudio({ onOpenTemplates, templateLaunch, models = [] })
     setView("editor");
   }
 
-  function importWorkflow(file) {
+  async function importWorkflow(file) {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
+    let parsed;
+    try {
+      const text = await file.text();
+      let json;
       try {
-        const json = JSON.parse(reader.result);
-        setRecord({ id: `import-${Date.now()}`, title: file.name.replace(/\.json$/i, ""), type: "import", model: "ComfyUI JSON", origin: "ComfyUI 导入", builtin: false });
-        setGraph(normalizeWorkflow(json));
-        setEditorKey((key) => key + 1);
-        setView("editor");
+        json = JSON.parse(text);
       } catch {
-        window.alert("无法读取该工作流，请确认它是有效的 ComfyUI JSON 文件。");
+        throw new Error("文件不是合法的 JSON");
       }
-    };
-    reader.readAsText(file);
-  }
-
-  async function deleteRecord(target) {
-    if (target.builtin) {
-      window.alert("官方示例不能删除，可以打开后另存为自己的工作流。");
+      parsed = parseWorkflowDocument(json);
+    } catch (error) {
+      window.alert(`无法读取该工作流：${error.message || "文件格式不正确"}`);
       return;
     }
-    if (!window.confirm(`删除工作流「${target.title}」？`)) return;
-    try {
-      await removeWorkflow(target.id);
-      setRecords((items) => items.filter((item) => item.id !== target.id));
-    } catch (error) {
-      window.alert(error.message || "删除失败");
+    if (!parsed.ok) {
+      window.alert(`导入失败，当前画布未改动：\n${parsed.errors.map((message) => `· ${message}`).join("\n")}`);
+      return;
     }
+    setRecord({
+      id: `import-${Date.now()}`,
+      title: file.name.replace(/\.json$/i, ""),
+      type: "import",
+      model: parsed.kind === "standard" ? "工作台 JSON" : "ComfyUI JSON",
+      origin: parsed.kind === "standard" ? "工作台 JSON 导入" : "ComfyUI 导入",
+      builtin: false,
+    });
+    setGraph(parsed.graph);
+    setEditorKey((key) => key + 1);
+    setView("editor");
+    if (parsed.warnings.length) window.alert(`导入完成，但存在兼容提示：\n${parsed.warnings.map((message) => `· ${message}`).join("\n")}`);
+  }
+
+  // 删除确认由库页的 ConfirmDialog 负责；失败时错误回传到弹窗内展示
+  async function deleteRecord(target) {
+    await removeWorkflow(target.id);
+    setRecords((items) => items.filter((item) => item.id !== target.id));
   }
 
   if (loading) return <div className="workflow-loading"><span><Sparkles size={22} /></span><strong>正在载入工作流</strong><small>读取画布、节点与连接…</small></div>;
-  if (view === "library") return <WorkflowLibrary records={records} status={libraryStatus} onOpen={openRecord} onCreate={createWorkflow} onImport={importWorkflow} onOpenTemplates={onOpenTemplates} onDelete={deleteRecord} />;
-  return <WorkflowEditor key={editorKey} record={record} initialGraph={graph} models={workflowModels} selectedModel={selectedModel} onModelChange={setSelectedModel} onRecordChange={setRecord} onBack={() => setView("library")} onImport={importWorkflow} />;
+  if (view === "library") return <div className="workflow-studio-host"><WorkflowLibrary records={records} status={libraryStatus} onOpen={openRecord} onCreate={createWorkflow} onImport={importWorkflow} onOpenTemplates={onOpenTemplates} onDelete={deleteRecord} /><ImportReport report={importReport} onClose={() => setImportReport(null)} /></div>;
+  return <WorkflowEditor key={editorKey} record={record} initialGraph={graph} models={workflowModels} selectedModel={selectedModel} onModelChange={setSelectedModel} onRecordChange={setRecord} onBack={() => setView("library")} appendRequest={appendRequest} onAppendApplied={() => setAppendRequest(null)} />;
+}
+
+// 模板实例化：官方模板按 demo 键或 ComfyUI 源路径展开；自定义模板直接取后端画布
+async function resolveTemplateGraph(template, models) {
+  const detail = Number(template.id) > 0 ? await getWorkflow(template.id).catch(() => null) : null;
+  const stored = detail?.graph || {};
+  if (Array.isArray(stored.nodes) && stored.nodes.length) return { nodes: stored.nodes, edges: stored.edges || [] };
+  const demoKey = template.demoKey || detail?.demoKey;
+  if (demoKey) return applyTemplateDefaults(demoWorkflow(demoKey, models), template.defaultParams);
+  const sourcePath = template.sourcePath || detail?.sourcePath;
+  if (sourcePath) return applyTemplateDefaults(normalizeWorkflow(await fetch(sourcePath).then((response) => response.json())), template.defaultParams);
+  return { nodes: [], edges: [] };
+}
+
+// 套用模板默认参数（需求 4.3.1.2）：只覆盖生成节点媒体参数，保留节点结构
+function applyTemplateDefaults(graph, defaults) {
+  if (!defaults || !Object.keys(defaults).length) return graph;
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => {
+      if (!["ImageGenerator", "VideoGenerator", "AudioGenerator"].includes(node.data?.kind)) return node;
+      const media = node.data.media || {};
+      const next = { ...media };
+      if (defaults.ratio) next.ratio = defaults.ratio;
+      if (defaults.resolution) next.resolution = defaults.resolution;
+      if (defaults.duration) next.duration = defaults.duration;
+      if (defaults.copies) next.copies = defaults.copies;
+      return { ...node, data: { ...node.data, media: next } };
+    }),
+  };
 }
 
 function templateRecord(template, models = []) {
   return {
-    id: `template-${template.id}-${template.token}`,
+    id: `template-${template.id}-${template.token || Date.now()}`,
     title: template.title,
     type: "template",
-    model: models.length ? models[(Number(template.id) - 1) % models.length].name : "未选择",
-    nodes: template.nodes,
+    model: template.modelLabel || (models.length ? models[(Number(template.id) - 1) % models.length].name : "未选择"),
+    nodes: template.nodeCount || 0,
+    origin: template.origin || "官方模板",
+    builtin: false,
   };
 }

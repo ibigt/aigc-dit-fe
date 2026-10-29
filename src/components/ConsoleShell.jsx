@@ -75,6 +75,7 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
   const [recentTransactions, setRecentTransactions] = useState([]);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [templateLaunch, setTemplateLaunch] = useState(null);
+  const [importRequest, setImportRequest] = useState(null);
   const [creationReuse, setCreationReuse] = useState(null);
   const menuRef = useRef(null);
 
@@ -259,6 +260,8 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
             models={models.filter((model) => model.enabled !== false)}
             onOpenTemplates={() => setTemplateOpen(true)}
             templateLaunch={templateLaunch}
+            importRequest={importRequest}
+            onImportApplied={() => setImportRequest(null)}
           />
         )}
         {active === "creations" && <MyCreations onReuse={reuseCreation} />}
@@ -272,6 +275,11 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
         onUse={(template) => {
           setTemplateOpen(false);
           setTemplateLaunch({ ...template, token: Date.now() });
+          navigate("/console/studio");
+        }}
+        onImportFile={(payload) => {
+          setTemplateOpen(false);
+          setImportRequest({ ...payload, token: Date.now() });
           navigate("/console/studio");
         }}
       />

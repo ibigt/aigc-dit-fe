@@ -6,6 +6,8 @@ import {
   syncClipPlayback,
   videoOutputSelection,
   audioPreviewSources,
+  clipEnabled,
+  enabledClips,
 } from "../src/components/workflow/nodeInteractions.js";
 
 test("disconnected editor stays empty even with persisted clips", () => {
@@ -50,4 +52,15 @@ test("uploaded audio stays available beside generated audio", () => {
   const sources = audioPreviewSources({ storageKey: "generated", url: "/gen.mp3" }, { storageKey: "uploaded", url: "/upload.mp3" });
   assert.deepEqual(sources.map((item) => item.kind), ["generated", "uploaded"]);
   assert.equal(sources[1].output.url, "/upload.mp3");
+});
+
+test("clipEnabled 缺省视为启用，enabledClips 只保留启用片段", () => {
+  assert.equal(clipEnabled({ sourceNodeId: "a" }), true);
+  assert.equal(clipEnabled({ sourceNodeId: "a", enabled: true }), true);
+  assert.equal(clipEnabled({ sourceNodeId: "a", enabled: false }), false);
+  assert.equal(clipEnabled(null), true);
+
+  const clips = [{ sourceNodeId: "a" }, { sourceNodeId: "b", enabled: false }, { sourceNodeId: "c", enabled: true }];
+  assert.deepEqual(enabledClips(clips).map((clip) => clip.sourceNodeId), ["a", "c"]);
+  assert.deepEqual(enabledClips(null), []);
 });

@@ -42,3 +42,10 @@ test("quick-add placement is deterministic and respects measured dimensions", ()
   assert.deepEqual(placeQuickNode(preferred, existing, node), first);
   assert.equal(overlaps({ ...node, position: first }, existing[0]), false);
 });
+
+test("collapsed nodes estimate header-only height for layout (需求 4.1.2.6)", () => {
+  const collapsed = { style: { width: 382 }, data: { kind: "VideoGenerator", collapsed: true } };
+  const expanded = { style: { width: 382 }, data: { kind: "VideoGenerator" } };
+  assert.equal(nodeLayoutSize(collapsed).height, 44);
+  assert.ok(nodeLayoutSize(collapsed).height < nodeLayoutSize(expanded).height);
+});

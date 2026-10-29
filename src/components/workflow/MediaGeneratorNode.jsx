@@ -1,65 +1,384 @@
-import { useState } from "react";
-import { Film, Image as ImageIcon, Plus, Settings2, WandSparkles, X, Zap } from "lucide-react";
-import { calculateCreditEstimate } from "../../lib/pricing.js";
-import { nodeViewModel } from "./nodeViewModel.js";
-import { videoOutputSelection } from "./nodeInteractions.js";
-import { GenerationSkeleton, NodeCard, NodeError, OutputGrid, controlClass, stopNodePointer } from "./NodeCardParts.jsx";
+import { Handle, Position } from "@xyflow/react";
+import {
+  ChevronDown,
+  Film,
+  Image,
+  ImagePlus,
+  Play,
+  Plus,
+  Settings2,
+  Sparkles,
+  WandSparkles,
+  X,
+  Zap,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import { DemoSelect } from "../DemoSelect.jsx";
+import { normalizeWorkflowMedia, resolveWorkflowModel } from "../../lib/modelCapabilities.js";
+import { mediaNodeCreditCost } from "../../lib/nodeCredits.js";
 import { useWorkflowNode } from "./WorkflowNodeContext.jsx";
+import { NodeCollapseButton, NodeLockButton, nodeCollapsedClass } from "./NodeCardParts.jsx";
 
-function selectedPricing(models, media) {
-  const candidate = [...models, ...(media.models || []).filter((model) => typeof model === "object")]
-    .find((model) => String(model.id) === String(media.modelId) || model.name === media.model);
-  return candidate?.pricing;
+function UnifiedHandles({ hasInput, hasOutput }) {
+  return (
+    <>
+      {hasInput && (
+        <Handle
+          id="input"
+          type="target"
+          position={Position.Left}
+          className="comfy-node__unified-handle comfy-node__unified-handle--input"
+        />
+      )}
+      {hasOutput && (
+        <Handle
+          id="output"
+          type="source"
+          position={Position.Right}
+          className="comfy-node__unified-handle comfy-node__unified-handle--output"
+        />
+      )}
+    </>
+  );
 }
 
 export default function MediaGeneratorNode({ id, data, selected }) {
-  const { updateMedia, selectOutput, execute, getVariableScopes, getReferences, removeReference, openReferencePicker, models = [] } = useWorkflowNode();
+  const {
+    updateMedia,
+    generateMedia,
+    notify,
+    getReferences,
+    removeReference,
+    openReferencePicker,
+    models,
+  } = useWorkflowNode();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [generating, setGenerating] = useState(false);
+
   const media = data.media || {};
-  const runtime = data.runtime || {};
   const isVideo = data.kind === "VideoGenerator" || media.type === "video";
-  const kind = isVideo ? "VideoGenerator" : "ImageGenerator";
-  const view = nodeViewModel(kind, { ...media, scopes: getVariableScopes(id) }, runtime);
-  const videoSelection = videoOutputSelection(view.outputs, view.selectedOutput?.storageKey || view.selectedOutput?.url);
-  const selectedVideo = videoSelection.selected;
-  const references = getReferences(id);
-  const patch = (change) => updateMedia(id, change);
-  const choices = (media.models || []).map((model) => typeof model === "string" ? { value: model, label: model } : { value: model.name, label: model.name });
-  const estimate = calculateCreditEstimate({
-    pricing: selectedPricing(models, media),
-    category: isVideo ? "video" : "image",
-    resolution: media.resolution,
-    quality: ({ 低: "LOW", 中: "MEDIUM", 高: "HIGH" })[media.quality] || media.quality,
-    durationSec: media.durationSec ?? media.duration,
-    copies: media.copies,
-  });
-  return <NodeCard data={data} selected={selected} kind={isVideo ? "video" : "image"} view={view} icon={isVideo ? Film : ImageIcon} footer={isVideo ? "视频" : "图像"}>
-    <div className="workflow-card__body" onPointerDown={stopNodePointer}>
-      {view.isBusy ? <GenerationSkeleton progress={view.progress} />
-        : view.hasError ? <NodeError message={runtime.error || (view.status === "BLOCKED" ? "上游节点失败，当前节点未运行" : "")} onRetry={() => execute(id)} />
-          : view.status === "SUCCEEDED" && view.outputs.length ? (isVideo
-            ? <><div className="workflow-card__video-result"><video key={selectedVideo?.storageKey || selectedVideo?.url} controls playsInline preload="metadata" src={selectedVideo?.url} poster={selectedVideo?.posterUrl} />{selectedVideo?.url && <a className={controlClass} href={selectedVideo.url} download={selectedVideo.name || "video.mp4"}>下载视频</a>}</div>
-              {videoSelection.options.length > 1 && <div className="workflow-card__output-tabs" role="group" aria-label="生成视频副本">{videoSelection.options.map((option, index) => <button key={option.key} className={`${controlClass} ${(selectedVideo?.storageKey || selectedVideo?.url) === option.key ? "active" : ""}`} onClick={() => selectOutput(id, view.outputs.indexOf(option.output))}>视频 {index + 1}</button>)}</div>}</>
-            : <OutputGrid outputs={view.outputs} selectedOutput={view.selectedOutput} onSelect={(index) => selectOutput(id, index)} />)
-            : <div className="workflow-card__empty">{data.preview ? <img src={data.preview} alt="生成预览" /> : <span>{isVideo ? "等待生成视频" : "等待生成图像"}</span>}</div>}
-      <div className="media-node__references" aria-label="已引用素材"><button className="media-node__reference" aria-label="添加参考素材" onClick={() => openReferencePicker(id)}><Plus size={16} /></button>{references.map((reference) => <div className="media-node__reference-chip" key={reference.edgeId} title={reference.title}><img src={reference.preview} alt={reference.title} />{reference.type === "VIDEO" && <span><Film size={9} /></span>}<button aria-label={`移除引用：${reference.title}`} onClick={() => removeReference(id, reference.sourceId)}><X size={10} /></button><small>{reference.title}</small></div>)}</div>
-      {isVideo && <div className="workflow-card__segmented">{["全能参考", "首尾帧"].map((mode) => <button key={mode} className={`${controlClass} ${media.mode === mode ? "active" : ""}`} onClick={() => patch({ mode })}>{mode}</button>)}</div>}
-      <label className="workflow-card__label" htmlFor={`media-prompt-${id}`}>画面描述</label>
-      <textarea id={`media-prompt-${id}`} className={controlClass} value={media.prompt || ""} onChange={(event) => patch({ prompt: event.target.value })} placeholder={isVideo ? "描述希望生成的视频" : "描述希望生成的图像"} rows={4} />
-      {view.missing.length > 0 && <p className="workflow-card__notice">缺少变量：{view.missing.join("、")}</p>}
-      {view.conflicts.length > 0 && <p className="workflow-card__notice workflow-card__notice--error">变量冲突：{view.conflicts.join("、")}</p>}
-      <div className="workflow-card__control-row">
-        <select className={controlClass} aria-label="生成模型" value={media.model || ""} onChange={(event) => patch({ model: event.target.value })}>{choices.map((choice) => <option value={choice.value} key={choice.value}>{choice.label}</option>)}</select>
-        <button className={controlClass} aria-label="生成设置" aria-expanded={settingsOpen} onClick={() => setSettingsOpen((value) => !value)}><Settings2 size={14} /></button>
-        <select className={controlClass} aria-label="生成副本数量" value={media.copies || 1} onChange={(event) => patch({ copies: Number(event.target.value) })}>{[1, 2, 3, 4].map((count) => <option key={count} value={count}>{count} 份</option>)}</select>
+  const references = isVideo && getReferences ? getReferences(id) : [];
+  const update = (patch) => updateMedia?.(id, patch);
+
+  const modelNames = (media.models || [])
+    .map((model) => (typeof model === "string" ? model : model?.name))
+    .filter(Boolean);
+
+  // 生成设置按所选模型能力收敛（与快速创作共用 modelCapabilities 的判定）
+  const selectedModelName = media.model || modelNames[0] || "";
+  const modelInfo = resolveWorkflowModel(models, media.models, selectedModelName);
+  const { options, values, patch } = normalizeWorkflowMedia(media, modelInfo, isVideo);
+  const patchKey = JSON.stringify(patch);
+  useEffect(() => {
+    // 切换模型后原取值可能不再被支持（如 2K → 仅 720P），回写为合法值
+    if (patchKey !== "{}") update(JSON.parse(patchKey));
+  }, [patchKey]);
+  const effectiveMedia = { ...media, ...values };
+
+  // 左下角积分：按所选模型的售价 × 分辨率/清晰度/时长 × 副本数实时估算；跑完显示实际扣费
+  const estimateCost = mediaNodeCreditCost({ media: effectiveMedia, models, isVideo });
+  const actualCost = data.runtime?.creditCost;
+  const creditCost = actualCost != null ? actualCost : estimateCost;
+
+  const duration = values.duration ?? 5;
+  const summary = isVideo
+    ? `${values.mode} · ${values.ratio} · ${values.resolution} · ${duration}s${media.audio !== false ? " · 音效" : ""}`
+    : `${values.ratio} · ${values.resolution} · ${media.quality || "高"}`;
+
+  const runtimeOutput =
+    data.runtime?.outputs?.[media.selectedOutputIndex || 0] ||
+    data.runtime?.outputs?.[0];
+  const previewSrc =
+    data.preview || runtimeOutput?.posterUrl || runtimeOutput?.url;
+  const isBusy = generating || data.runtime?.status === "RUNNING";
+
+  const runGeneration = () => {
+    if (isBusy) return;
+    setGenerating(true);
+    window.setTimeout(() => {
+      generateMedia?.(
+        id,
+        isVideo
+          ? "/media/comfy-racer-poster.webp"
+          : "/media/quick-create/image-product.jpg"
+      );
+      setGenerating(false);
+    }, 760);
+  };
+
+  return (
+    <div
+      className={`comfy-node media-node comfy-node--${data.tone || (isVideo ? "green" : "amber")} ${selected ? "comfy-node--selected" : ""} ${nodeCollapsedClass(data)}`}
+    >
+      <UnifiedHandles
+        hasInput={isVideo}
+        hasOutput
+      />
+      <header>
+        <NodeCollapseButton id={id} collapsed={data.collapsed} />
+        <strong>{data.title}</strong>
+        {isVideo ? <Film size={14} /> : <Image size={14} />}
+        <NodeLockButton id={id} locked={data.locked} />
+      </header>
+      <div className={`media-node__preview ${previewSrc ? "has-preview" : ""}`}>
+        {previewSrc ? (
+          <img
+            src={previewSrc}
+            alt={isVideo ? "视频生成预览" : "图像生成预览"}
+          />
+        ) : isVideo ? (
+          <Film size={30} />
+        ) : (
+          <ImagePlus size={30} />
+        )}
+        {isVideo && previewSrc && (
+          <span className="media-node__play">
+            <Play size={15} fill="currentColor" />
+          </span>
+        )}
+        {!previewSrc && (
+          <small>{isVideo ? "等待生成视频" : "等待生成图像"}</small>
+        )}
       </div>
-      {settingsOpen && <div className="workflow-card__settings">
-        <label>比例<select className={controlClass} value={media.ratio || "16:9"} onChange={(event) => patch({ ratio: event.target.value })}>{["1:1", "16:9", "9:16", "4:3", "3:4"].map((value) => <option key={value}>{value}</option>)}</select></label>
-        <label>清晰度<select className={controlClass} value={media.resolution || "1080P"} onChange={(event) => patch({ resolution: event.target.value })}>{(isVideo ? ["480P", "720P", "1080P", "2K", "4K"] : ["1K", "2K", "4K"]).map((value) => <option key={value}>{value}</option>)}</select></label>
-        {isVideo ? <><label>时长（秒）<input className={controlClass} type="number" min="1" max="60" value={media.durationSec ?? media.duration ?? 5} onChange={(event) => patch({ durationSec: Number(event.target.value) })} /></label><label className="workflow-card__check"><input type="checkbox" checked={media.audio !== false} onChange={(event) => patch({ audio: event.target.checked })} />生成音效</label></>
-          : <label>质量<select className={controlClass} value={media.quality || "高"} onChange={(event) => patch({ quality: event.target.value })}>{["低", "中", "高"].map((value) => <option key={value}>{value}</option>)}</select></label>}
-      </div>}
-      <div className="workflow-card__action-row"><span><Zap size={13} />{runtime.creditCost != null ? `实际 ${runtime.creditCost}` : `预计 ${estimate}`} 积分</span><button className={`${controlClass} workflow-card__primary`} disabled={view.actionDisabled} onClick={() => execute(id)}><WandSparkles size={13} />{view.actionLabel}</button></div>
+      {isVideo && (
+        <div className="media-node__modes">
+          {options.modes.map((mode) => (
+            <button
+              className={values.mode === mode ? "active" : ""}
+              key={mode}
+              onClick={() => update({ mode })}
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
+      )}
+      <div
+        className={`media-node__composer nodrag nowheel ${isVideo ? "media-node__composer--video" : ""}`}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        {isVideo && (
+          <div className="media-node__references" aria-label="已引用素材">
+            <button
+              className="media-node__reference"
+              aria-label="添加参考素材"
+              onClick={() => openReferencePicker?.(id)}
+            >
+              <Plus size={16} />
+            </button>
+            {references.map((reference) => (
+              <div
+                className="media-node__reference-chip"
+                key={reference.edgeId}
+                title={reference.title}
+              >
+                <img src={reference.preview} alt={reference.title} />
+                {reference.type === "VIDEO" && (
+                  <span>
+                    <Film size={9} />
+                  </span>
+                )}
+                <button
+                  aria-label={`移除引用：${reference.title}`}
+                  onClick={() => removeReference?.(id, reference.sourceId)}
+                >
+                  <X size={10} />
+                </button>
+                <small>{reference.title}</small>
+              </div>
+            ))}
+          </div>
+        )}
+        {!isVideo && (
+          <button
+            className="media-node__reference"
+            aria-label="添加参考素材"
+            onClick={() =>
+              notify?.("可将画布中的图像节点连接到此节点作为参考素材")
+            }
+          >
+            <Plus size={16} />
+          </button>
+        )}
+        <textarea
+          value={media.prompt || ""}
+          onChange={(event) => update({ prompt: event.target.value })}
+          placeholder={
+            isVideo ? "描述希望生成的视频内容" : "描述希望生成的图像"
+          }
+          rows={4}
+        />
+        <small>
+          {(media.prompt || "").length} / {isVideo ? 7000 : 7500}
+        </small>
+      </div>
+      <div
+        className="media-node__controls nodrag nowheel"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <DemoSelect
+          className="nodrag nowheel workflow-node-select"
+          ariaLabel={`${data.title}模型`}
+          value={media.model || modelNames[0] || ""}
+          onChange={(val) => update({ model: val })}
+          options={modelNames.map((model) => ({ value: model, label: model }))}
+        />
+        <button
+          className={`media-node__summary${settingsOpen ? " is-open" : ""}`}
+          onClick={() => setSettingsOpen((value) => !value)}
+        >
+          <Settings2 size={12} />
+          <span>{summary}</span>
+          <ChevronDown size={12} className="select-chevron" />
+        </button>
+        <DemoSelect
+          className="nodrag nowheel workflow-node-select media-node__copies"
+          ariaLabel="生成副本数量"
+          value={values.copies}
+          onChange={(val) => update({ copies: Number(val) })}
+          options={options.copies.map((copy) => ({ value: copy, label: `${copy} 份` }))}
+        />
+        <span
+          className="media-node__cost"
+          title={actualCost != null
+            ? `实际扣费 ${actualCost} 积分`
+            : "按所选模型的售价、分辨率、时长与副本数估算"}
+        >
+          <Zap size={11} /> {creditCost}
+        </span>
+        <button className="media-node__generate" onClick={runGeneration}>
+          {isBusy ? (
+            <>
+              <Sparkles size={13} className="spin" />
+              生成中
+            </>
+          ) : (
+            <>
+              <WandSparkles size={13} />
+              生成
+            </>
+          )}
+        </button>
+      </div>
+      {settingsOpen && (
+        <div
+          className="media-node__settings nodrag nowheel"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <header>
+            <strong>生成设置</strong>
+            <button
+              aria-label="关闭生成设置"
+              onClick={() => setSettingsOpen(false)}
+            >
+              <X size={14} />
+            </button>
+          </header>
+          {isVideo && (
+            <section>
+              <span>生成模式</span>
+              <div>
+                {options.modes.map((mode) => (
+                  <button
+                    className={values.mode === mode ? "active" : ""}
+                    key={mode}
+                    onClick={() => update({ mode })}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+          <section>
+            <span>画面比例</span>
+            <div>
+              {options.ratios.map((ratio) => (
+                <button
+                  className={values.ratio === ratio ? "active" : ""}
+                  key={ratio}
+                  onClick={() => update({ ratio })}
+                >
+                  {ratio}
+                </button>
+              ))}
+            </div>
+          </section>
+          <section>
+            <span>{isVideo ? "分辨率" : "清晰度"}</span>
+            <div>
+              {options.resolutions.map((resolution) => (
+                <button
+                  className={values.resolution === resolution ? "active" : ""}
+                  key={resolution}
+                  onClick={() => update({ resolution })}
+                >
+                  {resolution}
+                </button>
+              ))}
+            </div>
+          </section>
+          {isVideo ? (
+            <>
+              <section>
+                <span>时长</span>
+                <div className="media-node__duration">
+                  {options.durations.map((itemDuration) => (
+                    <button
+                      className={duration === itemDuration ? "active" : ""}
+                      key={itemDuration}
+                      onClick={() =>
+                        update({
+                          duration: itemDuration,
+                          durationSec: itemDuration,
+                        })
+                      }
+                    >
+                      {itemDuration}s
+                    </button>
+                  ))}
+                </div>
+              </section>
+              <section>
+                <span>生成音效</span>
+                <div>
+                  <button
+                    className={media.audio !== false ? "active" : ""}
+                    onClick={() => update({ audio: true })}
+                  >
+                    开启
+                  </button>
+                  <button
+                    className={media.audio === false ? "active" : ""}
+                    onClick={() => update({ audio: false })}
+                  >
+                    静音
+                  </button>
+                </div>
+              </section>
+            </>
+          ) : (
+            <section>
+              <span>图像质量</span>
+              <div>
+                {["低", "中", "高"].map((quality) => (
+                  <button
+                    className={media.quality === quality ? "active" : ""}
+                    key={quality}
+                    onClick={() => update({ quality })}
+                  >
+                    {quality}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      )}
+      <footer>
+        <span>光驭画布节点</span>
+        <small>{isVideo ? "视频" : "图像"}</small>
+      </footer>
     </div>
-  </NodeCard>;
+  );
 }

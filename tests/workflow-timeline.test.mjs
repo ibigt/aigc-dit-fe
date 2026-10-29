@@ -141,3 +141,50 @@ test("advances playback and returns null when no next clip exists", () => {
   assert.deepEqual(nextPlaybackPosition(clips, 0), { index: 1, time: 2 });
   assert.equal(nextPlaybackPosition(clips, 1), null);
 });
+
+test("片段携带来源节点标题供剪辑列表展示", () => {
+  const [clip] = buildClipQueue(
+    [{ id: "v1", data: { title: "雨夜追车" }, output: { storageKey: "v1.mp4" } }],
+    [{ source: "v1", target: "edit" }],
+    [],
+    "edit",
+  );
+  assert.equal(clip.sourceTitle, "雨夜追车");
+});
+
+test("禁用片段不进入剪辑队列，缺省视为启用", () => {
+  const videos = [
+    { id: "a", output: { storageKey: "a.mp4" } },
+    { id: "b", output: { storageKey: "b.mp4" } },
+  ];
+  const edges = [{ source: "a", target: "edit" }, { source: "b", target: "edit" }];
+  const clips = buildClipQueue(videos, edges, [
+    { sourceNodeId: "a", outputIndex: 0, order: 0, enabled: false },
+    { sourceNodeId: "b", outputIndex: 0, order: 1 },
+  ], "edit");
+
+  assert.deepEqual(clips.map((clip) => clip.sourceNodeId), ["b"]);
+  assert.equal(clips[0].enabled, true);
+});
+
+test("includeDisabled 选项返回禁用片段以便重新启用", () => {
+  const videos = [{ id: "a", output: { storageKey: "a.mp4" } }];
+  const edges = [{ source: "a", target: "edit" }];
+  const clips = buildClipQueue(videos, edges, [
+    { sourceNodeId: "a", outputIndex: 0, order: 0, enabled: false },
+  ], "edit", videos, { includeDisabled: true });
+
+  assert.equal(clips.length, 1);
+  assert.equal(clips[0].enabled, false);
+});
+
+test("旧工作流片段没有 enabled 字段时保持启用语义", () => {
+  const videos = [{ id: "a", output: { storageKey: "a.mp4" } }];
+  const edges = [{ source: "a", target: "edit" }];
+  const clips = buildClipQueue(videos, edges, [
+    { sourceNodeId: "a", outputIndex: 0, order: 0 },
+  ], "edit");
+
+  assert.equal(clips.length, 1);
+  assert.equal(clips[0].enabled, true);
+});

@@ -2,6 +2,16 @@ export function connectedClipQueue(connectedClips) {
   return Array.isArray(connectedClips) ? connectedClips : [];
 }
 
+// 片段启用状态（需求 4.2.5.3）：缺省视为启用，旧工作流 JSON 保持原行为
+export function clipEnabled(clip) {
+  return clip?.enabled !== false;
+}
+
+// 只保留启用的片段，用于播放与成片合成
+export function enabledClips(clips) {
+  return (Array.isArray(clips) ? clips : []).filter(clipEnabled);
+}
+
 export function applyClipAudio(video, clip) {
   if (!video || !clip) return;
   video.muted = Boolean(clip.muted);
