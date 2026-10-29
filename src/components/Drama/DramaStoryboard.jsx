@@ -1,4 +1,4 @@
-import { Check, ChevronDown, CircleCheck, Film, Lock, Maximize2, Plus, RefreshCw, Sparkles, Trash2, Video, Wand2, X, ZoomIn } from "lucide-react";
+import { Check, ChevronDown, CircleCheck, Film, Lock, Maximize2, Plus, RefreshCw, Sparkles, Trash2, Video, Wand2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1268,7 +1268,6 @@ function ShotPreview({
   generations,
   generationsLoading,
   historyBusy,
-  onZoomPoster,
   onSwitchFinal,
   onPreviewGeneration,
   onDeleteGeneration,
@@ -1312,16 +1311,6 @@ function ShotPreview({
                       <track kind="captions" src={captionSrc} srcLang="zh-CN" label="中文" default />
                     ) : null}
                   </video>
-                  {poster ? (
-                    <button
-                      type="button"
-                      className="youxi-story-preview__zoom"
-                      aria-label="放大封面"
-                      onClick={() => onZoomPoster({ src: poster, title: `镜 ${selected.shotIndex}` })}
-                    >
-                      <ZoomIn size={16} />
-                    </button>
-                  ) : null}
                 </div>
               ) : (
                 <div className="youxi-story-empty-preview" data-ratio={ratio}>
@@ -2578,7 +2567,6 @@ export function DramaStoryboard({ series, episode }) {
         generations={generations}
         generationsLoading={generationsQuery.isLoading}
         historyBusy={Boolean(selected && busy[selected.id] === "history")}
-        onZoomPoster={setPreview}
         onSwitchFinal={() => {
           if (selected?.status === "已锁定") return;
           setSwitchFinalOpen(true);
