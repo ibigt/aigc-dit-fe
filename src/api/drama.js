@@ -333,29 +333,30 @@ export function fetchDramaFilm(episodeId) {
   return api.get(`/drama/episodes/${episodeId}/film`);
 }
 
-export function assembleDramaFilm(episodeId, { shotIds } = {}) {
+export function assembleDramaFilm(episodeId, { shotIds, mode } = {}) {
   // 必须显式传 shotIds：后端空列表会回退为「全部已出片」，不能省略。
   const ids = (Array.isArray(shotIds) ? shotIds : [])
     .map((id) => (typeof id === "number" ? id : Number(id)))
     .filter((id) => Number.isFinite(id));
   return api.post(
     `/drama/episodes/${episodeId}/film/assemble`,
-    { shotIds: ids },
+    { shotIds: ids, mode: mode || "顺接" },
     { timeout: FILM_ASSEMBLE_TIMEOUT_MS },
   );
 }
 
-export function exportDramaFilmBurned(episodeId, shotIds) {
-  const body = Array.isArray(shotIds)
-    ? {
-      shotIds: shotIds
-        .map((id) => (typeof id === "number" ? id : Number(id)))
-        .filter((id) => Number.isFinite(id)),
-    }
-    : undefined;
+export function exportDramaFilmBurned(episodeId, { shotIds, mode } = {}) {
+  // 有入片清单时必须传 shotIds；省略则后端优先用 episode.filmShotIds，再回退全部已出片。
+  const body = {};
+  if (Array.isArray(shotIds)) {
+    body.shotIds = shotIds
+      .map((id) => (typeof id === "number" ? id : Number(id)))
+      .filter((id) => Number.isFinite(id));
+  }
+  if (mode) body.mode = mode;
   return api.post(
     `/drama/episodes/${episodeId}/film/export-burned`,
-    body,
+    Object.keys(body).length ? body : undefined,
     { timeout: FILM_EXPORT_BURNED_TIMEOUT_MS },
   );
 }

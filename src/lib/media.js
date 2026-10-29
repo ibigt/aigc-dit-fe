@@ -200,7 +200,7 @@ export function dramaFilmDownloadName({ seriesName, episode, suffix = "", ext = 
 export async function downloadMediaFile(urlOrKey, filename) {
   const src = mediaUrl(urlOrKey) || urlOrKey;
   if (!src) throw new Error("无可下载地址");
-  const response = await fetch(src);
+  const response = await fetch(src, { cache: "no-store" });
   if (!response.ok) throw new Error("下载失败");
   const blob = await response.blob();
   const href = URL.createObjectURL(blob);

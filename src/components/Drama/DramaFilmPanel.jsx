@@ -52,6 +52,9 @@ function withCacheBust(url, version) {
   return `${url}${sep}v=${encodeURIComponent(version)}`;
 }
 
+const FILM_MODE_SMOOTH = "顺接";
+const FILM_MODE_DIRECT = "直拼";
+
 function selectedShotIds(readyIds, selectedIds) {
   return readyIds.filter((id) => selectedIds.has(id));
 }
@@ -71,6 +74,7 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
   const episodeId = episode?.id;
   const ratio = series?.aspectRatio || "16:9";
   const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [filmMode, setFilmMode] = useState(FILM_MODE_SMOOTH);
   const filmQuery = useQuery({
     queryKey: ["drama-film", episodeId],
     queryFn: () => fetchDramaFilm(episodeId),
@@ -107,15 +111,21 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
     }
   }, [episodeId, film?.assembledAt, film?.filmUrl, includedKey, readyKey]);
 
+  useEffect(() => {
+    setFilmMode(film?.filmMode || FILM_MODE_SMOOTH);
+  }, [episodeId, film?.filmMode]);
+
   const assembleMutation = useMutation({
-    mutationFn: (shotIds) => {
+    mutationFn: (input) => {
+      const shotIds = Array.isArray(input) ? input : input?.shotIds;
+      const mode = Array.isArray(input) ? filmMode : input?.mode;
       const ids = (Array.isArray(shotIds) ? shotIds : [])
         .map(asShotId)
         .filter((id) => id != null);
       if (!ids.length) {
         return Promise.reject(new Error("请至少勾选 1 个已出片镜头再拼接"));
       }
-      return assembleDramaFilm(episodeId, { shotIds: ids });
+      return assembleDramaFilm(episodeId, { shotIds: ids, mode });
     },
     onSuccess: (data) => {
       queryClient.setQueryData(["drama-film", episodeId], data);
@@ -138,6 +148,8 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
     ),
   );
   const allReadySelected = readyIds.length > 0 && readyIds.every((id) => selectedIds.has(id));
+  const assembledMode = film?.filmMode || "";
+  const modeDiffers = Boolean(filmSrc && assembledMode && assembledMode !== filmMode);
   const canAssemble = selectedReadyCount > 0 && !assembleMutation.isPending;
   const showAssemble = readyCount > 0;
   const incomplete = Boolean(film?.missingShotIndexes?.length);
@@ -160,7 +172,7 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
     ? "正在拼接"
     : !filmSrc
       ? "生成成片"
-      : (film?.stale || selectionDiffersFromFilm)
+      : (film?.stale || selectionDiffersFromFilm || modeDiffers)
         ? "按勾选重新拼接"
         : "重新拼接成片";
 
@@ -265,7 +277,7 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
         </div>
       </aside>
       <section className="youxi-film-main">
-        {(film?.stale || film?.hasCaptions || (incomplete && readyCount > 0) || error || (showAssemble && selectedReadyCount === 0) || selectionDiffersFromFilm) && (
+        {(film?.stale || film?.hasCaptions || (incomplete && readyCount > 0) || error || (showAssemble && selectedReadyCount === 0) || selectionDiffersFromFilm || modeDiffers) && (
           <div className="youxi-film-banners">
             {film?.stale && (
               <p className="youxi-film-banner youxi-film-banner--warn">分镜视频已更新，当前成片已过期，请重新拼接</p>
@@ -276,6 +288,11 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
             {incomplete && readyCount > 0 && (
               <p className="youxi-film-banner">
                 缺镜 {film.missingShotIndexes.join("、")}，未出片镜头不可入片
+              </p>
+            )}
+            {modeDiffers && (
+              <p className="youxi-film-banner youxi-film-banner--warn">
+                当前成片按「{assembledMode}」拼接，改为「{filmMode}」后需要重新拼接
               </p>
             )}
             {selectionDiffersFromFilm && (
@@ -328,11 +345,31 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
         </div>
         {showAssemble && (
           <div className="youxi-film-actions">
+            <div className="youxi-film-mode" role="group" aria-label="衔接方式">
+              <button
+                type="button"
+                aria-pressed={filmMode === FILM_MODE_SMOOTH}
+                title="同场略裁气口，接点声音短淡化"
+                disabled={assembleMutation.isPending}
+                onClick={() => setFilmMode(FILM_MODE_SMOOTH)}
+              >
+                顺接
+              </button>
+              <button
+                type="button"
+                aria-pressed={filmMode === FILM_MODE_DIRECT}
+                title="按原片头尾直接拼接"
+                disabled={assembleMutation.isPending}
+                onClick={() => setFilmMode(FILM_MODE_DIRECT)}
+              >
+                直拼
+              </button>
+            </div>
             <button
               className={`button button--primary youxi-film-merge${assembleMutation.isPending ? " is-loading" : ""}`}
               type="button"
               disabled={!canAssemble}
-              onClick={() => assembleMutation.mutate(pickedIds)}
+              onClick={() => assembleMutation.mutate({ shotIds: pickedIds, mode: filmMode })}
             >
               <Scissors size={14} />
               {" "}

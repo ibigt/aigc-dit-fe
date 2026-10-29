@@ -50,7 +50,7 @@ function uniqueZipName(usedNames, base, ext) {
 
 async function fetchMediaBytes(urlOrKey) {
   const src = mediaUrl(urlOrKey) || urlOrKey;
-  const response = await fetch(src);
+  const response = await fetch(src, { cache: "no-store" });
   if (!response.ok) throw new Error("下载失败");
   return new Uint8Array(await response.arrayBuffer());
 }
@@ -417,6 +417,13 @@ export function DramaWorkbench({ seriesId }) {
           continue;
         }
 
+        // 导出跟「上次拼接成片」入片清单一致，避免把未勾选镜头再拼进来。
+        const includedShotIds = Array.isArray(film.includedShotIds)
+          ? film.includedShotIds
+            .map((id) => (typeof id === "number" ? id : Number(id)))
+            .filter((id) => Number.isFinite(id))
+          : [];
+
         let filmUrl = film.filmUrl;
         let suffix = "";
         if (exportCaption === "burned") {
@@ -425,7 +432,10 @@ export function DramaWorkbench({ seriesId }) {
             continue;
           }
           setExportStatus(`烧录 ${epLabel}（${index + 1}/${targets.length}）…`);
-          const burned = await exportDramaFilmBurned(ep.id);
+          const burned = await exportDramaFilmBurned(ep.id, {
+            ...(includedShotIds.length ? { shotIds: includedShotIds } : {}),
+            mode: film.filmMode,
+          });
           if (!burned?.filmUrl) {
             skipped += 1;
             continue;
