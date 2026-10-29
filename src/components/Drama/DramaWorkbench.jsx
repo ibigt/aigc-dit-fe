@@ -363,6 +363,7 @@ export function DramaWorkbench({ seriesId }) {
   const [exportIncludeVtt, setExportIncludeVtt] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState("");
+  const [exportError, setExportError] = useState("");
   const renameInputRef = useRef(null);
 
   useEffect(() => {
@@ -378,18 +379,19 @@ export function DramaWorkbench({ seriesId }) {
 
   async function runExportDownload() {
     if (!series?.id) {
-      showNotice("请先打开项目", true);
+      setExportError("请先打开项目");
       return;
     }
     const targets = exportScope === "all"
       ? (episodes.length ? episodes : (episode ? [episode] : []))
       : (episode ? [episode] : []);
     if (!targets.length) {
-      showNotice("请先打开剧集", true);
+      setExportError("请先打开剧集");
       return;
     }
     const wantVtt = exportCaption === "plain" && exportIncludeVtt;
     setExporting(true);
+    setExportError("");
     setExportStatus(exportCaption === "burned" ? "准备烧录…" : "准备下载…");
     try {
       const usedNames = new Set();
@@ -470,11 +472,10 @@ export function DramaWorkbench({ seriesId }) {
 
       if (exportScope === "all") {
         if (!zipFiles.length) {
-          showNotice(
+          setExportError(
             exportCaption === "burned"
               ? "没有可导出的字幕成片，请先拼接并生成字幕"
               : "没有已成片的剧集，请先拼接成片",
-            true,
           );
           return;
         }
@@ -484,15 +485,15 @@ export function DramaWorkbench({ seriesId }) {
       }
 
       if (packed === 0) {
-        showNotice(
+        setExportError(
           exportCaption === "burned"
             ? "当前集暂无可用字幕，请先生成字幕"
             : "请先拼接成片",
-          true,
         );
         return;
       }
 
+      setExportError("");
       setExportOpen(false);
       const parts = [`已开始下载${exportScope === "all" ? `（${packed} 集）` : ""}`];
       if (wantVtt && vttPacked > 0) parts.push(`含 ${vttPacked} 个字幕文件`);
@@ -501,7 +502,7 @@ export function DramaWorkbench({ seriesId }) {
       if (staleHint && exportCaption === "plain") parts.push("部分成片可能已过期");
       showNotice(parts.join(" · "));
     } catch (error) {
-      showNotice(error.message || "导出失败", true);
+      setExportError(error.message || "导出失败");
     } finally {
       setExporting(false);
       setExportStatus("");
@@ -628,6 +629,7 @@ export function DramaWorkbench({ seriesId }) {
                 setExportCaption("burned");
                 setExportIncludeVtt(false);
                 setExportStatus("");
+                setExportError("");
                 setExportOpen(true);
               }}
             >
@@ -707,7 +709,12 @@ export function DramaWorkbench({ seriesId }) {
         <DramaDialog
           title="导出成片"
           eyebrow={series.name}
-          onClose={() => !exporting && setExportOpen(false)}
+          onClose={() => {
+            if (exporting) return;
+            setExportOpen(false);
+            setExportError("");
+            setExportStatus("");
+          }}
         >
           <div className="export-options">
             <section className="export-section" aria-label="导出范围">
@@ -721,7 +728,10 @@ export function DramaWorkbench({ seriesId }) {
                     className={selected ? "is-selected" : ""}
                     aria-pressed={selected}
                     disabled={exporting}
-                    onClick={() => setExportScope(item.id)}
+                    onClick={() => {
+                      setExportScope(item.id);
+                      setExportError("");
+                    }}
                   >
                     <Film size={20} />
                     <span>
@@ -746,6 +756,7 @@ export function DramaWorkbench({ seriesId }) {
                       onClick={() => {
                         setExportCaption(item.id);
                         if (item.id !== "plain") setExportIncludeVtt(false);
+                        setExportError("");
                       }}
                     >
                       <Film size={20} />
@@ -772,8 +783,22 @@ export function DramaWorkbench({ seriesId }) {
               })}
             </section>
             {exportStatus && <p className="export-status" role="status">{exportStatus}</p>}
+            {exportError && (
+              <p className="export-error" role="alert">
+                {exportError}
+              </p>
+            )}
             <footer className="export-footer">
-              <button type="button" className="button button--ghost" disabled={exporting} onClick={() => setExportOpen(false)}>
+              <button
+                type="button"
+                className="button button--ghost"
+                disabled={exporting}
+                onClick={() => {
+                  setExportOpen(false);
+                  setExportError("");
+                  setExportStatus("");
+                }}
+              >
                 取消
               </button>
               <button type="button" className="button button--primary" disabled={exporting} onClick={runExportDownload}>
