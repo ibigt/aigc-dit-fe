@@ -21,6 +21,7 @@ export const WorkflowNodeContext = createContext({
   getReferences: () => [],
   removeReference: () => {},
   openReferencePicker: () => {},
+  running: false,
   models: [],
 });
 

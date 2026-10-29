@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import { DemoSelect } from "../DemoSelect.jsx";
 import { normalizeWorkflowMedia, resolveWorkflowModel } from "../../lib/modelCapabilities.js";
 import { mediaNodeCreditCost } from "../../lib/nodeCredits.js";
+import StableTextarea from "./StableTextarea.jsx";
 import { useWorkflowNode } from "./WorkflowNodeContext.jsx";
 import { NodeCollapseButton, NodeLockButton, nodeCollapsedClass } from "./NodeCardParts.jsx";
 
@@ -51,6 +52,7 @@ export default function MediaGeneratorNode({ id, data, selected }) {
     removeReference,
     openReferencePicker,
     models,
+    running,
   } = useWorkflowNode();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -92,19 +94,17 @@ export default function MediaGeneratorNode({ id, data, selected }) {
     data.preview || runtimeOutput?.posterUrl || runtimeOutput?.url;
   const isBusy = generating || data.runtime?.status === "RUNNING";
 
+  // 生成：真实跑该节点（后端按节点自己的提示词与模型执行），不再贴静态占位图
   const runGeneration = () => {
     if (isBusy) return;
     setGenerating(true);
-    window.setTimeout(() => {
-      generateMedia?.(
-        id,
-        isVideo
-          ? "/media/comfy-racer-poster.webp"
-          : "/media/quick-create/image-product.jpg"
-      );
-      setGenerating(false);
-    }, 760);
+    generateMedia?.(id);
   };
+
+  // 运行状态由 studio 的 running 驱动；运行结束（或失败）后解除本地忙碌态
+  useEffect(() => {
+    if (!running) setGenerating(false);
+  }, [running]);
 
   return (
     <div
@@ -200,9 +200,9 @@ export default function MediaGeneratorNode({ id, data, selected }) {
             <Plus size={16} />
           </button>
         )}
-        <textarea
+        <StableTextarea
           value={media.prompt || ""}
-          onChange={(event) => update({ prompt: event.target.value })}
+          onChange={(value) => update({ prompt: value })}
           placeholder={
             isVideo ? "描述希望生成的视频内容" : "描述希望生成的图像"
           }

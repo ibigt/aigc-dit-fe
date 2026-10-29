@@ -20,6 +20,7 @@ import { useRef, useState } from "react";
 import { DemoSelect } from "../DemoSelect.jsx";
 import { audioNodeCreditCost } from "../../lib/nodeCredits.js";
 import { mediaUrl } from "../../lib/media.js";
+import StableTextarea from "./StableTextarea.jsx";
 import { useWorkflowNode } from "./WorkflowNodeContext.jsx";
 import AudioWaveform from "./AudioWaveform.jsx";
 import { NodeCollapseButton, NodeLockButton, nodeCollapsedClass } from "./NodeCardParts.jsx";
@@ -163,9 +164,9 @@ export default function AudioGeneratorNode({ id, data, selected }) {
         </button>
         {!isMusic ? (
           <>
-            <textarea
+            <StableTextarea
               value={media.prompt || ""}
-              onChange={(event) => update({ prompt: event.target.value })}
+              onChange={(value) => update({ prompt: value })}
               placeholder="输入需要朗读的台词……"
               rows={5}
             />
@@ -203,16 +204,16 @@ export default function AudioGeneratorNode({ id, data, selected }) {
           </>
         ) : (
           <>
-            <textarea
+            <StableTextarea
               value={media.prompt || ""}
-              onChange={(event) => update({ prompt: event.target.value })}
+              onChange={(value) => update({ prompt: value })}
               placeholder="描述音乐风格、节奏与氛围……"
               rows={3}
             />
-            <textarea
+            <StableTextarea
               className="audio-node__lyrics"
               value={media.lyrics || ""}
-              onChange={(event) => update({ lyrics: event.target.value })}
+              onChange={(value) => update({ lyrics: value })}
               placeholder="添加歌词；留空时将根据风格自动生成。"
               rows={3}
             />

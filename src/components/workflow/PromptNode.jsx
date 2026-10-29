@@ -2,6 +2,7 @@ import { useState } from "react";
 import { MessageSquareText, SlidersHorizontal } from "lucide-react";
 import { nodeViewModel } from "./nodeViewModel.js";
 import { NodeCard, controlClass, stopNodePointer } from "./NodeCardParts.jsx";
+import StableTextarea from "./StableTextarea.jsx";
 import { useWorkflowNode } from "./WorkflowNodeContext.jsx";
 
 // 提示词字数上限（需求 4.2.2.1）：与 JSON 协议示例中的 maxLength 保持一致
@@ -19,7 +20,7 @@ export default function PromptNode({ id, data, selected }) {
   return <NodeCard id={id} data={data} selected={selected} kind="prompt" view={view} icon={MessageSquareText} footer="提示词">
     <div className="workflow-card__body" onPointerDown={stopNodePointer}>
       <label className="workflow-card__label" htmlFor={`prompt-${id}`}>提示词模板</label>
-      <textarea id={`prompt-${id}`} className={controlClass} value={media.prompt || ""} onChange={(event) => patch({ prompt: event.target.value })} placeholder="输入提示词，使用 {{变量名}} 插入变量" rows={3} />
+      <StableTextarea id={`prompt-${id}`} className={controlClass} value={media.prompt || ""} onChange={(value) => patch({ prompt: value })} placeholder="输入提示词，使用 {{变量名}} 插入变量" rows={3} />
       <div className="workflow-card__counter" aria-live="polite"><span className={overLimit ? "is-over" : ""}>{length} / {maxLength} 字</span></div>
       {view.placeholders.length > 0 && <button type="button" className="workflow-card__meta" aria-expanded={varsOpen} onClick={() => setVarsOpen((value) => !value)}><span>{view.placeholders.length} 个变量：{view.placeholders.map((name) => `{{${name}}}`).join(" ")}</span><SlidersHorizontal size={12} /></button>}
       {view.placeholders.length > 0 && varsOpen && <div className="workflow-card__settings workflow-card__settings--panel">

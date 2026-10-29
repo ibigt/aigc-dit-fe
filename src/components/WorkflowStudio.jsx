@@ -75,6 +75,7 @@ import SpecializedEditingNode from "./workflow/VideoEditingNode.jsx";
 import { WorkflowNodeContext } from "./workflow/WorkflowNodeContext.jsx";
 import { NodeCollapseButton, NodeDeleteButton, NodeLockButton, nodeCollapsedClass } from "./workflow/NodeCardParts.jsx";
 import { ImportReport } from "./workflow/ImportReport.jsx";
+import StableTextarea from "./workflow/StableTextarea.jsx";
 import { applyRunToCurrentNodes, applyWorkflowSnapshotToNodes, canConnectNodes, executeWorkflowRun, waitForWorkflowPoll, restoreWorkflowSnapshot, persistableWorkflowGraph as persistableGraph } from "./workflow/runtime.js";
 import { getWorkflowRuntimeSnapshot } from "../api/workflows.js";
 import { buildClipQueue } from "./workflow/timeline.js";
@@ -850,7 +851,7 @@ function ComfyField({ nodeId, field, index }) {
           options={field.options.map((option) => ({ value: option, label: option }))}
         />
       ) : field.multiline ? (
-        <textarea {...common} rows={field.label === "说明" ? 7 : 5} />
+        <StableTextarea {...common} rows={field.label === "说明" ? 7 : 5} />
       ) : (
         <input {...common} type={field.inputType === "number" ? "number" : "text"} />
       )}
@@ -1825,16 +1826,34 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     getReferences,
     removeReference,
     openReferencePicker: setReferencePickerNodeId,
+    running,
     models,
-  }), [nodes, edges, updateNodeMedia, updatePrompt, updateClips, selectOutput, generateNodeMedia, showToast, removeNodeById, uploadAudio, getClips, getEditingSources, toggleLock, toggleCollapse, getReferences, removeReference, models]);
+  }), [nodes, edges, updateNodeMedia, updatePrompt, updateClips, selectOutput, generateNodeMedia, showToast, removeNodeById, uploadAudio, getClips, getEditingSources, toggleLock, toggleCollapse, getReferences, removeReference, running, models]);
 
   const canvasReferenceNodes = useMemo(() => nodes.filter((node) => node.id !== referencePickerNodeId && node.data?.preview && node.data?.outputs?.some((port) => ["IMAGE", "VIDEO"].includes(port.type))), [nodes, referencePickerNodeId]);
 
+  // 节点卡片里选的模型（按名字）→ 模型 id；目录里找不到返回 undefined
+  function nodeModelIdOf(nodeId) {
+    const node = nodes.find((item) => item.id === nodeId);
+    const name = node?.data?.media?.model;
+    if (!name) return undefined;
+    const kind = node?.data?.kind;
+    const category = node?.data?.media?.type
+      || (kind === "AudioGenerator" ? "audio" : kind === "VideoGenerator" ? "video" : "image");
+    const hit = (models || []).find((model) => model.name === name && model.category === category);
+    if (!hit || hit.id == null) return undefined;
+    const id = Number(hit.id);
+    return Number.isFinite(id) && id > 0 ? id : undefined;
+  }
+
   async function runGraph(nodeId) {
     const onlyNode = typeof nodeId === "string" ? nodeId : undefined;
-    const modelId = Number(selectedModel);
+    // 单节点运行优先用节点自己选的模型（后端 resolveModel 也会按节点模型名解析，
+    // 这里的 modelId 只是兜底），否则退回工具条上选的运行模型
+    const nodeModelId = onlyNode ? nodeModelIdOf(onlyNode) : undefined;
+    const modelId = nodeModelId || Number(selectedModel);
     if (!modelId) {
-      showToast("请先选择运行模型", 2800);
+      showToast(onlyNode ? "该节点没有可用模型，请在卡片里选一个模型" : "请先选择运行模型", 2800);
       return;
     }
     if (runLock.current) return;
