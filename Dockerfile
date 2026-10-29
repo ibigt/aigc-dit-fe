@@ -3,10 +3,17 @@
 FROM node:22-alpine AS build
 WORKDIR /app
 
+# 构建机访问 registry.npmjs.org 常超时；默认走 npmmirror，可用 --build-arg 覆盖。
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+ENV NPM_CONFIG_REGISTRY=${NPM_REGISTRY}
+
 COPY . .
 
 RUN if [ -f package.json ]; then \
-      if [ -f package-lock.json ]; then npm ci; \
+      npm config set fetch-retries 5 \
+      && npm config set fetch-retry-mintimeout 20000 \
+      && npm config set fetch-retry-maxtimeout 120000 \
+      && if [ -f package-lock.json ]; then npm ci; \
       elif [ -f pnpm-lock.yaml ]; then corepack enable && pnpm i --frozen-lockfile; \
       elif [ -f yarn.lock ]; then yarn install --frozen-lockfile; \
       else npm install; fi \
