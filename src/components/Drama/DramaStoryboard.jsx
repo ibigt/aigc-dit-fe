@@ -1,4 +1,4 @@
-import { Check, ChevronDown, CircleCheck, Film, Lock, Maximize2, Plus, RefreshCw, Sparkles, Trash2, Video, Wand2, X } from "lucide-react";
+import { Check, ChevronDown, CircleCheck, Film, Lock, Maximize2, Pencil, Plus, RefreshCw, Sparkles, Trash2, Video, Wand2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -488,6 +488,8 @@ function ShotPromptPane({
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [menu, setMenu] = useState(null);
   const [librarySlot, setLibrarySlot] = useState(null);
+  const [titleRenameOpen, setTitleRenameOpen] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
   const expandedEditorRef = useRef(null);
   const commitPromptRef = useRef(async () => {});
   const draftRef = useRef(draft);
@@ -495,6 +497,7 @@ function ShotPromptPane({
   const barRef = useRef(null);
   const firstInputRef = useRef(null);
   const endInputRef = useRef(null);
+  const titleInputRef = useRef(null);
   draftRef.current = draft;
   promptCtxRef.current = { selected, lockedAssets, serverPrompt, onSave };
   const supportsI2v = modelSupportsI2v(selectedVideoModel);
@@ -538,7 +541,17 @@ function ShotPromptPane({
     setPromptExpanded(false);
     setMenu(null);
     setLibrarySlot(null);
-  }, [selected?.id, serverPrompt]);
+    setTitleRenameOpen(false);
+    setTitleDraft(selected?.title?.trim() || "");
+  }, [selected?.id, serverPrompt, selected?.title]);
+
+  useEffect(() => {
+    if (!titleRenameOpen) return;
+    const input = titleInputRef.current;
+    if (!input) return;
+    input.focus({ preventScroll: true });
+    input.select();
+  }, [titleRenameOpen]);
 
   useEffect(() => {
     if (!menu) return undefined;
@@ -672,6 +685,24 @@ function ShotPromptPane({
     onUseAssetFrame?.(slot, assetId);
   }
 
+  function commitTitleRename() {
+    const name = titleDraft.trim();
+    const current = selected?.title?.trim() || "";
+    if (!name) {
+      setTitleDraft(current);
+      setTitleRenameOpen(false);
+      return;
+    }
+    if (name === current) {
+      setTitleRenameOpen(false);
+      return;
+    }
+    setTitleRenameOpen(false);
+    onSave?.(selected, { title: name }).catch(() => {
+      setTitleDraft(current);
+    });
+  }
+
   if (!selected) return null;
   const durationValue = clampDuration(durationOptions, selected.durationSec);
   return (
@@ -683,7 +714,49 @@ function ShotPromptPane({
           </span>
           <span>
             <small>镜头 {String(selected.shotIndex).padStart(2, "0")}</small>
-            <strong>{selected.title?.trim() || "未命名"}</strong>
+            {titleRenameOpen ? (
+              <input
+                ref={titleInputRef}
+                type="text"
+                name="drama-shot-title"
+                autoComplete="off"
+                spellCheck={false}
+                className={`youxi-shot-title-input${titleDraft.trim() ? "" : " is-invalid"}`}
+                aria-invalid={!titleDraft.trim()}
+                aria-label="修改镜头名称"
+                maxLength={128}
+                value={titleDraft}
+                disabled={frozen}
+                onChange={(event) => setTitleDraft(event.target.value)}
+                onBlur={commitTitleRename}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    commitTitleRename();
+                  } else if (event.key === "Escape") {
+                    setTitleDraft(selected.title?.trim() || "");
+                    setTitleRenameOpen(false);
+                  }
+                }}
+              />
+            ) : (
+              <span className="youxi-shot-editor__name">
+                <strong>{selected.title?.trim() || "未命名"}</strong>
+                <button
+                  className="youxi-shot-rename"
+                  type="button"
+                  aria-label="修改镜头名称"
+                  disabled={frozen}
+                  title={frozen ? "当前不可修改镜头名称" : "修改镜头名称"}
+                  onClick={() => {
+                    setTitleDraft(selected.title?.trim() || "");
+                    setTitleRenameOpen(true);
+                  }}
+                >
+                  <Pencil size={13} />
+                </button>
+              </span>
+            )}
           </span>
         </div>
         <div className="youxi-shot-spec">
@@ -1901,6 +1974,9 @@ export function DramaStoryboard({ series, episode }) {
 
   async function saveShot(shot, patch) {
     const payload = {};
+    if (Object.prototype.hasOwnProperty.call(patch, "title")) {
+      payload.title = patch.title;
+    }
     if (Object.prototype.hasOwnProperty.call(patch, "visiblePrompt")) {
       payload.visiblePrompt = patch.visiblePrompt;
       payload.referenceAssetIds = patch.referenceAssetIds || [];
@@ -1917,6 +1993,12 @@ export function DramaStoryboard({ series, episode }) {
       payload.videoGenerateMode = patch.videoGenerateMode;
     }
     const result = await runShot(shot.id, "save", () => updateDramaShot(shot.id, payload));
+    if (Object.prototype.hasOwnProperty.call(patch, "title")) {
+      patchShot({
+        id: shot.id,
+        title: result?.title ?? patch.title,
+      });
+    }
     if (Object.prototype.hasOwnProperty.call(patch, "visiblePrompt")) {
       patchShot({
         id: shot.id,
