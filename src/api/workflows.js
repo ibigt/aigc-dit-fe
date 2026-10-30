@@ -36,6 +36,13 @@ export function getWorkflowRun(id, { signal } = {}) {
   return api.get(`/workflows/runs/${id}`, { signal });
 }
 
+export function cancelWorkflowRun(id, nodeId, { signal } = {}) {
+  return api.post(`/workflows/runs/${id}/cancel`, null, {
+    params: nodeId ? { nodeId } : undefined,
+    signal,
+  });
+}
+
 export function getLatestWorkflowRun(id, { signal } = {}) {
   return api.get(`/workflows/${id}/runs/latest`, { signal });
 }
