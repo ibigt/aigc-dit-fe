@@ -2842,6 +2842,15 @@ export function WorkflowStudio({ onOpenTemplates, templateLaunch, importRequest,
       }
       if (cancelled) return;
       if (mode === "append") {
+        // 当前没有打开的画布时无法追加（openEditor 依赖已有 record），降级为新建并说明
+        if (!record) {
+          setRecord(templateRecord(templateLaunch, workflowModels));
+          setGraph(nextGraph);
+          setEditorKey((key) => key + 1);
+          openEditor();
+          window.alert("当前没有打开的画布，已按新建画布打开该模板");
+          return;
+        }
         setAppendRequest({ graph: nextGraph, token: templateLaunch.token || Date.now() });
         openEditor();
         return;
