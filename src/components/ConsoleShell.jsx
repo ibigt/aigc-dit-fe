@@ -275,12 +275,13 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
         onUse={(template) => {
           setTemplateOpen(false);
           setTemplateLaunch({ ...template, token: Date.now() });
-          navigate("/console/studio");
+          // 已在高级工作台时不再重复 push /console/studio，避免返回时多出一个重复历史条目
+          if (!location.pathname.startsWith("/console/studio")) navigate("/console/studio");
         }}
         onImportFile={(payload) => {
           setTemplateOpen(false);
           setImportRequest({ ...payload, token: Date.now() });
-          navigate("/console/studio");
+          if (!location.pathname.startsWith("/console/studio")) navigate("/console/studio");
         }}
       />
       <ProfileModal

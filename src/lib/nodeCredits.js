@@ -22,7 +22,7 @@ function safeCopies(copies) {
 }
 
 // 媒体节点（图像/视频）按「所选模型 + 分辨率 + 清晰度 + 时长 + 副本数」估价。
-export function mediaNodeCreditCost({ media = {}, models = [], isVideo = false } = {}) {
+export function mediaNodeCreditCost({ media = {}, models = [], isVideo = false, referenceVideoSeconds = 0 } = {}) {
   const copies = safeCopies(media.copies);
   const model = findWorkflowModel(models, media.model) || findWorkflowModel(media.models, media.model);
   if (!model?.pricing) {
@@ -35,15 +35,16 @@ export function mediaNodeCreditCost({ media = {}, models = [], isVideo = false }
     resolution: media.resolution,
     quality: workflowQualityKey(media.quality),
     durationSec: Number(media.duration ?? media.durationSec) || 5,
+    // 参考视频（r2v 的视频输入）按模型最高档价计，与后端 CreditCalculator 同口径
+    referenceVideoSeconds,
     copies,
   });
 }
 
-// 音频节点按所选语音/音乐模型的「千字符/万字符」口径估价。
+// 音频节点按所选语音模型的「千字符/万字符」口径估价。
 export function audioNodeCreditCost({ media = {}, models = [] } = {}) {
   const copies = safeCopies(media.copies);
-  const isMusic = ["music", "音乐", "AI 音乐"].includes(media.tab);
-  const modelName = isMusic ? (media.musicModel || media.model) : media.model;
+  const modelName = media.model;
   const model = findWorkflowModel(models, modelName) || findWorkflowModel(media.models, modelName);
   if (!model?.pricing) {
     return (Number(media.points) || 20) * copies;

@@ -64,10 +64,13 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { createWorkflowRecord, getWorkflow, getWorkflowRun, listWorkflows, removeWorkflow, startWorkflowRun, updateWorkflowRecord } from "../api/workflows.js";
-import { uploadAsset } from "../api/assets.js";
+import { fetchAssets, uploadAsset } from "../api/assets.js";
 import { validateAssetFile } from "../lib/assetUpload.js";
-import { mediaUrl } from "../lib/media.js";
+import { MEDIA_THUMB_WIDTH, mediaUrl, storageKeyOf } from "../lib/media.js";
+import { MediaCover } from "../lib/MediaCover.jsx";
+import { resolveAudioOptions } from "../lib/voices.js";
 import SpecializedMediaNode from "./workflow/MediaGeneratorNode.jsx";
 import SpecializedAudioNode from "./workflow/AudioGeneratorNode.jsx";
 import SpecializedPromptNode from "./workflow/PromptNode.jsx";
@@ -76,10 +79,11 @@ import { WorkflowNodeContext } from "./workflow/WorkflowNodeContext.jsx";
 import { NodeCollapseButton, NodeDeleteButton, NodeLockButton, nodeCollapsedClass } from "./workflow/NodeCardParts.jsx";
 import { ImportReport } from "./workflow/ImportReport.jsx";
 import StableTextarea from "./workflow/StableTextarea.jsx";
-import { applyRunToCurrentNodes, applyWorkflowSnapshotToNodes, canConnectNodes, executeWorkflowRun, waitForWorkflowPoll, restoreWorkflowSnapshot, persistableWorkflowGraph as persistableGraph } from "./workflow/runtime.js";
+import { applyRunToCurrentNodes, applyWorkflowSnapshotToNodes, canConnectNodes, executeWorkflowRun, nodePreviewUrl, waitForWorkflowPoll, restoreWorkflowSnapshot, persistableWorkflowGraph as persistableGraph } from "./workflow/runtime.js";
 import { getWorkflowRuntimeSnapshot } from "../api/workflows.js";
 import { buildClipQueue } from "./workflow/timeline.js";
 import { buildTitleUpdateBody, isWorkflowTitleChanged, normalizeWorkflowTitle } from "../lib/workflowTitle.js";
+import { normalizeWorkflowVideoMode } from "../lib/modelCapabilities.js";
 import { graphVariableScopes } from "./workflow/variables.js";
 import { estimatedNodeHeight, placeQuickNode } from "./workflow/layout.js";
 import { autoArrange } from "./workflow/autoLayout.js";
@@ -210,25 +214,41 @@ function WorkflowThumbnail({ record, variant }) {
   );
 }
 
+// 生成类节点的输入端口（与快速创作的能力一致）：
+// 文本节点连到 prompt 端口作为提示词来源；图片/视频节点连到 reference/visual 端口作为参考素材。
+// 端口名保持不变是为了兼容已保存工作流里的连线 targetHandle。
+const MEDIA_NODE_INPUTS = [
+  { name: "prompt", label: "提示词", type: "STRING" },
+  { name: "reference", label: "参考素材", type: "MEDIA" },
+];
+const AUDIO_NODE_INPUTS = [
+  { name: "prompt", label: "提示词", type: "STRING" },
+  { name: "visual", label: "画面参考", type: "MEDIA" },
+];
+const EDITING_NODE_INPUTS = [
+  { name: "video", label: "视频素材", type: "VIDEO" },
+  { name: "audio", label: "音频素材", type: "AUDIO" },
+];
+
 const canvasQuickItems = [
-  { id: "text", name: "文本", kind: "MarkdownNote", icon: Type, tone: "yellow", fields: [{ label: "内容", value: "输入文本内容…", multiline: true }], outputs: [{ name: "TEXT", label: "文本", type: "STRING" }] },
+  { id: "text", name: "文本", kind: "MarkdownNote", icon: Type, tone: "yellow", fields: [{ label: "内容", value: "", placeholder: "输入文本内容…", multiline: true }], outputs: [{ name: "TEXT", label: "文本", type: "STRING" }] },
   { id: "table", name: "表格", kind: "DataTable", icon: Table2, tone: "blue", fields: [{ label: "用途", value: "分镜表" }, { label: "列", value: "镜号、画面、台词、时长" }], outputs: [{ name: "TABLE", label: "表格", type: "DATA" }] },
-  { id: "image", name: "图像", kind: "ImageGenerator", icon: Image, tone: "amber", outputs: [{ name: "IMAGE", label: "图像", type: "IMAGE" }] },
-  { id: "video", name: "视频", kind: "VideoGenerator", icon: Film, tone: "green", badge: "MiniMax H3", inputs: [{ name: "prompt", label: "提示词", type: "STRING" }, { name: "reference", label: "参考素材", type: "MEDIA" }], outputs: [{ name: "VIDEO", label: "视频", type: "VIDEO" }] },
-  { id: "audio", name: "音频", kind: "AudioGenerator", icon: Volume2, tone: "violet", inputs: [{ name: "input", label: "输入", type: "DATA" }], outputs: [{ name: "AUDIO", label: "音频", type: "AUDIO" }] },
-  { id: "editing", name: "视频剪辑", kind: "VideoEditing", icon: Clapperboard, tone: "blue", badge: "新", inputs: [{ name: "video", label: "视频素材", type: "VIDEO" }, { name: "audio", label: "音频素材", type: "AUDIO" }] },
+  { id: "image", name: "图像", kind: "ImageGenerator", icon: Image, tone: "amber", inputs: MEDIA_NODE_INPUTS, outputs: [{ name: "IMAGE", label: "图像", type: "IMAGE" }] },
+  { id: "video", name: "视频", kind: "VideoGenerator", icon: Film, tone: "green", inputs: MEDIA_NODE_INPUTS, outputs: [{ name: "VIDEO", label: "视频", type: "VIDEO" }] },
+  { id: "audio", name: "音频", kind: "AudioGenerator", icon: Volume2, tone: "violet", inputs: AUDIO_NODE_INPUTS, outputs: [{ name: "AUDIO", label: "音频", type: "AUDIO" }] },
+  { id: "editing", name: "视频剪辑", kind: "VideoEditing", icon: Clapperboard, tone: "blue", inputs: EDITING_NODE_INPUTS },
 ];
 
 const catalogGroups = [
   {
     name: "创意生成",
     items: [
-      { name: "文本", kind: "MarkdownNote", icon: Type, tone: "yellow", source: "canvas", fields: [{ label: "内容", value: "雨夜都市，慢速推镜，霓虹倒影", multiline: true }], outputs: [{ name: "TEXT", label: "提示词", type: "STRING" }] },
+      { name: "文本", kind: "MarkdownNote", icon: Type, tone: "yellow", source: "canvas", fields: [{ label: "内容", value: "", placeholder: "输入文本内容…", multiline: true }], outputs: [{ name: "TEXT", label: "提示词", type: "STRING" }] },
       { name: "表格", kind: "DataTable", icon: Table2, tone: "blue", source: "canvas", fields: [{ label: "用途", value: "分镜表" }, { label: "列", value: "镜号、画面、台词、时长" }], outputs: [{ name: "TABLE", label: "分镜表", type: "DATA" }] },
-      { name: "图像生成", kind: "ImageGenerator", icon: Image, tone: "amber", source: "canvas", outputs: [{ name: "IMAGE", label: "图像", type: "IMAGE" }] },
-      { name: "视频生成", kind: "VideoGenerator", icon: Film, tone: "green", source: "canvas", inputs: [{ name: "prompt", label: "提示词", type: "STRING" }, { name: "reference", label: "参考素材", type: "MEDIA" }], outputs: [{ name: "VIDEO", label: "视频", type: "VIDEO" }] },
-      { name: "音频生成", kind: "AudioGenerator", icon: Volume2, tone: "violet", source: "canvas", inputs: [{ name: "input", label: "输入", type: "DATA" }], outputs: [{ name: "AUDIO", label: "音频", type: "AUDIO" }] },
-      { name: "视频剪辑", kind: "VideoEditing", icon: Clapperboard, tone: "blue", source: "canvas", inputs: [{ name: "video", label: "视频素材", type: "VIDEO" }] },
+      { name: "图像生成", kind: "ImageGenerator", icon: Image, tone: "amber", source: "canvas", inputs: MEDIA_NODE_INPUTS, outputs: [{ name: "IMAGE", label: "图像", type: "IMAGE" }] },
+      { name: "视频生成", kind: "VideoGenerator", icon: Film, tone: "green", source: "canvas", inputs: MEDIA_NODE_INPUTS, outputs: [{ name: "VIDEO", label: "视频", type: "VIDEO" }] },
+      { name: "音频生成", kind: "AudioGenerator", icon: Volume2, tone: "violet", source: "canvas", inputs: AUDIO_NODE_INPUTS, outputs: [{ name: "AUDIO", label: "音频", type: "AUDIO" }] },
+      { name: "视频剪辑", kind: "VideoEditing", icon: Clapperboard, tone: "blue", source: "canvas", inputs: EDITING_NODE_INPUTS },
       { name: "参考音频", kind: "ReferenceAudio", icon: Volume2, tone: "violet", source: "canvas", outputs: [{ name: "AUDIO", label: "音频", type: "AUDIO" }], media: { type: "reference-audio", name: "尚未上传音频", url: "" } },
     ],
   },
@@ -537,7 +557,19 @@ function nodeOutputType(node) {
 }
 
 function isVisualReferenceNode(node) {
-  return ["IMAGE", "VIDEO"].includes(nodeOutputType(node));
+  // 音频生成节点输出也可作视频生成的参考素材（节奏/氛围参考，仅支持音频参考的模型生效）
+  return ["IMAGE", "VIDEO", "AUDIO"].includes(nodeOutputType(node));
+}
+
+// 文本节点（MarkdownNote/Prompt/表格）：连到生成节点时作为提示词补充，后端 planner 会拼接
+function isTextPromptNode(node) {
+  return ["MarkdownNote", "Prompt", "DataTable"].includes(node?.data?.kind)
+    || node?.data?.outputs?.some((port) => ["STRING", "DATA"].includes(port.type));
+}
+
+function nodeTextValue(node) {
+  const field = node?.data?.fields?.find((item) => item?.value);
+  return String(field?.value || node?.data?.prompt || "").trim();
 }
 
 const fallbackImageModels = ["GPT Image 2", "NanoBanana 2", "Seedream 5.0 Pro", "Midjourney 8.1"];
@@ -556,19 +588,19 @@ function audioModelNames(models) {
 
 function audioMedia(models) {
   const modelNames = audioModelNames(models);
+  // 语音参数与快速创作同源：默认音色/格式取自模型目录 audioOptions
+  const speechOptions = resolveAudioOptions({ models, modelName: modelNames[0]?.name });
   return {
     type: "audio",
-    tab: "配音",
     prompt: "",
-    lyrics: "",
     models: modelNames,
     model: modelNames[0]?.name,
     speechModel: modelNames[0]?.name,
-    musicModel: modelNames.find((model) => model.name.toLowerCase().includes("music"))?.name || "Music-3.0",
-    voice: "深情叙事者",
+    voiceId: speechOptions.defaultVoice,
+    format: speechOptions.defaultFormat,
     speed: 1,
-    emotion: "平静",
-    instrumental: true,
+    // 情感留空：快速创作不传该参数，工作台默认也不传，避免厂商因非法枚举拒绝请求
+    emotion: "",
     copies: 1,
     points: 20,
   };
@@ -590,16 +622,14 @@ function mediaNode(id, mediaType, position, models, options = {}) {
       source: "canvas",
       enabled: true,
       preview: options.preview,
-      inputs: options.inputs || (isVideo
-        ? [{ name: "prompt", label: "提示词", type: "STRING" }, { name: "reference", label: "参考素材", type: "MEDIA" }]
-        : [{ name: "prompt", label: "提示词", type: "STRING" }]),
+      inputs: options.inputs || MEDIA_NODE_INPUTS,
       outputs: [{ name: isVideo ? "VIDEO" : "IMAGE", label: isVideo ? "视频" : "图像", type: isVideo ? "VIDEO" : "IMAGE" }],
       media: {
         type: mediaType,
-        prompt: options.prompt || (isVideo ? "霓虹雨夜中，镜头跟随角色缓慢推进，电影感光线" : "电影级概念设计，清晰主体，统一光影与色彩"),
+        prompt: options.prompt || "",
         models: modelNames,
         model: options.model || modelNames[0]?.name,
-        mode: options.mode || (isVideo ? "全能参考" : "参考生成"),
+        mode: options.mode || (isVideo ? "参考视频" : "参考生成"),
         ratio: options.ratio || "16:9",
         resolution: options.resolution || (isVideo ? "2K" : "2K"),
         quality: "高",
@@ -721,7 +751,7 @@ function demoWorkflow(kind, models = []) {
       referenceAssetNode("first-frame", { x: 0, y: 0 }, referenceLibrary[0]),
       referenceAssetNode("last-frame", { x: 0, y: 330 }, referenceLibrary[1]),
       promptNode("brief", { x: 0, y: 660 }, "创意脚本", "同一场雨夜竞速：从首帧平滑过渡到尾帧，保持车辆、曝光、天气与电影感光线连续。"),
-      mediaNode("hero-video", "video", { x: 470, y: 170 }, models, { preview: "/media/comfy-racer-poster.webp", mode: "首尾帧", inputs: [{ name: "prompt", label: "提示词", type: "STRING" }, { name: "reference", label: "参考素材", type: "MEDIA" }] }),
+      mediaNode("hero-video", "video", { x: 470, y: 170 }, models, { preview: "/media/comfy-racer-poster.webp", mode: "参考帧", inputs: [{ name: "prompt", label: "提示词", type: "STRING" }, { name: "reference", label: "参考素材", type: "MEDIA" }] }),
       referenceAudioNode("reference-audio", { x: 470, y: 800 }),
       videoEditingNode("edit-video", { x: 940, y: 250 }, { inputs: [{ name: "video", label: "成片素材", type: "VIDEO" }], mode: "首尾拼接" }),
     ];
@@ -834,7 +864,9 @@ function ComfyField({ nodeId, field, index }) {
   const common = {
     className: "nodrag nowheel",
     value: field.value,
-    onChange: (event) => updateField(nodeId, index, event.target.value),
+    placeholder: field.placeholder,
+    // StableTextarea 的回调签名是 (value, event)，原生 input 是 (event)，这里统一兼容
+    onChange: (event) => updateField(nodeId, index, typeof event === "string" ? event : event?.target?.value),
     onPointerDown: (event) => event.stopPropagation(),
   };
   return (
@@ -867,7 +899,7 @@ function ReferenceAudioNode({ id, data, selected }) {
   return (
     <div className={`comfy-node reference-audio-node comfy-node--violet ${selected ? "comfy-node--selected" : ""} ${nodeCollapsedClass(data)}`}>
       <UnifiedHandles hasInput={false} hasOutput />
-      <header><NodeCollapseButton id={id} collapsed={data.collapsed} /><strong>{data.title || "参考音频"}</strong><Volume2 size={14} /><NodeLockButton id={id} locked={data.locked} /></header>
+      <header><NodeCollapseButton id={id} collapsed={data.collapsed} /><strong>{data.title || "参考音频"}</strong><Volume2 size={14} /><NodeLockButton id={id} locked={data.locked} /><NodeDeleteButton id={id} title={data.title || "参考音频"} locked={data.locked} /></header>
       <div className="reference-audio-node__body nodrag nowheel" onPointerDown={(event) => event.stopPropagation()}>
         <button className="reference-audio-node__upload" onClick={() => uploadRef.current?.click()}><Upload size={14} />{media.url ? "更换音频" : "上传参考音频"}</button>
         <div className={`reference-audio-node__preview ${media.url ? "has-audio" : ""}`}>
@@ -902,7 +934,7 @@ function ComfyNode({ id, data, selected }) {
   const fields = (data.fields && data.fields.length)
     ? data.fields
     : ["MarkdownNote", "Prompt"].includes(data.kind)
-      ? [{ label: "内容", value: data.prompt || data.media?.prompt || "输入文本内容…", multiline: true }]
+      ? [{ label: "内容", value: data.prompt || data.media?.prompt || "", placeholder: "输入文本内容…", multiline: true }]
       : [];
   return (
     <div className={`comfy-node comfy-node--${data.tone || "blue"} ${selected ? "comfy-node--selected" : ""} ${data.enabled === false ? "comfy-node--disabled" : ""} ${nodeCollapsedClass(data)}`}>
@@ -912,7 +944,8 @@ function ComfyNode({ id, data, selected }) {
         <strong>{data.title}</strong>
         <Icon size={14} />
         <NodeLockButton id={id} locked={data.locked} />
-      </header>
+        <NodeDeleteButton id={id} title={data.title} locked={data.locked} />
+        </header>
       {data.preview && (data.kind === "ReferenceAsset" ? <div className="comfy-node__asset-preview"><img src={data.preview} alt={`${data.title}预览`} />{data.assetType === "VIDEO" && <span><Film size={12} />视频素材</span>}</div> : <img className="comfy-node__preview" src={data.preview} alt="节点输入预览" />)}
       <div className="comfy-node__fields">
         {fields.map((field, index) => <ComfyField key={`${field.label}-${index}`} nodeId={id} field={field} index={index} />)}
@@ -1067,6 +1100,18 @@ function WorkflowLibrary({ records, status, onOpen, onCreate, onImport, onOpenTe
   );
 }
 
+// 端口补齐：旧工作流里图像节点没有输入端口、音频节点是单个 DATA 口、剪辑节点只有视频口，
+// 加载时统一为新端口定义，保证「文本→图像/音频」「图片→图像/音频」「音频→剪辑」都能连线。
+function ensurePorts(data, expected) {
+  const current = Array.isArray(data.inputs) ? data.inputs.filter(Boolean) : [];
+  const names = new Set(current.map((port) => port.name || port.id));
+  const missing = expected.filter((port) => !names.has(port.name));
+  // 旧版音频节点用 { name: "input", type: "DATA" } 兜底口，语义相同可以替换掉
+  const legacyOnly = current.length === 1 && current[0].type === "DATA";
+  if (!missing.length && !legacyOnly) return current;
+  return (legacyOnly ? [] : current).concat(missing.map((port) => ({ ...port })));
+}
+
 function hydrateStoredNode(node, models) {
   if (!node || node.type === "groupFrame") return node;
   const data = { ...(node.data || {}), runtime: undefined };
@@ -1074,7 +1119,7 @@ function hydrateStoredNode(node, models) {
   data.kind = kind;
   data.icon = resolveNodeIcon(data.icon, kind);
   if (["MarkdownNote", "Prompt"].includes(kind) && (!Array.isArray(data.fields) || !data.fields.length)) {
-    data.fields = [{ label: "内容", value: data.prompt || data.media?.prompt || "输入文本内容…", multiline: true }];
+    data.fields = [{ label: "内容", value: data.prompt || data.media?.prompt || "", placeholder: "输入文本内容…", multiline: true }];
   }
   if (["ImageGenerator", "VideoGenerator"].includes(kind)) {
     const isVideo = kind === "VideoGenerator";
@@ -1084,6 +1129,7 @@ function hydrateStoredNode(node, models) {
       ...(data.media || {}),
       models: data.media?.models?.length ? data.media.models : fallbackMedia.models,
     };
+    data.inputs = ensurePorts(data, MEDIA_NODE_INPUTS);
   } else if (kind === "AudioGenerator") {
     const fallbackAudio = audioMedia(models);
     data.media = {
@@ -1091,26 +1137,31 @@ function hydrateStoredNode(node, models) {
       ...(data.media || {}),
       models: data.media?.models?.length ? data.media.models : fallbackAudio.models,
     };
+    data.inputs = ensurePorts(data, AUDIO_NODE_INPUTS);
   } else if (kind === "VideoEditing") {
     const fallbackEditing = videoEditingNode("preview", { x: 0, y: 0 }).data.editing;
     data.editing = {
       ...fallbackEditing,
       ...(data.editing || {}),
     };
+    data.inputs = ensurePorts(data, EDITING_NODE_INPUTS);
   }
   const defaultWidth =
     kind === "VideoGenerator"
       ? 356
       : kind === "ImageGenerator"
         ? 332
-        : ["AudioGenerator", "VideoEditing"].includes(kind)
-          ? 382
-          : undefined;
+        : kind === "AudioGenerator"
+          // 音频节点控制行要同排容纳「模型 | 音色摘要 | 份数」，比视频剪辑节点略宽
+          ? 400
+          : kind === "VideoEditing"
+            ? 382
+            : undefined;
   const style = defaultWidth && !node.style?.width ? { ...(node.style || {}), width: defaultWidth } : node.style;
   return { ...node, type: "comfy", style, data };
 }
 
-function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, onModelChange, onRecordChange, appendRequest, onAppendApplied }) {
+function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, onRecordChange, appendRequest, onAppendApplied }) {
   const [nodes, setNodes, onNodesChange] = useNodesState(() => (initialGraph.nodes || []).map((node) => hydrateStoredNode(node, models)));
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialGraph.edges || []);
   const [canvasTool, setCanvasTool] = useState("select");
@@ -1125,11 +1176,15 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
   const [toast, setToast] = useState("");
   const [addMenu, setAddMenu] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
+  const [edgeMenu, setEdgeMenu] = useState(null);
   const [comfyMenuOpen, setComfyMenuOpen] = useState(false);
   const [selectedNodeIds, setSelectedNodeIds] = useState([]);
   const [tidyMenuOpen, setTidyMenuOpen] = useState(false);
   const [includeConnected, setIncludeConnected] = useState(false);
   const [referencePickerNodeId, setReferencePickerNodeId] = useState(null);
+  // 参考素材弹框「素材库」分区：真实素材库数据（null=未加载），只列图片/视频
+  const [referenceAssets, setReferenceAssets] = useState(null);
+  const [referenceAssetsError, setReferenceAssetsError] = useState("");
   const [importReport, setImportReport] = useState(null);
   // 标题行内重命名：草稿 + 编辑态，提交后回写 record 并按需落库
   const [editingTitle, setEditingTitle] = useState(false);
@@ -1145,6 +1200,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
   const zoomLabelRef = useRef(null);
   const runLock = useRef(false);
   const runAbortRef = useRef(null);
+  const notifiedFailuresRef = useRef(new Set());
   const lastRunIdRef = useRef(null);
   const referenceUploadRef = useRef(null);
   const stageRef = useRef(null);
@@ -1214,7 +1270,13 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
   }, [nodes]);
   const snapshotGraph = useCallback(() => ({ nodes: nodes.map((node) => ({ ...node, position: { ...node.position }, data: { ...node.data } })), edges: edges.map((edge) => ({ ...edge })) }), [nodes, edges]);
   const rememberGraph = useCallback(() => { historyRef.current = [...historyRef.current.slice(-39), snapshotGraph()]; futureRef.current = []; }, [snapshotGraph]);
-  const showToast = useCallback((message, duration = 1800) => { setToast(message); window.setTimeout(() => setToast(""), duration); }, []);
+  // showToast 的清理定时器：新 toast 先清旧的，避免前一条的定时器把后一条提前清空（挂引用后马上点生成必现）
+  const toastTimer = useRef(null);
+  const showToast = useCallback((message, duration = 1800) => {
+    setToast(message);
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(""), duration);
+  }, []);
   // TC-008 环路高亮的渲染期派生：仅在渲染层叠加 className/样式，不触碰 nodes/edges 状态，
   // 因此不进入撤销栈，也不会随 persistableWorkflowGraph / 序列化导出污染画布数据
   const displayNodes = useMemo(() => {
@@ -1303,7 +1365,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     rememberGraph();
     const id = `node-${Date.now()}-${Math.round(Math.random() * 1000)}`;
     const resolvedMedia = item.media || (item.kind === "AudioGenerator" ? audioMedia(models) : ["ImageGenerator", "VideoGenerator"].includes(item.kind) ? mediaNode("preview", item.kind === "VideoGenerator" ? "video" : "image", { x: 0, y: 0 }, models).data.media : undefined);
-    const nextNode = { id, type: "comfy", position: position || { x: 260 + nodes.length * 22, y: 220 + (nodes.length % 4) * 88 }, style: { width: item.kind === "VideoGenerator" ? 356 : item.kind === "ImageGenerator" ? 332 : ["AudioGenerator", "VideoEditing"].includes(item.kind) ? 382 : 270 }, data: { title: item.name, kind: item.kind, icon: item.icon, tone: item.tone, fields: (item.fields || []).map((field) => ({ ...field })), inputs: (item.inputs || []).map((port) => ({ ...port })), outputs: (item.outputs || []).map((port) => ({ ...port })), enabled: true, source: item.source || "comfy-core", media: resolvedMedia ? { ...resolvedMedia, models: [...(resolvedMedia.models || [])] } : undefined, editing: item.kind === "VideoEditing" ? videoEditingNode("preview", { x: 0, y: 0 }).data.editing : item.editing, preview: item.preview || (item.kind === "LoadImage" ? "/comfyui-workflows/minimax-h3/transparent_rgb_gaming_mouse.png" : undefined) } };
+    const nextNode = { id, type: "comfy", position: position || { x: 260 + nodes.length * 22, y: 220 + (nodes.length % 4) * 88 }, style: { width: item.kind === "VideoGenerator" ? 356 : item.kind === "ImageGenerator" ? 332 : item.kind === "AudioGenerator" ? 400 : item.kind === "VideoEditing" ? 382 : 270 }, data: { title: item.name, kind: item.kind, icon: item.icon, tone: item.tone, fields: (item.fields || []).map((field) => ({ ...field })), inputs: (item.inputs || []).map((port) => ({ ...port })), outputs: (item.outputs || []).map((port) => ({ ...port })), enabled: true, source: item.source || "comfy-core", media: resolvedMedia ? { ...resolvedMedia, models: [...(resolvedMedia.models || [])] } : undefined, editing: item.kind === "VideoEditing" ? videoEditingNode("preview", { x: 0, y: 0 }).data.editing : item.editing, preview: item.preview || (item.kind === "LoadImage" ? "/comfyui-workflows/minimax-h3/transparent_rgb_gaming_mouse.png" : undefined) } };
     // 落位一律做重叠避让（需求 9.1.4）：默认级联位置与拖放点都可能压住已有卡片，
     // 叠压的后画卡片会盖住先画节点的连线句柄，导致无法连线
     const preferred = position || { x: 260 + nodes.length * 22, y: 220 + (nodes.length % 4) * 88 };
@@ -1509,18 +1571,13 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     setSaved(false);
   }, [setNodes]);
 
-  const updateNodeMedia = useCallback((nodeId, patch) => {
+  const updateNodeMedia = useCallback((nodeId, patch, { silent } = {}) => {
     setNodes((items) => items.map((node) => {
       if (node.id !== nodeId) return node;
       const media = { ...node.data.media, ...patch };
       if (patch.durationSec !== undefined) media.duration = patch.durationSec;
-      if (node.data.kind === "AudioGenerator") {
-        if (patch.tab === "music") {
-          media.speechModel = node.data.media?.speechModel || node.data.media?.model;
-          media.model = media.musicModel;
-        } else if (patch.tab === "speech") media.model = media.speechModel || media.model;
-        else if (patch.musicModel !== undefined && ["music", "音乐"].includes(media.tab)) media.model = patch.musicModel;
-        else if (patch.model !== undefined && !["music", "音乐"].includes(media.tab)) media.speechModel = patch.model;
+      if (node.data.kind === "AudioGenerator" && patch.model !== undefined) {
+        media.speechModel = patch.model;
       }
       return { ...node, data: {
         ...node.data,
@@ -1528,7 +1585,8 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
         media,
       } };
     }));
-    setSaved(false);
+    // silent：打开画布时按模型能力自动收敛取值的回写，不是用户编辑，不标“有未保存更改”
+    if (!silent) setSaved(false);
   }, [setNodes]);
 
   const selectOutput = useCallback((nodeId, index) => updateNodeMedia(nodeId, { selectedOutputIndex: index, outputIndex: index }), [updateNodeMedia]);
@@ -1619,26 +1677,90 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     return runGraph(nodeId);
   }, [nodes, edges, selectedModel, record, running, setNodes, showToast]);
 
-  const getReferences = useCallback((targetId) => edges
-    .filter((edge) => edge.target === targetId && isVisualReferenceNode(nodes.find((node) => node.id === edge.source)))
+  const getReferences = useCallback((targetId) => {
+    const edgeRefs = edges
+      .filter((edge) => edge.target === targetId && isVisualReferenceNode(nodes.find((node) => node.id === edge.source)))
+      .map((edge) => {
+        const source = nodes.find((node) => node.id === edge.source);
+        const type = nodeOutputType(source);
+        // 上游视频的时长：生成产物优先取运行结果的 metadata.durationSec，回落到节点设置的时长。
+        // 「参考视频」模式按秒计费，估算需要它。
+        const outputMeta = source?.data?.runtime?.outputs?.[0]?.metadata;
+        const durationSec = Number(outputMeta?.durationSec)
+          || Number(source?.data?.media?.duration)
+          || Number(source?.data?.media?.durationSec)
+          || 0;
+        return {
+          edgeId: edge.id,
+          sourceId: edge.source,
+          // 后端 planner 的 staticRef 只认 data.assetKey/storageKey（参考素材节点），生成节点输出走 dependsOn
+          staticRef: Boolean(source?.data?.assetKey || source?.data?.storageKey),
+          // 视频生成节点 → 视频生成节点：默认取上游视频尾帧（参考视频档无视频输入时作衔接参考图）；
+          // 「参考视频」档且有整段视频透传时由后端按 videoRefMode 分流
+          chainFrame: source?.data?.kind === "VideoGenerator",
+          title: source?.data?.title || (type === "VIDEO" ? "视频参考" : type === "AUDIO" ? "音频参考" : "图像参考"),
+          type,
+          durationSec,
+          preview: nodePreviewUrl(source) || "",
+        };
+      });
+    // 素材库/本地上传直接附加的参考素材（media.referenceAssets，不经画布连线），
+    // 排在连线引用之后；后端 planner 同序（静态引用块内先连线后直附）
+    const target = nodes.find((node) => node.id === targetId);
+    const directRefs = (Array.isArray(target?.data?.media?.referenceAssets) ? target.data.media.referenceAssets : [])
+      .filter((item) => item?.storageKey && !String(item.storageKey).startsWith("blob:"))
+      .map((item) => {
+        const raw = String(item.type || "image").toLowerCase();
+        const type = raw === "video" ? "VIDEO" : raw === "audio" ? "AUDIO" : "IMAGE";
+        return {
+          edgeId: `direct-${item.storageKey}`,
+          sourceId: `direct:${item.storageKey}`,
+          storageKey: item.storageKey,
+          // 与连线的静态引用同等对待（后端 referenceAssets 也并入 staticRefs）
+          staticRef: true,
+          chainFrame: false,
+          direct: true,
+          title: item.title || (type === "VIDEO" ? "视频参考" : type === "AUDIO" ? "音频参考" : "图像参考"),
+          type,
+          durationSec: 0,
+          // 预览每次用原始 key 重建（带当前 token），保存的图 JSON 里不落死 URL
+          preview: item.posterKey ? mediaUrl(item.posterKey, { w: MEDIA_THUMB_WIDTH }) : "",
+          src: mediaUrl(item.storageKey),
+        };
+      });
+    return [...edgeRefs, ...directRefs];
+  }, [edges, nodes]);
+
+  const getPromptSupplements = useCallback((targetId) => edges
+    .filter((edge) => edge.target === targetId && isTextPromptNode(nodes.find((node) => node.id === edge.source)))
     .map((edge) => {
       const source = nodes.find((node) => node.id === edge.source);
-      const type = nodeOutputType(source);
       return {
         edgeId: edge.id,
         sourceId: edge.source,
-        title: source?.data?.title || (type === "VIDEO" ? "视频参考" : "图像参考"),
-        type,
-        preview: source?.data?.preview || (type === "VIDEO" ? "/media/wan-22-poster.webp" : "/comfyui-workflows/minimax-h3/transparent_rgb_gaming_mouse.png"),
+        title: source?.data?.title || "文本",
+        text: nodeTextValue(source),
       };
     }), [edges, nodes]);
 
   const removeReference = useCallback((targetId, sourceId) => {
+    // 直接附加在节点上的参考素材（不经连线）：sourceId 形如 direct:<storageKey>
+    if (typeof sourceId === "string" && sourceId.startsWith("direct:")) {
+      const storageKey = sourceId.slice(7);
+      const target = nodes.find((node) => node.id === targetId);
+      const list = Array.isArray(target?.data?.media?.referenceAssets) ? target.data.media.referenceAssets : [];
+      if (list.some((item) => item?.storageKey === storageKey)) {
+        rememberGraph();
+        updateNodeMedia(targetId, { referenceAssets: list.filter((item) => item?.storageKey !== storageKey) });
+        showToast("已移除参考素材");
+      }
+      return;
+    }
     rememberGraph();
-    setEdges((items) => items.filter((edge) => !(edge.target === targetId && edge.source === sourceId && isVisualReferenceNode(nodes.find((node) => node.id === edge.source)))));
+    setEdges((items) => items.filter((edge) => !(edge.target === targetId && edge.source === sourceId)));
     setSaved(false);
-    showToast("已移除参考素材及对应连线");
-  }, [nodes, rememberGraph, setEdges, showToast]);
+    showToast("已移除连线");
+  }, [nodes, rememberGraph, setEdges, setSaved, showToast, updateNodeMedia]);
 
   const attachReference = useCallback((targetId, sourceId) => {
     if (edges.some((edge) => edge.target === targetId && edge.source === sourceId)) return;
@@ -1660,42 +1782,45 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     setSaved(false);
   }, [edges, nodes, rememberGraph, setEdges]);
 
+  // 素材库/本地上传的参考素材：直接附加在节点 media.referenceAssets 上（显示为 + 号后面的缩略图 chip），
+  // 不再落画布素材节点+连线；左侧输入点的连线留给画布节点之间的引用
   const addReferenceAsset = useCallback((targetId, asset) => {
-    const existing = nodes.find((node) => node.data?.assetKey === asset.key);
-    if (existing) {
-      attachReference(targetId, existing.id);
-      return;
-    }
     const target = nodes.find((node) => node.id === targetId);
     if (!target) return;
+    // 图像节点只收图片参考：与节点 chip 过滤、后端 acceptRef 同口径，防止存入不可见/运行时被丢的引用
+    if (asset.type === "VIDEO" && (target.data?.kind === "ImageGenerator" || target.data?.media?.type === "image")) {
+      showToast("图像节点只能添加图片参考素材");
+      return;
+    }
+    // 参考帧档只吃显式首/尾帧（media.frames），与参考素材互斥（对齐小云雀）
+    const isVideoNode = target.data?.kind === "VideoGenerator" || target.data?.media?.type === "video";
+    if (isVideoNode && normalizeWorkflowVideoMode(target.data?.media?.mode) === "参考帧") {
+      showToast("参考帧模式只使用首帧/尾帧图框，请先切回「参考视频」模式再添加参考素材");
+      return;
+    }
+    const list = Array.isArray(target.data?.media?.referenceAssets) ? target.data.media.referenceAssets : [];
+    if (list.some((item) => item?.storageKey === asset.key)) {
+      showToast("该素材已在参考列表中");
+      return;
+    }
     rememberGraph();
-    const attachedCount = edges.filter((edge) => edge.target === targetId && isVisualReferenceNode(nodes.find((node) => node.id === edge.source))).length;
-    const createdReferenceCount = nodes.filter((node) => node.data?.kind === "ReferenceAsset" && node.data?.assetKey && !["racer-first", "racer-last"].includes(node.data.assetKey)).length;
-    const sourceId = `reference-asset-${Date.now()}-${Math.round(Math.random() * 1000)}`;
-    const sourceNode = referenceAssetNode(sourceId, {
-      x: target.position.x - 860 - Math.floor(createdReferenceCount / 2) * 370,
-      y: target.position.y + (attachedCount % 2) * 310,
-    }, asset);
-    setNodes((items) => [...items, sourceNode]);
-    setEdges((items) => addEdge({
-      id: `reference-${sourceId}-${targetId}`,
-      source: sourceId,
-      sourceHandle: "output",
-      target: targetId,
-      targetHandle: "input",
-      type: "bezier",
-      markerEnd: { type: MarkerType.ArrowClosed, color: edgeColor(asset.type), width: 14, height: 14 },
-      style: { stroke: edgeColor(asset.type), strokeWidth: 2.2 },
-    }, items));
-    setSaved(false);
-    showToast(`已创建${asset.type === "VIDEO" ? "视频" : "图片"}素材节点并完成引用`);
-    window.setTimeout(() => flowInstance?.fitView({ padding: 0.14, duration: 320 }), 80);
-  }, [attachReference, edges, flowInstance, nodes, rememberGraph, setEdges, setNodes, showToast]);
+    updateNodeMedia(targetId, {
+      referenceAssets: [...list, {
+        storageKey: asset.key,
+        title: asset.title || "参考素材",
+        type: asset.type === "VIDEO" ? "video" : asset.type === "AUDIO" ? "audio" : "image",
+        // 只存原始 key：预览地址渲染时用 mediaUrl 重建（带当前 token），保存的图里不落死 URL
+        posterKey: asset.posterKey || storageKeyOf(asset.preview || ""),
+      }],
+    });
+    showToast(`已添加${asset.type === "VIDEO" ? "视频" : asset.type === "AUDIO" ? "音频" : "图片"}参考素材`);
+  }, [nodes, rememberGraph, setNodes, showToast, updateNodeMedia]);
 
-  const handleSelectionChange = useCallback(({ nodes: selectedNodes }) => {
+  const handleSelectionChange = useCallback(({ nodes: selectedNodes, edges: selectedEdges }) => {
     const nextIds = selectedNodes.map((node) => node.id);
     setSelectedNodeIds((currentIds) => currentIds.length === nextIds.length && currentIds.every((id, index) => id === nextIds[index]) ? currentIds : nextIds);
     if (nextIds.length < 2) setTidyMenuOpen(false);
+    if (selectedEdges && !selectedEdges.length) setEdgeMenu(null);
   }, []);
 
   const fitOptions = useMemo(() => ({ padding: 0.13, nodes: focusNodes }), [focusNodes]);
@@ -1824,13 +1949,78 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     toggleLock,
     toggleCollapse,
     getReferences,
+    getPromptSupplements,
     removeReference,
     openReferencePicker: setReferencePickerNodeId,
     running,
     models,
-  }), [nodes, edges, updateNodeMedia, updatePrompt, updateClips, selectOutput, generateNodeMedia, showToast, removeNodeById, uploadAudio, getClips, getEditingSources, toggleLock, toggleCollapse, getReferences, removeReference, running, models]);
+  }), [nodes, edges, updateNodeMedia, updatePrompt, updateClips, selectOutput, generateNodeMedia, showToast, removeNodeById, uploadAudio, getClips, getEditingSources, toggleLock, toggleCollapse, getReferences, getPromptSupplements, removeReference, running, models]);
 
-  const canvasReferenceNodes = useMemo(() => nodes.filter((node) => node.id !== referencePickerNodeId && node.data?.preview && node.data?.outputs?.some((port) => ["IMAGE", "VIDEO"].includes(port.type))), [nodes, referencePickerNodeId]);
+  const canvasReferenceNodes = useMemo(() => nodes.filter((node) => node.id !== referencePickerNodeId && nodePreviewUrl(node) && node.data?.outputs?.some((port) => ["IMAGE", "VIDEO", "AUDIO"].includes(port.type))), [nodes, referencePickerNodeId]);  // 当前弹框目标节点已直接附加的参考素材 key（media.referenceAssets）
+  const directReferenceKeys = useMemo(() => new Set((nodes.find((node) => node.id === referencePickerNodeId)?.data?.media?.referenceAssets || []).map((item) => item?.storageKey)), [nodes, referencePickerNodeId]);
+  // 图像节点只收图片参考（节点 chip 与后端 acceptRef 同口径），视频节点图/视/音都可（音频按模型能力生效）
+  const pickerTarget = nodes.find((node) => node.id === referencePickerNodeId);
+  const pickerIsImageNode = pickerTarget?.data?.kind === "ImageGenerator" || pickerTarget?.data?.media?.type === "image";
+  // 视频节点的档位：参考帧档只吃显式首/尾帧（media.frames），参考素材入口直接不弹；
+  // 参考视频档允许 图片+视频+音频（对齐小云雀全模态参考）
+  const pickerIsFramesMode = Boolean(pickerTarget) && !pickerIsImageNode
+    && normalizeWorkflowVideoMode(pickerTarget?.data?.media?.mode) === "参考帧";
+  const pickerAcceptsVideo = !pickerIsImageNode && !pickerIsFramesMode;
+  const pickerAcceptsAudio = pickerAcceptsVideo;
+  const pickerAssetOptions = useMemo(() => (referenceAssets || []).filter((asset) => {
+    if (!pickerAcceptsVideo && asset.type === "VIDEO") return false;
+    if (!pickerAcceptsAudio && asset.type === "AUDIO") return false;
+    return true;
+  }), [referenceAssets, pickerAcceptsVideo, pickerAcceptsAudio]);
+  // 画布素材按档位过滤：图像节点只显示图片产出；视频参考帧档不弹 picker（上游由显式图框处理）
+  const pickerCanvasNodes = useMemo(() => canvasReferenceNodes.filter((node) => {
+    const type = node.data.assetType || node.data.outputs?.find((port) => ["IMAGE", "VIDEO", "AUDIO"].includes(port.type))?.type || "IMAGE";
+    if (type === "AUDIO") return pickerAcceptsAudio;
+    if (type === "VIDEO") return pickerAcceptsVideo;
+    return true;
+  }), [canvasReferenceNodes, pickerAcceptsVideo, pickerAcceptsAudio]);
+  // 参考素材类型随档位收敛（与小云雀一致）：
+  //   参考视频 —— 图片+视频(+音频) 混合参考（整段视频保留动作/运镜，图片定人物/风格，音频定节奏）
+  //   参考帧 / 图像节点 —— 不弹参考素材选择器（首尾帧用显式图框，图像节点只收图片）
+
+  // 弹框打开时拉真实素材库（我的素材），取图片/视频/音频；选中后经 addReferenceAsset 直接附加到节点
+  useEffect(() => {
+    if (!referencePickerNodeId) return undefined;
+    let cancelled = false;
+    setReferenceAssetsError("");
+    fetchAssets()
+      .then((items) => {
+        if (cancelled) return;
+        setReferenceAssets((items || [])
+          .filter((item) => ["image", "video", "audio"].includes(item.kind || item.type))
+          .map((item) => {
+            const kind = item.kind || item.type;
+            const isVideo = kind === "video";
+            const isAudio = kind === "audio";
+            const posterKey = item.posterKey || item.poster || "";
+            // 后端对未出海报的视频会把 poster 记成视频本身，当海报用 <img> 会挂；这类直接渲染 <video> 取首帧
+            const hasImagePoster = posterKey && !/\.(mp4|webm|mov|m4v)(\?|$)/i.test(posterKey);
+            const src = mediaUrl(item.src || item.storageKey);
+            const title = item.title || item.name || "未命名素材";
+            return {
+              key: item.storageKey,
+              title,
+              type: isVideo ? "VIDEO" : isAudio ? "AUDIO" : "IMAGE",
+              // 原始海报 key 透传：附加到节点时只存 key，预览渲染时再重建带 token 的地址
+              posterKey: hasImagePoster ? posterKey : "",
+              preview: hasImagePoster ? mediaUrl(posterKey, { w: MEDIA_THUMB_WIDTH }) : "",
+              url: src,
+              cover: { type: isVideo ? "video" : isAudio ? "audio" : "image", title, thumb: hasImagePoster ? mediaUrl(posterKey, { w: MEDIA_THUMB_WIDTH }) : "", src },
+            };
+          }));
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setReferenceAssets([]);
+        setReferenceAssetsError(error.message || "素材库加载失败");
+      });
+    return () => { cancelled = true; };
+  }, [referencePickerNodeId]);
 
   // 节点卡片里选的模型（按名字）→ 模型 id；目录里找不到返回 undefined
   function nodeModelIdOf(nodeId) {
@@ -1854,6 +2044,21 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     const modelId = nodeModelId || Number(selectedModel);
     if (!modelId) {
       showToast(onlyNode ? "该节点没有可用模型，请在卡片里选一个模型" : "请先选择运行模型", 2800);
+      return;
+    }
+    // 参考帧（i2v）校验：没有任何首帧来源时后端会降级成参考生视频，运行前先拦住（单节点与整图运行都查）。
+    // 首帧来源 = 显式图框（media.frames.firstKey），或连入的图片 / 上游视频生成节点（取其尾帧）；尾帧可选
+    const framesTargets = onlyNode
+      ? nodes.filter((node) => node.id === onlyNode)
+      : nodes.filter((node) => node.data?.enabled !== false);
+    const framesMissing = framesTargets.find((node) => {
+      const isVideoNode = node.data?.kind === "VideoGenerator" || node.data?.media?.type === "video";
+      if (!isVideoNode || normalizeWorkflowVideoMode(node.data?.media?.mode) !== "参考帧") return false;
+      if (node.data?.media?.frames?.firstKey) return false;
+      return !getReferences(node.id).some((reference) => reference.type === "IMAGE" || reference.chainFrame);
+    });
+    if (framesMissing) {
+      showToast(`「${framesMissing.data?.title || "视频节点"}」为参考帧模式，请设置首帧图（图框选图或连接图片/上游视频取其尾帧）`, 3600);
       return;
     }
     if (runLock.current) return;
@@ -1902,13 +2107,21 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
         },
         onRun: (run) => {
           lastRunIdRef.current = run.id;
+          (run.steps || []).filter((step) => ["FAILED", "BLOCKED"].includes(step.status)).forEach((step) => {
+            const key = `${run.id}:${step.nodeId}`;
+            if (notifiedFailuresRef.current.has(key)) return;
+            notifiedFailuresRef.current.add(key);
+            showToast(`「${step.title || step.nodeId}」${step.errorMessage || (step.status === "BLOCKED" ? "上游节点未成功" : "生成失败")}`, 3600);
+          });
           applyRunToCurrentNodes(setNodes, run);
           setRunProgress(run.progress || 0);
           setRunTotal(run.total || 1);
         },
       });
       if (controller.signal.aborted || !latest) return;
-      if (latest.status === "SUCCEEDED") showToast(onlyNode ? "节点已生成" : "工作流运行完成", 3200);
+      if (latest.status === "CANCELLED") {
+        // 已取消：不弹失败类提示
+      } else if (latest.status === "SUCCEEDED") showToast(onlyNode ? "节点已生成" : "工作流运行完成", 3200);
       else if (latest.status === "PARTIAL_FAILED") showToast("部分节点失败，已保留成功结果", 3600);
       else showToast(latest.errorMessage || "工作流运行失败", 3600);
     } catch (error) {
@@ -2149,14 +2362,6 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
             </div>
           </Panel>
           <Panel position="top-right" className="flow-toolbar">
-            <div className="workflow-model-select">
-              <DemoSelect
-                ariaLabel="工作流运行模型"
-                value={selectedModel}
-                onChange={(val) => onModelChange(val)}
-                options={models.map((model) => ({ value: model.id, label: model.name }))}
-              />
-            </div>
             <button onClick={() => fileRef.current?.click()}><Upload size={15} /> 导入</button>
             <button onClick={exportWorkflowFile}><Download size={15} /> 导出</button>
             <button onClick={saveWorkflow}><Save size={15} /> 保存</button>
@@ -2165,42 +2370,53 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
           </Panel>
         </ReactFlow></WorkflowNodeContext.Provider></NodeEditContext.Provider>
         {referencePickerNodeId && <div className="reference-picker nodrag nowheel" role="dialog" aria-modal="true" aria-label="添加参考素材" onMouseDown={(event) => event.stopPropagation()}>
-          <header><div><strong>添加参考素材</strong><small>图片和视频统一连接到节点左侧输入点</small></div><button aria-label="关闭参考素材选择" onClick={() => setReferencePickerNodeId(null)}><X size={15} /></button></header>
+          <header><div><strong>添加参考素材</strong><small>素材库/本地上传直接加入节点；画布素材通过连线引用</small>{pickerIsImageNode ? <small className="reference-picker__quota">参考图 ≤30 张</small> : pickerAcceptsVideo && <small className="reference-picker__quota">参考视频 ≤10 段 / 共 30s · 参考图 ≤30 张{pickerAcceptsAudio ? " · 参考音频 ≤10 段" : ""}</small>}</div><button aria-label="关闭参考素材选择" onClick={() => setReferencePickerNodeId(null)}><X size={15} /></button></header>
           <div className="reference-picker__scroll">
             <section>
-              <div className="reference-picker__section-title"><strong>画布素材</strong><span>{canvasReferenceNodes.length} 项</span></div>
-              {canvasReferenceNodes.length ? <div className="reference-picker__grid">{canvasReferenceNodes.map((node) => {
-                const type = node.data.assetType || node.data.outputs?.find((port) => ["IMAGE", "VIDEO"].includes(port.type))?.type || "IMAGE";
+              <div className="reference-picker__section-title"><strong>画布素材</strong><span>{pickerCanvasNodes.length} 项</span></div>
+              {pickerCanvasNodes.length ? <div className="reference-picker__grid">{pickerCanvasNodes.map((node) => {
+                const type = node.data.assetType || node.data.outputs?.find((port) => ["IMAGE", "VIDEO", "AUDIO"].includes(port.type))?.type || "IMAGE";
                 const attached = edges.some((edge) => edge.source === node.id && edge.target === referencePickerNodeId);
                 return <button className={attached ? "is-selected" : ""} key={node.id} onClick={() => attached ? removeReference(referencePickerNodeId, node.id) : attachReference(referencePickerNodeId, node.id)}>
-                  <img src={node.data.preview} alt={node.data.title} /><span>{type === "VIDEO" ? <Film size={11} /> : <Image size={11} />}{node.data.title}</span><b>{attached ? "已引用" : "引用"}</b>
+                  <img src={nodePreviewUrl(node)} alt={node.data.title} /><span>{type === "VIDEO" ? <Film size={11} /> : type === "AUDIO" ? <Music2 size={11} /> : <Image size={11} />}{node.data.title}</span><b>{attached ? "已引用" : "引用"}</b>
                 </button>;
-              })}</div> : <p className="reference-picker__empty">画布中还没有可引用的图片或视频。</p>}
+              })}</div> : <p className="reference-picker__empty">画布中还没有可引用的图片、视频或音频。</p>}
             </section>
             <section>
-              <div className="reference-picker__section-title"><strong>素材库</strong><span>选择后自动创建素材节点</span></div>
-              <div className="reference-picker__grid">{referenceLibrary.map((asset) => {
-                const existing = nodes.find((node) => node.data?.assetKey === asset.key);
-                const attached = existing && edges.some((edge) => edge.source === existing.id && edge.target === referencePickerNodeId);
-                return <button className={attached ? "is-selected" : ""} key={asset.key} onClick={() => attached ? removeReference(referencePickerNodeId, existing.id) : addReferenceAsset(referencePickerNodeId, asset)}>
-                  <img src={asset.preview} alt={asset.title} /><span>{asset.type === "VIDEO" ? <Film size={11} /> : <Image size={11} />}{asset.title}</span><b>{attached ? "已引用" : existing ? "引用" : "添加并引用"}</b>
-                </button>;
-              })}</div>
+              <div className="reference-picker__section-title"><strong>素材库</strong><span>来自「我的素材」，选择后直接加入节点参考</span></div>
+              {referenceAssetsError ? <p className="reference-picker__empty">素材库加载失败：{referenceAssetsError}</p>
+                : referenceAssets === null ? <p className="reference-picker__empty">正在读取素材库…</p>
+                : pickerAssetOptions.length === 0 ? <p className="reference-picker__empty">{pickerAcceptsVideo ? "素材库还没有图片、视频或音频，可点下方「本地上传」或到「我的素材」页上传。" : "素材库还没有图片素材，可点下方「本地上传」或到「我的素材」页上传。"}</p>
+                : <div className="reference-picker__grid">{pickerAssetOptions.map((asset) => {
+                  // 旧画布可能仍有素材节点+连线的存量引用，一并算「已引用」
+                  const existing = nodes.find((node) => node.data?.assetKey === asset.key);
+                  const legacyAttached = Boolean(existing && edges.some((edge) => edge.source === existing.id && edge.target === referencePickerNodeId));
+                  const attached = directReferenceKeys.has(asset.key) || legacyAttached;
+                  return <button className={attached ? "is-selected" : ""} key={asset.key} onClick={() => attached
+                    ? removeReference(referencePickerNodeId, directReferenceKeys.has(asset.key) ? `direct:${asset.key}` : existing.id)
+                    : addReferenceAsset(referencePickerNodeId, asset)}>
+                    {asset.cover.type === "video" && !asset.cover.thumb
+                      ? <video src={asset.cover.src} muted playsInline preload="metadata" />
+                      : <MediaCover item={asset.cover} />}<span>{asset.type === "VIDEO" ? <Film size={11} /> : asset.type === "AUDIO" ? <Music2 size={11} /> : <Image size={11} />}{asset.title}</span><b>{attached ? "已引用" : "添加"}</b>
+                  </button>;
+                })}</div>}
             </section>
           </div>
-          <footer><button onClick={() => referenceUploadRef.current?.click()}><Upload size={14} />本地上传图片或视频</button><button className="reference-picker__done" onClick={() => setReferencePickerNodeId(null)}><Check size={14} />完成</button></footer>
-          <input ref={referenceUploadRef} hidden type="file" accept="image/*,video/*" onChange={async (event) => {
+          <footer><button onClick={() => referenceUploadRef.current?.click()}><Upload size={14} />{pickerAcceptsVideo ? "本地上传图片、视频或音频" : "本地上传图片"}</button><button className="reference-picker__done" onClick={() => setReferencePickerNodeId(null)}><Check size={14} />完成</button></footer>
+          <input ref={referenceUploadRef} hidden type="file" accept={pickerAcceptsVideo ? "image/*,video/*,audio/*" : "image/*"} onChange={async (event) => {
             const file = event.target.files?.[0];
             event.target.value = "";
             if (!file) return;
             try {
               const validation = validateAssetFile(file);
-              if (!validation.valid || validation.kind === "audio") throw new Error(validation.message || "请选择图片或视频文件");
+              if (!validation.valid) throw new Error(validation.message || "请选择图片、视频或音频文件");
+              if (validation.kind === "audio" && !pickerAcceptsAudio) throw new Error("当前节点不支持音频参考素材");
+              if (validation.kind === "video" && !pickerAcceptsVideo) throw new Error("图像节点只能添加图片参考素材");
               const asset = await uploadAsset(file);
               if (!asset?.storageKey) throw new Error("素材上传未返回存储地址");
-              const type = validation.kind === "video" ? "VIDEO" : "IMAGE";
+              const type = validation.kind === "video" ? "VIDEO" : validation.kind === "audio" ? "AUDIO" : "IMAGE";
               const url = asset.url || asset.src || mediaUrl(asset.storageKey);
-              addReferenceAsset(referencePickerNodeId, { key: asset.storageKey, title: asset.name || file.name, type, preview: asset.posterUrl || asset.poster || url, url });
+              addReferenceAsset(referencePickerNodeId, { key: asset.storageKey, title: asset.name || file.name, type, posterKey: storageKeyOf(asset.posterKey || asset.poster || ""), preview: asset.posterUrl || asset.poster || url, url });
             } catch (error) { showToast(error.message || "素材上传失败"); }
           }} />
         </div>}
@@ -2235,8 +2451,8 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
         </div>
         {addMenu && <div className={`canvas-add-menu ${addMenu.origin === "context" ? "is-contextual" : ""} ${addMenu.origin === "context" && addMenu.x > (stageRef.current?.clientWidth || 900) - 520 ? "submenu-left" : ""}`} style={addMenu.origin === "context" ? { left: addMenu.x, top: addMenu.y } : undefined} onMouseDown={(event) => event.stopPropagation()}>
           <header>添加节点</header>
-          <div className="canvas-add-menu__items">{canvasQuickItems.map((item) => { const Icon = item.icon; return <button key={item.id} onClick={() => addQuickNode(item)}><i><Icon size={18} /></i><span>{item.name}</span>{item.badge && <em className={item.badge === "MiniMax H3" ? "is-model" : ""}>{item.badge}</em>}</button>; })}</div>
-          <div className="canvas-add-submenu-shell" onMouseEnter={() => setComfyMenuOpen(true)} onMouseLeave={() => setComfyMenuOpen(false)}><button className="canvas-add-menu__comfy" onClick={() => setComfyMenuOpen((value) => !value)}><i><Layers3 size={18} /></i><span>ComfyUI</span><em>新</em><ChevronRight size={15} /></button>{comfyMenuOpen && <div className="canvas-add-submenu"><header><button type="button">探索更多</button></header><button onClick={createComfyWorkflow}><i><Plus size={17} /></i><span><strong>新建工作流</strong><small>创建空白 ComfyUI 工作流</small></span></button></div>}</div>
+          <div className="canvas-add-menu__items">{canvasQuickItems.map((item) => { const Icon = item.icon; return <button key={item.id} onClick={() => addQuickNode(item)}><i><Icon size={18} /></i><span>{item.name}</span>{item.badge && <em>{item.badge}</em>}</button>; })}</div>
+          <div className="canvas-add-submenu-shell" onMouseEnter={() => setComfyMenuOpen(true)} onMouseLeave={() => setComfyMenuOpen(false)}><button className="canvas-add-menu__comfy" onClick={() => setComfyMenuOpen((value) => !value)}><i><Layers3 size={18} /></i><span>ComfyUI</span><ChevronRight size={15} /></button>{comfyMenuOpen && <div className="canvas-add-submenu"><header><button type="button">探索更多</button></header><button onClick={createComfyWorkflow}><i><Plus size={17} /></i><span><strong>新建工作流</strong><small>创建空白 ComfyUI 工作流</small></span></button></div>}</div>
         </div>}
         {contextMenu && <div className="canvas-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onMouseDown={(event) => event.stopPropagation()}>
           <button onClick={openMaterialUpload}><Upload size={15} /><span>上传素材</span></button>
@@ -2285,6 +2501,108 @@ export function WorkflowStudio({ onOpenTemplates, templateLaunch, importRequest,
   const [appendRequest, setAppendRequest] = useState(null);
   const [importReport, setImportReport] = useState(null);
 
+  // 画布视图映射到 URL（/console/studio?view=editor），使浏览器返回能先回到高级工作台库页，
+  // 而非跳过库页直接退到进入画布前所在的页面（如剧本创作）
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editorPushedRef = useRef(false);
+  // 本次 openEditor/closeEditor 的预期视图：view(state) 与 URL 各自异步落定，落定前不对齐（防翻转，见下方同步 effect）
+  const pendingViewRef = useRef(null);
+  const editorParam = searchParams.get("view") === "editor";
+
+  const openEditor = useCallback((id) => {
+    pendingViewRef.current = "editor";
+    setView("editor");
+    editorPushedRef.current = true;
+    setSearchParams((prev) => {
+      prev.set("view", "editor");
+      // 已落库的工作流把 id 一起带上：刷新/深链时据此恢复画布，不再回落库页
+      if (id) prev.set("id", String(id));
+      else prev.delete("id");
+      return prev;
+    });
+  }, [setSearchParams]);
+
+  const closeEditor = useCallback(() => {
+    pendingViewRef.current = "library";
+    if (editorPushedRef.current) {
+      editorPushedRef.current = false;
+      // 走这里说明 openEditor push 过一条 ?view=editor 历史，pop 一定会生效；
+      // location 经 transition 异步落定，view 先行切走，陈旧 URL 的回翻由下方同步 effect 的 pending 挡住
+      navigate(-1);
+      setView("library");
+      return;
+    }
+    setView("library");
+    setSearchParams(
+      (prev) => {
+        prev.delete("view");
+        prev.delete("id");
+        return prev;
+      },
+      { replace: true },
+    );
+  }, [navigate, setSearchParams]);
+
+  // URL ↔ view 同步：深链 ?view=editor 进入画布；画布无参数且非模板/导入/加载态则回落库页。
+  // openEditor/closeEditor 里 setView 与 navigate 不在同一次提交落定：router 的 location 走
+  // transition 异步传播，中间有一两帧 editorParam 仍是旧值，若直接按 URL 对齐会把 view 翻回去，
+  // 编辑器/库页来回闪（还会连带重复拉列表）。等 view 与 URL 都落到 pendingViewRef 记下的
+  // 预期值后，才恢复“以 URL 为准”的外部同步（深链、浏览器前进/后退）。
+  useEffect(() => {
+    const pending = pendingViewRef.current;
+    if (pending === "editor" && !(view === "editor" && editorParam)) return;
+    if (pending === "library" && !(view === "library" && !editorParam)) return;
+    if (pending) pendingViewRef.current = null;
+    if (editorParam && view !== "editor") {
+      editorPushedRef.current = false;
+      setView("editor");
+    } else if (!editorParam && view === "editor" && !templateLaunch && !importRequest && !loading) {
+      setView("library");
+    }
+  }, [editorParam, view, templateLaunch, importRequest, loading]);
+
+  // 守卫：刷新画布直链但无 record 时回落库页，避免白屏；带 id 深链时交给下方恢复 effect 处理
+  useEffect(() => {
+    if (view === "editor" && !record && !templateLaunch && !importRequest && !loading) {
+      if (searchParams.get("id")) return;
+      navigate("/console/studio", { replace: true });
+    }
+  }, [view, record, templateLaunch, importRequest, loading, navigate, searchParams]);
+
+  // 刷新/深链恢复：?view=editor&id=<已落库id> 时直接重开该工作流（blank/import 草稿没有可寻址 id，仍回落库页）
+  const restoreIdParam = searchParams.get("id");
+  const restoredIdsRef = useRef(new Set());
+  useEffect(() => {
+    if (!editorParam || !restoreIdParam || !Number(restoreIdParam) || record
+      || templateLaunch || importRequest || restoredIdsRef.current.has(restoreIdParam)) return;
+    let cancelled = false;
+    setLoading(true);
+    getWorkflow(restoreIdParam)
+      .then((detail) => {
+        // 落定后才记入已恢复集合：StrictMode 会双跑 effect，若启动时就去重，第二次会被拦截而无人复位 loading
+        restoredIdsRef.current.add(restoreIdParam);
+        if (cancelled) return;
+        const card = toWorkflowCard(detail);
+        const stored = detail?.graph || {};
+        const nextGraph = Array.isArray(stored.nodes) && stored.nodes.length
+          ? { nodes: stored.nodes, edges: stored.edges || [] }
+          : { nodes: [], edges: [] };
+        if (card.modelId) setSelectedModel(String(card.modelId));
+        setRecord(card);
+        setGraph(nextGraph);
+        setEditorKey((key) => key + 1);
+      })
+      .catch((error) => {
+        restoredIdsRef.current.add(restoreIdParam);
+        if (cancelled) return;
+        setLibraryStatus({ text: error.message || "工作流恢复失败，请从库页重新打开", error: true });
+        navigate("/console/studio", { replace: true });
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [editorParam, restoreIdParam, record, templateLaunch, importRequest]);
+
   // 模板弹窗导入本地工作流 JSON（需求 4.4.2）：先校验再落画布，失败时逐项报错且不改动画布
   useEffect(() => {
     if (!importRequest?.json) return;
@@ -2297,7 +2615,7 @@ export function WorkflowStudio({ onOpenTemplates, templateLaunch, importRequest,
     const mode = importRequest.mode === "append" ? "append" : "new";
     if (mode === "append") {
       setAppendRequest({ graph: parsed.graph, token: importRequest.token || Date.now() });
-      setView("editor");
+      openEditor();
       if (parsed.warnings.length) setImportReport({ fileName: importRequest.fileName, errors: [], warnings: parsed.warnings });
       onImportApplied?.();
       return;
@@ -2312,7 +2630,7 @@ export function WorkflowStudio({ onOpenTemplates, templateLaunch, importRequest,
     });
     setGraph(parsed.graph);
     setEditorKey((key) => key + 1);
-    setView("editor");
+    openEditor();
     if (parsed.warnings.length) setImportReport({ fileName: importRequest.fileName, errors: [], warnings: parsed.warnings });
     onImportApplied?.();
   }, [importRequest]);
@@ -2333,23 +2651,27 @@ export function WorkflowStudio({ onOpenTemplates, templateLaunch, importRequest,
       if (cancelled) return;
       if (mode === "append") {
         setAppendRequest({ graph: nextGraph, token: templateLaunch.token || Date.now() });
-        setView("editor");
+        openEditor();
         return;
       }
       setRecord(templateRecord(templateLaunch, workflowModels));
       setGraph(nextGraph);
       setEditorKey((key) => key + 1);
-      setView("editor");
+      openEditor();
     })();
     return () => { cancelled = true; };
   }, [templateLaunch, workflowModels]);
   useEffect(() => { if (workflowModels.length && !workflowModels.some((model) => String(model.id) === String(selectedModel))) setSelectedModel(workflowModels[0].id); }, [workflowModels, selectedModel]);
+  const listLoadedRef = useRef(false);
   useEffect(() => {
     if (view !== "library") return undefined;
     let cancelled = false;
-    setLibraryStatus({ text: "正在加载工作流…" });
+    // 首次加载才提示“正在加载”；从画布返回库页时已有列表数据，改为静默刷新，
+    // 避免“正在加载工作流…”插进/移出把卡片网格顶得上下跳（返回闪动）
+    setLibraryStatus(listLoadedRef.current ? null : { text: "正在加载工作流…" });
     listWorkflows().then((items) => {
       if (cancelled) return;
+      listLoadedRef.current = true;
       setRecords((items || []).map(toWorkflowCard));
       setLibraryStatus(null);
     }).catch((error) => {
@@ -2375,7 +2697,7 @@ export function WorkflowStudio({ onOpenTemplates, templateLaunch, importRequest,
       setRecord(card);
       setGraph(nextGraph);
       setEditorKey((key) => key + 1);
-      setView("editor");
+      openEditor(Number(card.id) > 0 ? card.id : undefined);
     } catch (error) {
       window.alert(error.message || "无法打开工作流");
     } finally {
@@ -2387,7 +2709,7 @@ export function WorkflowStudio({ onOpenTemplates, templateLaunch, importRequest,
     setRecord({ id: `blank-${Date.now()}`, title: "未命名工作流", type: "image", model: "未选择", builtin: false });
     setGraph({ nodes: [], edges: [] });
     setEditorKey((key) => key + 1);
-    setView("editor");
+    openEditor();
   }
 
   async function importWorkflow(file) {
@@ -2420,7 +2742,7 @@ export function WorkflowStudio({ onOpenTemplates, templateLaunch, importRequest,
     });
     setGraph(parsed.graph);
     setEditorKey((key) => key + 1);
-    setView("editor");
+    openEditor();
     if (parsed.warnings.length) window.alert(`导入完成，但存在兼容提示：\n${parsed.warnings.map((message) => `· ${message}`).join("\n")}`);
   }
 
@@ -2431,8 +2753,10 @@ export function WorkflowStudio({ onOpenTemplates, templateLaunch, importRequest,
   }
 
   if (loading) return <div className="workflow-loading"><span><Sparkles size={22} /></span><strong>正在载入工作流</strong><small>读取画布、节点与连接…</small></div>;
-  if (view === "library") return <div className="workflow-studio-host"><WorkflowLibrary records={records} status={libraryStatus} onOpen={openRecord} onCreate={createWorkflow} onImport={importWorkflow} onOpenTemplates={onOpenTemplates} onDelete={deleteRecord} /><ImportReport report={importReport} onClose={() => setImportReport(null)} /></div>;
-  return <WorkflowEditor key={editorKey} record={record} initialGraph={graph} models={workflowModels} selectedModel={selectedModel} onModelChange={setSelectedModel} onRecordChange={setRecord} onBack={() => setView("library")} appendRequest={appendRequest} onAppendApplied={() => setAppendRequest(null)} />;
+  // record 为空绝不进编辑器（WorkflowEditor 的 effect 依赖 record.id，null 会在渲染期崩溃）；
+  // 刷新 ?view=editor 但恢复失败/未带 id 时在这里兜一帧，由上面的守卫 effect 收敛回库页
+  if (view === "library" || !record) return <div className="workflow-studio-host"><WorkflowLibrary records={records} status={libraryStatus} onOpen={openRecord} onCreate={createWorkflow} onImport={importWorkflow} onOpenTemplates={onOpenTemplates} onDelete={deleteRecord} /><ImportReport report={importReport} onClose={() => setImportReport(null)} /></div>;
+  return <WorkflowEditor key={editorKey} record={record} initialGraph={graph} models={workflowModels} selectedModel={selectedModel} onRecordChange={setRecord} onBack={closeEditor} appendRequest={appendRequest} onAppendApplied={() => setAppendRequest(null)} />;
 }
 
 // 模板实例化：官方模板按 demo 键或 ComfyUI 源路径展开；自定义模板直接取后端画布

@@ -33,32 +33,14 @@ import {
 import { modelCatalogMessage } from "../lib/modelCatalog.js";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { AssetPickerDialog } from "./AssetPickerDialog.jsx";
+import QuickAudioPopover from "./QuickAudioPopover.jsx";
+import { voiceIdOf, voiceLabel, voiceLanguage } from "../lib/voices.js";
 import { sameAsset } from "../lib/assetPicker.js";
 import { WorksTypeIcon } from "./WorksTypeIcon.jsx";
 import { WorkWaveform } from "./AudioPreview.jsx";
 
 const qualityLevels = ["Low", "Medium", "High"];
 const DEFAULT_SESSION_ID = "new-creation-default";
-const voiceLabels = {
-  "male-qn-qingse": "青涩青年男声",
-  "male-qn-jingying": "精英青年男声",
-  "male-qn-badao": "霸道青年男声",
-  "male-qn-daxuesheng": "青年大学生",
-  "female-shaonv": "少女音",
-  "female-yujie": "御姐音",
-  "female-chengshu": "成熟女声",
-  "female-tianmei": "甜美女声",
-};
-function voiceLabel(voice) {
-  if (voice && typeof voice === "object") return voice.name || voice.label || voice.id;
-  return voiceLabels[voice] || voice;
-}
-function voiceIdOf(voice) {
-  return voice && typeof voice === "object" ? voice.id : voice;
-}
-function voiceLanguage(voice) {
-  return voice && typeof voice === "object" ? voice.language || "其他" : "其他";
-}
 const videoDurationCache = new Map();
 // 读参考视频时长（秒），读不到按 0：本地新选的素材服务端还没探测时长，先用浏览器元数据估。
 function readVideoDuration(url) {
@@ -216,68 +198,6 @@ function makeInitialSession() {
 }
 
 const MAX_REFERENCE_ASSETS = 15;
-
-function QuickAudioPopover({ voices, formats, voiceId, setVoiceId, audioFormat, setAudioFormat, speed, setSpeed, minSpeed, maxSpeed }) {
-  const [voiceKeyword, setVoiceKeyword] = useState("");
-  const [voiceLanguageFilter, setVoiceLanguageFilter] = useState("全部");
-  const languages = [...new Set(voices.map(voiceLanguage))];
-  const normalizedKeyword = voiceKeyword.trim().toLowerCase();
-  const visibleVoices = voices.filter((voice) => {
-    const matchesLanguage = voiceLanguageFilter === "全部" || voiceLanguage(voice) === voiceLanguageFilter;
-    const matchesKeyword = !normalizedKeyword || `${voiceLabel(voice)} ${voiceIdOf(voice)}`.toLowerCase().includes(normalizedKeyword);
-    return matchesLanguage && matchesKeyword;
-  });
-  const speedProgress = Math.min(100, Math.max(0, ((speed - minSpeed) / (maxSpeed - minSpeed || 1)) * 100));
-  return (
-    <div className="select-menu quick-audio-popover" role="dialog" aria-label="语音参数设置">
-      <section className="quick-audio-section">
-        <label><span>音色</span><small>共 {voices.length} 个</small></label>
-        <div className="quick-voice-tools">
-          <input value={voiceKeyword} onChange={(event) => setVoiceKeyword(event.target.value)} placeholder="搜索音色名称或 Voice ID" />
-          <select value={voiceLanguageFilter} onChange={(event) => setVoiceLanguageFilter(event.target.value)}>
-            <option value="全部">全部语言</option>
-            {languages.map((language) => <option key={language} value={language}>{language}</option>)}
-          </select>
-        </div>
-        <div className="quick-voice-grid">
-          {visibleVoices.map((voice) => {
-            const id = voiceIdOf(voice);
-            const selected = voiceId === id;
-            return (
-              <button type="button" className={selected ? "selected" : ""} key={id} onClick={() => setVoiceId(id)}>
-                <span>{voiceLabel(voice)}</span>
-                <small>{voiceLanguage(voice)} · {id}</small>
-                {selected && <Check size={12} className="quick-option-check" />}
-              </button>
-            );
-          })}
-        </div>
-        {!visibleVoices.length && <div className="quick-voice-empty">没有匹配的音色</div>}
-      </section>
-
-      <section className="quick-audio-section">
-        <label>格式</label>
-        <div className="quick-format-grid">
-          {formats.map((fmt) => {
-            const selected = audioFormat === fmt;
-            return (
-              <button type="button" role="option" aria-selected={selected} className={`quick-param-option ${selected ? "selected" : ""}`} key={fmt} onClick={() => setAudioFormat(fmt)}>
-                <span>{fmt.toUpperCase()}</span>
-                {selected && <Check size={13} className="quick-option-check" />}
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="quick-audio-section quick-audio-speed">
-        <label><span>语速</span><b>{speed.toFixed(2)}x</b></label>
-        <input type="range" style={{ "--range-progress": `${speedProgress}%` }} min={minSpeed} max={maxSpeed} step="0.05" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} />
-        <div><small>{minSpeed}x</small><small>{maxSpeed}x</small></div>
-      </section>
-    </div>
-  );
-}
 
 /**
  * 单条生成结果的消息卡片。

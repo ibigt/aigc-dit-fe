@@ -122,9 +122,32 @@ export async function restoreWorkflowRun({ workflowId, latest, ...options }) {
   }
 }
 
+/**
+ * 节点的预览图：优先用画布上摆好的图（data.preview），否则用最近一次运行的产物
+ * （runtime.outputs，url 已由 displayOutputs 重建为带 token 的 /api/media 地址）。
+ * 生成出来的节点只有 runtime 产物、没有 data.preview，引用缩略图与参考素材选择器
+ * 都必须走这里，否则会显示成占位图。
+ */
+export function previewFromData(data) {
+  const outputs = data?.runtime?.outputs || [];
+  const index = data?.media?.selectedOutputIndex ?? data?.runtime?.selectedOutputIndex ?? 0;
+  const output = outputs[index] || outputs[0];
+  return data?.preview || output?.posterUrl || output?.url || "";
+}
+
+export function nodePreviewUrl(node) {
+  return previewFromData(node?.data);
+}
+
 export function applyWorkflowSnapshotToNodes(nodes, snapshot) {
-  const cleared = nodes.map((node) => ({ ...node, data: { ...node.data, runtime: undefined } }));
-  return applyRunToNodes(cleared, { steps: snapshot.steps || [] });
+  const steps = snapshot.steps || [];
+  const covered = new Set(steps.map((step) => step.nodeId));
+  // 只清快照覆盖到的节点：刚生成完就保存时快照里还没有这次运行，
+  // 若一律清空会把刚出的图抹掉（工作流首次保存时 record.id 变化会触发运行态恢复）
+  const cleared = nodes.map((node) => (covered.has(node.id)
+    ? { ...node, data: { ...node.data, runtime: undefined } }
+    : node));
+  return applyRunToNodes(cleared, { steps });
 }
 
 export async function restoreWorkflowSnapshot({ workflowId, snapshot, get, wait = waitForWorkflowPoll, onSnapshot, signal }) {

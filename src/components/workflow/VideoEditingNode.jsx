@@ -17,7 +17,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { mediaUrl } from "../../lib/media.js";
 import { useWorkflowNode } from "./WorkflowNodeContext.jsx";
-import { NodeCollapseButton, NodeLockButton, nodeCollapsedClass } from "./NodeCardParts.jsx";
+import { NodeCollapseButton, NodeDeleteButton, NodeLockButton, nodeCollapsedClass } from "./NodeCardParts.jsx";
 import { applyClipAudio, clipEnabled, enabledClips, syncClipPlayback } from "./nodeInteractions.js";
 import { nextPlaybackPosition } from "./timeline.js";
 
@@ -197,6 +197,7 @@ export default function VideoEditingNode({ id, data, selected }) {
         <strong>视频剪辑</strong>
         <Clapperboard size={14} />
         <NodeLockButton id={id} locked={data.locked} />
+        <NodeDeleteButton id={id} title="视频剪辑" locked={data.locked} />
       </header>
       {film && clips.length > 0 && (
         <div className="video-editing-node__modes nodrag" role="tablist" aria-label="预览模式">

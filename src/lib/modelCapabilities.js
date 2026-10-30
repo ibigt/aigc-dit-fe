@@ -79,6 +79,15 @@ export function imageOnlyRefs(model) {
   return isAgnes(model);
 }
 
+/**
+ * 模型是否接受「视频参考素材」（整段视频透传给生成模型）。
+ * 仅图片参考的通道（Agnes）不支持；其余按 r2v 能力判定。
+ */
+export function supportsVideoReference(model) {
+  if (imageOnlyRefs(model)) return false;
+  return modelSupports(model, "r2v");
+}
+
 export function isMiniMaxH3Max(model) {
   return String(model?.modelKey || "").toLowerCase().includes("h3-max")
     || String(model?.modelKey || "").toLowerCase().includes("h3_max");
@@ -177,11 +186,31 @@ export function findWorkflowModel(models, modelName) {
   }) || null;
 }
 
-// 高级工作台视频节点的生成模式：中文档位 ↔ 模型能力（全能参考 = r2v，首尾帧 = i2v）
+// 高级工作台视频节点的生成模式：中文档位 ↔ 模型能力（对齐小云雀两形态）
+//   参考视频 = r2v，图片+视频(+音频)混合参考（视频整段透传，保留动作/运镜/节奏；图片定人物/风格）
+//   参考帧   = i2v，首帧 + 尾帧显式图框（起止画面硬约束，只吃图片，与参考素材互斥）
+// value 是**落库 + 发给后端**的档位名。后端 WorkflowGraphPlanner 按显式白名单判定，
+// 新旧档位写法（参考帧 / 首尾帧）都认；「参考视频」判定视频整段透传。
 export const WORKFLOW_VIDEO_MODES = [
-  { value: "全能参考", cap: "r2v" },
-  { value: "首尾帧", cap: "i2v" },
+  { value: "参考视频", label: "参考视频", cap: "r2v", videoRef: true, default: true },
+  { value: "参考帧", label: "参考帧", cap: "i2v" },
 ];
+
+// 旧工作流落库的档位名 → 现档位。「参考图/全能参考」本质是 r2v 图片参考，
+// 与「参考视频」同一 API 形态，统一归到「参考视频」（上游图片连线行为不变）。
+const LEGACY_VIDEO_MODE = { 全能参考: "参考视频", 参考图: "参考视频", 首尾帧: "参考帧" };
+
+/** 旧档位名归一（读旧数据时用，避免模式被误判成「不支持」而重置）。 */
+export function normalizeWorkflowVideoMode(mode) {
+  const raw = String(mode ?? "").trim();
+  return LEGACY_VIDEO_MODE[raw] || raw;
+}
+
+// 档位值 → 展示文案；未登记的值原样返回
+export function workflowModeLabel(mode) {
+  const hit = WORKFLOW_VIDEO_MODES.find((item) => item.value === mode);
+  return hit ? hit.label : mode;
+}
 const WORKFLOW_COPY_LIMIT = 4;
 
 // 节点只存模型名；目录里查不到（离线兜底模型 / 纯字符串）时按「无能力约束」处理，保持旧行为。
@@ -195,7 +224,20 @@ export function workflowMediaOptions(model, isVideo) {
   const generationType = isVideo ? "video" : "image";
   const copyLimit = model ? maxCopiesFor(model) : WORKFLOW_COPY_LIMIT;
   const modes = isVideo
-    ? WORKFLOW_VIDEO_MODES.filter((item) => modelSupports(model, item.cap)).map((item) => item.value)
+    ? WORKFLOW_VIDEO_MODES
+      .filter((item) => {
+        if (item.cap === "i2v") {
+          // 首尾帧：仍按模型 i2v 能力过滤（RunningHub 的 Seedance-2 不支持首尾帧）
+          return modelSupports(model, "i2v");
+        }
+        // 参考视频（r2v）：与后端 AdapterCatalog 对齐——所有视频适配器都支持 r2v，
+        // 故视频节点默认即可走（即便 DB capabilities 漏写 r2v、或历史 H3-Max 限制，也按后端口径放行）
+        if (item.videoRef) {
+          return !imageOnlyRefs(model) || model?.category === "video";
+        }
+        return modelSupports(model, item.cap);
+      })
+      .map((item) => item.value)
     : [];
   return {
     ratios: isVideo ? videoRatios : imageRatios,
@@ -227,7 +269,9 @@ export function normalizeWorkflowMedia(media = {}, model, isVideo) {
     const clamped = clampDurationForModel(model, duration);
     next.duration = clamped;
     next.durationSec = clamped;
-    next.mode = options.modes.includes(media.mode) ? media.mode : options.modes[0];
+    // 旧工作流存的是「全能参考/参考图」，先归一成「参考视频」再判断是否受支持
+    const currentMode = normalizeWorkflowVideoMode(media.mode);
+    next.mode = options.modes.includes(currentMode) ? currentMode : options.modes[0];
   }
   const patch = {};
   Object.entries(next).forEach(([key, value]) => {
