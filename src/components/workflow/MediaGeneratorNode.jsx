@@ -22,8 +22,6 @@ import { DemoSelect } from "../DemoSelect.jsx";
 import { normalizeWorkflowMedia, resolveWorkflowModel, workflowModeLabel } from "../../lib/modelCapabilities.js";
 import { mediaNodeCreditCost } from "../../lib/nodeCredits.js";
 import { mediaUrl } from "../../lib/media.js";
-import { uploadAsset } from "../../api/assets.js";
-import { validateAssetFile } from "../../lib/assetUpload.js";
 import StableTextarea from "./StableTextarea.jsx";
 import { VideoLightbox } from "../Drama/VideoLightbox.jsx";
 import { previewFromData } from "./runtime.js";
@@ -76,12 +74,10 @@ function NodeStateBar({ tone, icon: Icon, title, message, onRetry }) {
 }
 
 // 参考帧模式的首/尾帧显式图框（B2）：两个框直接就是「+」框——
-// 空时点「+」上传图片（限图片），已设置则显示图片并可清除，不再额外加号框
-function FrameSlot({ label, storageKey, title, onPick, onClear, notify }) {
-  const inputRef = useRef(null);
-  const [busy, setBusy] = useState(false);
+// 空时点「+」打开素材弹框选图（与参考素材入口一致），已设置则显示图片并可清除
+function FrameSlot({ label, slot, storageKey, title, onRequest, onClear }) {
   return (
-    <div className="media-node__frame-slot nodrag nowheel" title={storageKey ? `${label}：${title || ""}` : `${label}（点击上传图片）`}>
+    <div className="media-node__frame-slot nodrag nowheel" title={storageKey ? `${label}：${title || ""}` : `${label}（点击从素材库选择图片）`}>
       {storageKey ? (
         <>
           <img src={mediaUrl(storageKey, { w: 160 })} alt={`${label} ${title || ""}`} />
@@ -99,39 +95,14 @@ function FrameSlot({ label, storageKey, title, onPick, onClear, notify }) {
         // 空框即「+」：竖排「+ / 角色名」，不再叠底部标签，避免文字重叠
         <button
           className="media-node__frame-upload"
-          aria-label={`上传${label}图片`}
+          aria-label={`选择${label}图片`}
           onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => inputRef.current?.click()}
+          onClick={() => onRequest(slot)}
         >
-          {busy ? <WandSparkles size={15} className="spin" /> : <Plus size={15} />}
+          <Plus size={15} />
           <small>{label}</small>
         </button>
       )}
-      <input
-        ref={inputRef}
-        hidden
-        type="file"
-        accept="image/*"
-        onChange={async (event) => {
-          const file = event.target.files?.[0];
-          event.target.value = "";
-          if (!file) return;
-          try {
-            setBusy(true);
-            const validation = validateAssetFile(file);
-            if (!validation.valid || validation.kind !== "image") {
-              throw new Error(validation.message || "首尾帧只能上传图片");
-            }
-            const asset = await uploadAsset(file);
-            if (!asset?.storageKey) throw new Error("图片上传未返回存储地址");
-            onPick({ key: asset.storageKey, title: asset.name || file.name });
-          } catch (error) {
-            notify?.(error.message || "图片上传失败");
-          } finally {
-            setBusy(false);
-          }
-        }}
-      />
     </div>
   );
 }
@@ -356,23 +327,23 @@ export default function MediaGeneratorNode({ id, data, selected }) {
         onPointerDown={(event) => event.stopPropagation()}
       >
         {isFramesMode ? (
-          // 参考帧（B2）：首尾两个「+」框直接摆在那——空即上传，已设即显图可清除
+          // 参考帧（B2）：首尾两个「+」框直接摆在那——空即打开素材弹框选图，已设即显图可清除
           <div className="media-node__frames" aria-label="首尾帧设置">
             <FrameSlot
               label="首帧"
+              slot="first"
               storageKey={media.frames?.firstKey || ""}
               title={media.frames?.firstTitle || ""}
-              onPick={(asset) => update({ frames: { ...media.frames, firstKey: asset.key, firstTitle: asset.title } })}
+              onRequest={(slot) => openReferencePicker?.(id, { slot })}
               onClear={() => update({ frames: { ...media.frames, firstKey: "", firstTitle: "" } })}
-              notify={notify}
             />
             <FrameSlot
               label="尾帧"
+              slot="last"
               storageKey={media.frames?.lastKey || ""}
               title={media.frames?.lastTitle || ""}
-              onPick={(asset) => update({ frames: { ...media.frames, lastKey: asset.key, lastTitle: asset.title } })}
+              onRequest={(slot) => openReferencePicker?.(id, { slot })}
               onClear={() => update({ frames: { ...media.frames, lastKey: "", lastTitle: "" } })}
-              notify={notify}
             />
           </div>
         ) : (

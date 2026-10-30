@@ -561,6 +561,17 @@ function isVisualReferenceNode(node) {
   return ["IMAGE", "VIDEO", "AUDIO"].includes(nodeOutputType(node));
 }
 
+// 帧槽位（首帧/尾帧）取画布节点的图片产物 storageKey：优先素材节点自身的 storageKey，
+// 其次取运行结果里选中的那张输出。拿不到（还没出图）返回空串。
+function canvasFrameStorageKey(node) {
+  if (node?.data?.assetType === "IMAGE" && node?.data?.storageKey) return node.data.storageKey;
+  if (node?.data?.assetKey) return node.data.assetKey;
+  const outputs = node?.data?.runtime?.outputs || [];
+  const index = node?.data?.media?.selectedOutputIndex ?? node?.data?.runtime?.selectedOutputIndex ?? 0;
+  const output = outputs[index] || outputs[0];
+  return output?.storageKey || "";
+}
+
 // 文本节点（MarkdownNote/Prompt/表格）：连到生成节点时作为提示词补充，后端 planner 会拼接
 function isTextPromptNode(node) {
   return ["MarkdownNote", "Prompt", "DataTable"].includes(node?.data?.kind)
@@ -1182,6 +1193,8 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
   const [tidyMenuOpen, setTidyMenuOpen] = useState(false);
   const [includeConnected, setIncludeConnected] = useState(false);
   const [referencePickerNodeId, setReferencePickerNodeId] = useState(null);
+  // 弹框目标位：null=添加参考素材；"first"/"last"=选首帧/尾帧（参考帧档的显式图框）
+  const [referencePickerSlot, setReferencePickerSlot] = useState(null);
   // 参考素材弹框「素材库」分区：真实素材库数据（null=未加载），只列图片/视频
   const [referenceAssets, setReferenceAssets] = useState(null);
   const [referenceAssetsError, setReferenceAssetsError] = useState("");
@@ -1782,6 +1795,36 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     setSaved(false);
   }, [edges, nodes, rememberGraph, setEdges]);
 
+  // 打开参考素材弹框。options.slot="first"/"last" 时是参考帧档的首/尾帧图框：
+  // 弹框只列图片素材，选中直接写入 media.frames.{first,last}Key（不吃参考素材列表）。
+  const openReferencePicker = useCallback((nodeId, options) => {
+    setReferencePickerSlot(options?.slot || null);
+    setReferencePickerNodeId(nodeId);
+  }, []);
+
+  // 关闭弹框：清掉目标节点与槽位，避免下次打开残留
+  const closeReferencePicker = useCallback(() => {
+    setReferencePickerNodeId(null);
+    setReferencePickerSlot(null);
+  }, []);
+
+  // 帧槽位写入：把选中的图片存进 media.frames.{first,last}Key（显式首/尾帧图框）
+  const setFrameSlot = useCallback((nodeId, slot, asset) => {
+    const target = nodes.find((node) => node.id === nodeId);
+    if (!target || !slot || !asset?.key) return;
+    const frames = { ...(target.data?.media?.frames || {}) };
+    if (slot === "first") {
+      frames.firstKey = asset.key;
+      frames.firstTitle = asset.title || "首帧";
+    } else {
+      frames.lastKey = asset.key;
+      frames.lastTitle = asset.title || "尾帧";
+    }
+    rememberGraph();
+    updateNodeMedia(nodeId, { frames });
+    closeReferencePicker();
+  }, [nodes, rememberGraph, updateNodeMedia, closeReferencePicker]);
+
   // 素材库/本地上传的参考素材：直接附加在节点 media.referenceAssets 上（显示为 + 号后面的缩略图 chip），
   // 不再落画布素材节点+连线；左侧输入点的连线留给画布节点之间的引用
   const addReferenceAsset = useCallback((targetId, asset) => {
@@ -1930,8 +1973,8 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     notify: showToast,
     getReferences,
     removeReference,
-    openReferencePicker: setReferencePickerNodeId,
-  }), [updateNodeField, updateNodeMedia, generateNodeMedia, showToast, getReferences, removeReference]);
+    openReferencePicker: openReferencePicker,
+  }), [updateNodeField, updateNodeMedia, generateNodeMedia, showToast, getReferences, removeReference, openReferencePicker]);
 
   const workflowNodeApi = useMemo(() => ({
     getVariableScopes: (nodeId) => graphVariableScopes(nodes, edges, nodeId),
@@ -1951,10 +1994,10 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     getReferences,
     getPromptSupplements,
     removeReference,
-    openReferencePicker: setReferencePickerNodeId,
+    openReferencePicker: openReferencePicker,
     running,
     models,
-  }), [nodes, edges, updateNodeMedia, updatePrompt, updateClips, selectOutput, generateNodeMedia, showToast, removeNodeById, uploadAudio, getClips, getEditingSources, toggleLock, toggleCollapse, getReferences, getPromptSupplements, removeReference, running, models]);
+  }), [nodes, edges, updateNodeMedia, updatePrompt, updateClips, selectOutput, generateNodeMedia, showToast, removeNodeById, uploadAudio, getClips, getEditingSources, toggleLock, toggleCollapse, getReferences, getPromptSupplements, removeReference, openReferencePicker, running, models]);
 
   const canvasReferenceNodes = useMemo(() => nodes.filter((node) => node.id !== referencePickerNodeId && nodePreviewUrl(node) && node.data?.outputs?.some((port) => ["IMAGE", "VIDEO", "AUDIO"].includes(port.type))), [nodes, referencePickerNodeId]);  // 当前弹框目标节点已直接附加的参考素材 key（media.referenceAssets）
   const directReferenceKeys = useMemo(() => new Set((nodes.find((node) => node.id === referencePickerNodeId)?.data?.media?.referenceAssets || []).map((item) => item?.storageKey)), [nodes, referencePickerNodeId]);
@@ -1982,6 +2025,23 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
   // 参考素材类型随档位收敛（与小云雀一致）：
   //   参考视频 —— 图片+视频(+音频) 混合参考（整段视频保留动作/运镜，图片定人物/风格，音频定节奏）
   //   参考帧 / 图像节点 —— 不弹参考素材选择器（首尾帧用显式图框，图像节点只收图片）
+
+  // 帧槽位模式（首帧/尾帧）：弹框只列图片，选中直接写 media.frames，不进参考素材列表
+  const pickerSlotLabel = referencePickerSlot === "first" ? "首帧" : referencePickerSlot === "last" ? "尾帧" : "";
+  const currentFrameKey = referencePickerSlot === "first"
+    ? (pickerTarget?.data?.media?.frames?.firstKey || "")
+    : referencePickerSlot === "last" ? (pickerTarget?.data?.media?.frames?.lastKey || "") : "";
+  const pickerQuotaText = pickerSlotLabel
+    ? "仅支持图片素材"
+    : pickerIsImageNode
+      ? "参考图 ≤30 张"
+      : pickerAcceptsVideo
+        ? `参考视频 ≤10 段 / 共 30s · 参考图 ≤30 张${pickerAcceptsAudio ? " · 参考音频 ≤10 段" : ""}`
+        : "";
+  // 帧槽位：素材库/本地上传只收图片
+  const pickerFrameAssets = useMemo(() => (referenceAssets || []).filter((asset) => asset.type === "IMAGE"), [referenceAssets]);
+  // 帧槽位实际展示的素材列表：帧模式只列图片，普通模式按档位收敛
+  const pickerVisibleAssets = pickerSlotLabel ? pickerFrameAssets : pickerAssetOptions;
 
   // 弹框打开时拉真实素材库（我的素材），取图片/视频/音频；选中后经 addReferenceAsset 直接附加到节点
   useEffect(() => {
@@ -2322,7 +2382,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
           zoomOnPinch
           zoomOnDoubleClick={false}
           connectionLineType={ConnectionLineType.Bezier}
-          onPaneClick={() => { setAddMenu(null); setContextMenu(null); setComfyMenuOpen(false); setTidyMenuOpen(false); setReferencePickerNodeId(null); }}
+          onPaneClick={() => { setAddMenu(null); setContextMenu(null); setComfyMenuOpen(false); setTidyMenuOpen(false); closeReferencePicker(); }}
           onPaneContextMenu={openPaneMenu}
           fitView
           fitViewOptions={fitOptions}
@@ -2369,40 +2429,69 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
             <span className="flow-zoom" ref={zoomLabelRef} aria-live="polite" title="画布缩放比例">100%</span>
           </Panel>
         </ReactFlow></WorkflowNodeContext.Provider></NodeEditContext.Provider>
-        {referencePickerNodeId && <div className="reference-picker nodrag nowheel" role="dialog" aria-modal="true" aria-label="添加参考素材" onMouseDown={(event) => event.stopPropagation()}>
-          <header><div><strong>添加参考素材</strong><small>素材库/本地上传直接加入节点；画布素材通过连线引用</small>{pickerIsImageNode ? <small className="reference-picker__quota">参考图 ≤30 张</small> : pickerAcceptsVideo && <small className="reference-picker__quota">参考视频 ≤10 段 / 共 30s · 参考图 ≤30 张{pickerAcceptsAudio ? " · 参考音频 ≤10 段" : ""}</small>}</div><button aria-label="关闭参考素材选择" onClick={() => setReferencePickerNodeId(null)}><X size={15} /></button></header>
+        {referencePickerNodeId && <div className="reference-picker nodrag nowheel" role="dialog" aria-modal="true" aria-label={pickerSlotLabel ? `选择${pickerSlotLabel}` : "添加参考素材"} onMouseDown={(event) => event.stopPropagation()}>
+          <header>
+            <div className="reference-picker__head">
+              <strong>{pickerSlotLabel ? `选择${pickerSlotLabel}` : "添加参考素材"}</strong>
+              <span className="reference-picker__quota">{pickerQuotaText}</span>
+            </div>
+            <button aria-label="关闭参考素材选择" onClick={closeReferencePicker}><X size={15} /></button>
+          </header>
           <div className="reference-picker__scroll">
             <section>
               <div className="reference-picker__section-title"><strong>画布素材</strong><span>{pickerCanvasNodes.length} 项</span></div>
               {pickerCanvasNodes.length ? <div className="reference-picker__grid">{pickerCanvasNodes.map((node) => {
                 const type = node.data.assetType || node.data.outputs?.find((port) => ["IMAGE", "VIDEO", "AUDIO"].includes(port.type))?.type || "IMAGE";
                 const attached = edges.some((edge) => edge.source === node.id && edge.target === referencePickerNodeId);
-                return <button className={attached ? "is-selected" : ""} key={node.id} onClick={() => attached ? removeReference(referencePickerNodeId, node.id) : attachReference(referencePickerNodeId, node.id)}>
-                  <img src={nodePreviewUrl(node)} alt={node.data.title} /><span>{type === "VIDEO" ? <Film size={11} /> : type === "AUDIO" ? <Music2 size={11} /> : <Image size={11} />}{node.data.title}</span><b>{attached ? "已引用" : "引用"}</b>
+                const frameKey = pickerSlotLabel ? canvasFrameStorageKey(node) : "";
+                return <button className={attached || (frameKey && frameKey === currentFrameKey) ? "is-selected" : ""} key={node.id} onClick={() => {
+                  if (pickerSlotLabel) {
+                    // 帧槽位：把该画布节点的图片产物直接写进 media.frames
+                    if (!frameKey) { showToast("该节点还没有图片产出，请先生成"); return; }
+                    setFrameSlot(referencePickerNodeId, referencePickerSlot, { key: frameKey, title: node.data.title });
+                    return;
+                  }
+                  attached ? removeReference(referencePickerNodeId, node.id) : attachReference(referencePickerNodeId, node.id);
+                }}>
+                  <span className="reference-picker__thumb"><img src={nodePreviewUrl(node)} alt={node.data.title} />{(attached || (frameKey && frameKey === currentFrameKey)) ? <i className="reference-picker__check"><Check size={12} /></i> : null}</span>
+                  <span className="reference-picker__name">{type === "VIDEO" ? <Film size={11} /> : type === "AUDIO" ? <Music2 size={11} /> : <Image size={11} />}<em>{node.data.title}</em></span>
                 </button>;
               })}</div> : <p className="reference-picker__empty">画布中还没有可引用的图片、视频或音频。</p>}
             </section>
             <section>
-              <div className="reference-picker__section-title"><strong>素材库</strong><span>来自「我的素材」，选择后直接加入节点参考</span></div>
+              <div className="reference-picker__section-title"><strong>素材库</strong><span>{pickerVisibleAssets.length} 项</span></div>
               {referenceAssetsError ? <p className="reference-picker__empty">素材库加载失败：{referenceAssetsError}</p>
                 : referenceAssets === null ? <p className="reference-picker__empty">正在读取素材库…</p>
-                : pickerAssetOptions.length === 0 ? <p className="reference-picker__empty">{pickerAcceptsVideo ? "素材库还没有图片、视频或音频，可点下方「本地上传」或到「我的素材」页上传。" : "素材库还没有图片素材，可点下方「本地上传」或到「我的素材」页上传。"}</p>
-                : <div className="reference-picker__grid">{pickerAssetOptions.map((asset) => {
+                : pickerVisibleAssets.length === 0 ? <p className="reference-picker__empty">{pickerAcceptsVideo ? "素材库还没有图片、视频或音频，可点下方「本地上传」或到「我的素材」页上传。" : "素材库还没有图片素材，可点下方「本地上传」或到「我的素材」页上传。"}</p>
+                : <div className="reference-picker__grid">{pickerVisibleAssets.map((asset) => {
                   // 旧画布可能仍有素材节点+连线的存量引用，一并算「已引用」
                   const existing = nodes.find((node) => node.data?.assetKey === asset.key);
                   const legacyAttached = Boolean(existing && edges.some((edge) => edge.source === existing.id && edge.target === referencePickerNodeId));
                   const attached = directReferenceKeys.has(asset.key) || legacyAttached;
-                  return <button className={attached ? "is-selected" : ""} key={asset.key} onClick={() => attached
-                    ? removeReference(referencePickerNodeId, directReferenceKeys.has(asset.key) ? `direct:${asset.key}` : existing.id)
-                    : addReferenceAsset(referencePickerNodeId, asset)}>
-                    {asset.cover.type === "video" && !asset.cover.thumb
-                      ? <video src={asset.cover.src} muted playsInline preload="metadata" />
-                      : <MediaCover item={asset.cover} />}<span>{asset.type === "VIDEO" ? <Film size={11} /> : asset.type === "AUDIO" ? <Music2 size={11} /> : <Image size={11} />}{asset.title}</span><b>{attached ? "已引用" : "添加"}</b>
+                  const isCurrentFrame = Boolean(pickerSlotLabel && asset.key === currentFrameKey);
+                  const active = attached || isCurrentFrame;
+                  return <button className={active ? "is-selected" : ""} key={asset.key} onClick={() => {
+                    if (pickerSlotLabel) {
+                      // 帧槽位：单选，选中即写入并关闭弹框
+                      setFrameSlot(referencePickerNodeId, referencePickerSlot, { key: asset.key, title: asset.title });
+                      return;
+                    }
+                    attached
+                      ? removeReference(referencePickerNodeId, directReferenceKeys.has(asset.key) ? `direct:${asset.key}` : existing.id)
+                      : addReferenceAsset(referencePickerNodeId, asset);
+                  }}>
+                    <span className="reference-picker__thumb">
+                      {asset.cover.type === "video" && !asset.cover.thumb
+                        ? <video src={asset.cover.src} muted playsInline preload="metadata" />
+                        : <MediaCover item={asset.cover} />}
+                      {active ? <i className="reference-picker__check"><Check size={12} /></i> : null}
+                    </span>
+                    <span className="reference-picker__name">{asset.type === "VIDEO" ? <Film size={11} /> : asset.type === "AUDIO" ? <Music2 size={11} /> : <Image size={11} />}<em>{asset.title}</em></span>
                   </button>;
                 })}</div>}
             </section>
           </div>
-          <footer><button onClick={() => referenceUploadRef.current?.click()}><Upload size={14} />{pickerAcceptsVideo ? "本地上传图片、视频或音频" : "本地上传图片"}</button><button className="reference-picker__done" onClick={() => setReferencePickerNodeId(null)}><Check size={14} />完成</button></footer>
+          <footer><button onClick={() => referenceUploadRef.current?.click()}><Upload size={14} />{pickerAcceptsVideo ? "本地上传图片、视频或音频" : "本地上传图片"}</button><button className="reference-picker__done" onClick={closeReferencePicker}><Check size={14} />完成</button></footer>
           <input ref={referenceUploadRef} hidden type="file" accept={pickerAcceptsVideo ? "image/*,video/*,audio/*" : "image/*"} onChange={async (event) => {
             const file = event.target.files?.[0];
             event.target.value = "";
@@ -2411,11 +2500,16 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
               const validation = validateAssetFile(file);
               if (!validation.valid) throw new Error(validation.message || "请选择图片、视频或音频文件");
               if (validation.kind === "audio" && !pickerAcceptsAudio) throw new Error("当前节点不支持音频参考素材");
-              if (validation.kind === "video" && !pickerAcceptsVideo) throw new Error("图像节点只能添加图片参考素材");
+              if (validation.kind === "video" && !pickerAcceptsVideo) throw new Error("当前节点不支持视频参考素材");
               const asset = await uploadAsset(file);
               if (!asset?.storageKey) throw new Error("素材上传未返回存储地址");
               const type = validation.kind === "video" ? "VIDEO" : validation.kind === "audio" ? "AUDIO" : "IMAGE";
               const url = asset.url || asset.src || mediaUrl(asset.storageKey);
+              if (pickerSlotLabel) {
+                // 帧槽位：上传的图片直接作为首帧/尾帧
+                setFrameSlot(referencePickerNodeId, referencePickerSlot, { key: asset.storageKey, title: asset.name || file.name });
+                return;
+              }
               addReferenceAsset(referencePickerNodeId, { key: asset.storageKey, title: asset.name || file.name, type, posterKey: storageKeyOf(asset.posterKey || asset.poster || ""), preview: asset.posterUrl || asset.poster || url, url });
             } catch (error) { showToast(error.message || "素材上传失败"); }
           }} />
