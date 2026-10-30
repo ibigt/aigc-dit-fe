@@ -309,6 +309,22 @@ function pictureRefs(shot) {
   return (shot?.references || []).filter((item) => item?.assetId);
 }
 
+function characterPictureRefs(shot) {
+  return pictureRefs(shot).filter((item) => item.type === "角色");
+}
+
+function convertProgressText(index, total, name, phase) {
+  const who = name ? `「${name}」` : "";
+  const step = `${index}/${total}`;
+  if (phase === "describe") {
+    return `正在转资产图 ${step}：${who}图生文中…`;
+  }
+  if (phase === "t2i") {
+    return `正在转资产图 ${step}：${who}文生图中…`;
+  }
+  return `正在转资产图 ${step}${who ? `：${who}` : ""}…`;
+}
+
 function isInFlightStatus(status) {
   return status === "PENDING" || status === "RUNNING";
 }
@@ -1477,6 +1493,7 @@ export function DramaStoryboard({ series, episode }) {
   const [actionError, setActionError] = useState("");
   const [realPersonConvertShotId, setRealPersonConvertShotId] = useState(null);
   const [convertingAssets, setConvertingAssets] = useState(false);
+  const [convertProgress, setConvertProgress] = useState("");
   const [preview, setPreview] = useState(null);
   const [videoPreview, setVideoPreview] = useState(null);
   const [switchFinalOpen, setSwitchFinalOpen] = useState(false);
@@ -2114,31 +2131,54 @@ export function DramaStoryboard({ series, episode }) {
   }
 
   async function convertShotRefsAfterRealPersonReject(shot) {
-    const refs = pictureRefs(shot);
-    const assetIds = [...new Set(refs.map((item) => item.assetId).filter(Boolean))];
-    if (!assetIds.length) {
-      setActionError("本镜没有可转的参考资产");
+    const refs = characterPictureRefs(shot);
+    const targets = [];
+    const seen = new Set();
+    for (const item of refs) {
+      const assetId = item.assetId;
+      if (!assetId || seen.has(assetId)) continue;
+      seen.add(assetId);
+      targets.push({ assetId, name: item.name || `资产 ${assetId}` });
+    }
+    if (!targets.length) {
+      setActionError("本镜没有可转的角色参考图");
       return;
     }
     setConvertingAssets(true);
-    setActionError("正在转资产图（图生文可能需数十秒）…");
+    setConvertProgress(`正在转资产图 0/${targets.length}…`);
+    setActionError(`正在转资产图 0/${targets.length}…`);
     try {
-      for (const assetId of assetIds) {
+      for (let i = 0; i < targets.length; i += 1) {
+        const { assetId, name } = targets[i];
+        const index = i + 1;
+        const total = targets.length;
+        setConvertProgress(convertProgressText(index, total, name, "describe"));
+        setActionError(convertProgressText(index, total, name, "describe"));
         const result = await convertDramaAssetToSeedream(assetId, {});
         const taskId = result?.task?.id;
         if (!taskId) {
-          throw new Error(`资产 ${assetId} 转图未返回任务`);
+          throw new Error(`「${name}」转图未返回任务`);
         }
         let status = result?.task?.status;
+        let sawRunning = status === "RUNNING";
         while (status === "PENDING" || status === "RUNNING") {
+          if (status === "RUNNING" && !sawRunning) {
+            sawRunning = true;
+            setConvertProgress(convertProgressText(index, total, name, "t2i"));
+            setActionError(convertProgressText(index, total, name, "t2i"));
+          }
           await new Promise((resolve) => setTimeout(resolve, 4000));
           const done = await fetchDramaAssetGenerateTask(assetId, taskId);
           status = done?.task?.status;
           if (status === "FAILED") {
-            throw new Error(done?.task?.errorMessage || `资产 ${assetId} 转图失败`);
+            throw new Error(done?.task?.errorMessage || `「${name}」转图失败`);
           }
         }
+        if (status && status !== "SUCCEEDED" && status !== "SUCCESS") {
+          throw new Error(`「${name}」转图异常：${status}`);
+        }
       }
+      setConvertProgress("");
       setActionError("转资产图完成，请确认选用图后再次生成当前镜头。");
       setRealPersonConvertShotId(null);
       queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
@@ -2147,6 +2187,7 @@ export function DramaStoryboard({ series, episode }) {
       setActionError(error.message || "转资产图失败");
     } finally {
       setConvertingAssets(false);
+      setConvertProgress("");
     }
   }
 
@@ -2368,7 +2409,9 @@ export function DramaStoryboard({ series, episode }) {
               disabled={convertingAssets || frozenByRecompile}
               onClick={() => convertShotRefsAfterRealPersonReject(selected)}
             >
-              {convertingAssets ? "正在转资产图…" : "对参考资产转 Seedream 资产图"}
+              {convertingAssets
+                ? (convertProgress || "正在转资产图…")
+                : "对参考资产转 Seedream 资产图"}
             </button>
           </div>
         )}
