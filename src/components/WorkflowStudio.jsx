@@ -49,6 +49,7 @@ import {
   Search,
   SlidersHorizontal,
   Sparkles,
+  Square,
   SquareStack,
   Table2,
   Trash2,
@@ -65,7 +66,7 @@ import {
 } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { createWorkflowRecord, getWorkflow, getWorkflowRun, listWorkflows, removeWorkflow, startWorkflowRun, updateWorkflowRecord } from "../api/workflows.js";
+import { cancelWorkflowRun, createWorkflowRecord, getWorkflow, getWorkflowRun, listWorkflows, removeWorkflow, startWorkflowRun, updateWorkflowRecord } from "../api/workflows.js";
 import { fetchAssets, uploadAsset } from "../api/assets.js";
 import { validateAssetFile } from "../lib/assetUpload.js";
 import { MEDIA_THUMB_WIDTH, mediaUrl, storageKeyOf } from "../lib/media.js";
@@ -93,6 +94,33 @@ import { DemoSelect } from "./DemoSelect.jsx";
 import { WorksTypeIcon } from "./WorksTypeIcon.jsx";
 
 const GENERATOR_KINDS = ["ImageGenerator", "VideoGenerator", "AudioGenerator"];
+const REFERENCE_LIMITS = { IMAGE: 30, VIDEO: 10, AUDIO: 10, VIDEO_SECONDS: 30 };
+
+function referenceUsageOf(references = []) {
+  const usage = {
+    IMAGE: { count: 0 },
+    VIDEO: { count: 0, seconds: 0 },
+    AUDIO: { count: 0 },
+  };
+  references.forEach((reference) => {
+    const bucket = usage[reference?.type];
+    if (!bucket) return;
+    bucket.count += 1;
+    if (reference.type === "VIDEO") bucket.seconds += Number(reference.durationSec) || 0;
+  });
+  return usage;
+}
+
+function referenceDurationOf(node) {
+  const outputs = node?.data?.runtime?.outputs || [];
+  const index = node?.data?.media?.selectedOutputIndex ?? node?.data?.runtime?.selectedOutputIndex ?? 0;
+  const metadata = (outputs[index] || outputs[0])?.metadata || {};
+  return Number(metadata.durationSec)
+    || Number(metadata.durationMs) / 1000
+    || Number(node?.data?.media?.duration)
+    || Number(node?.data?.media?.durationSec)
+    || 0;
+}
 
 function formatUpdated(value) {
   if (!value) return "";
@@ -1735,7 +1763,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
           direct: true,
           title: item.title || (type === "VIDEO" ? "视频参考" : type === "AUDIO" ? "音频参考" : "图像参考"),
           type,
-          durationSec: 0,
+          durationSec: Number(item.durationSec) || 0,
           // 预览每次用原始 key 重建（带当前 token），保存的图 JSON 里不落死 URL
           preview: item.posterKey ? mediaUrl(item.posterKey, { w: MEDIA_THUMB_WIDTH }) : "",
           src: mediaUrl(item.storageKey),
@@ -1775,12 +1803,37 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     showToast("已移除连线");
   }, [nodes, rememberGraph, setEdges, setSaved, showToast, updateNodeMedia]);
 
+  const referenceLimitMessage = useCallback((targetId, type, durationSec = 0) => {
+    const usage = referenceUsageOf(getReferences(targetId));
+    if (type === "IMAGE" && usage.IMAGE.count >= REFERENCE_LIMITS.IMAGE) {
+      return `参考图已达上限 ${REFERENCE_LIMITS.IMAGE} 张`;
+    }
+    if (type === "AUDIO" && usage.AUDIO.count >= REFERENCE_LIMITS.AUDIO) {
+      return `参考音频已达上限 ${REFERENCE_LIMITS.AUDIO} 段`;
+    }
+    if (type === "VIDEO") {
+      const nextSeconds = usage.VIDEO.seconds + (Number(durationSec) || 0);
+      if (usage.VIDEO.count >= REFERENCE_LIMITS.VIDEO) {
+        return `参考视频已达上限 ${REFERENCE_LIMITS.VIDEO} 段`;
+      }
+      if (nextSeconds > REFERENCE_LIMITS.VIDEO_SECONDS) {
+        return `参考视频总时长将超过 ${REFERENCE_LIMITS.VIDEO_SECONDS} 秒`;
+      }
+    }
+    return "";
+  }, [getReferences]);
+
   const attachReference = useCallback((targetId, sourceId) => {
     if (edges.some((edge) => edge.target === targetId && edge.source === sourceId)) return;
     const source = nodes.find((node) => node.id === sourceId);
     if (!source) return;
     const output = source.data?.outputs?.find((port) => ["IMAGE", "VIDEO"].includes(port.type)) || source.data?.outputs?.[0];
     const type = output?.type || source.data?.assetType || "IMAGE";
+    const limitMessage = referenceLimitMessage(targetId, type, referenceDurationOf(source));
+    if (limitMessage) {
+      showToast(limitMessage);
+      return;
+    }
     rememberGraph();
     setEdges((items) => addEdge({
       id: `reference-${sourceId}-${targetId}-${Date.now()}`,
@@ -1793,7 +1846,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
       style: { stroke: edgeColor(type), strokeWidth: 2.2 },
     }, items));
     setSaved(false);
-  }, [edges, nodes, rememberGraph, setEdges]);
+  }, [edges, nodes, referenceLimitMessage, rememberGraph, setEdges, showToast]);
 
   // 打开参考素材弹框。options.slot="first"/"last" 时是参考帧档的首/尾帧图框：
   // 弹框只列图片素材，选中直接写入 media.frames.{first,last}Key（不吃参考素材列表）。
@@ -1841,6 +1894,11 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
       showToast("参考帧模式只使用首帧/尾帧图框，请先切回「参考视频」模式再添加参考素材");
       return;
     }
+    const limitMessage = referenceLimitMessage(targetId, asset.type, asset.durationSec);
+    if (limitMessage) {
+      showToast(limitMessage);
+      return;
+    }
     const list = Array.isArray(target.data?.media?.referenceAssets) ? target.data.media.referenceAssets : [];
     if (list.some((item) => item?.storageKey === asset.key)) {
       showToast("该素材已在参考列表中");
@@ -1852,12 +1910,13 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
         storageKey: asset.key,
         title: asset.title || "参考素材",
         type: asset.type === "VIDEO" ? "video" : asset.type === "AUDIO" ? "audio" : "image",
+        durationSec: Number(asset.durationSec) || 0,
         // 只存原始 key：预览地址渲染时用 mediaUrl 重建（带当前 token），保存的图里不落死 URL
         posterKey: asset.posterKey || storageKeyOf(asset.preview || ""),
       }],
     });
     showToast(`已添加${asset.type === "VIDEO" ? "视频" : asset.type === "AUDIO" ? "音频" : "图片"}参考素材`);
-  }, [nodes, rememberGraph, setNodes, showToast, updateNodeMedia]);
+  }, [nodes, referenceLimitMessage, rememberGraph, setNodes, showToast, updateNodeMedia]);
 
   const handleSelectionChange = useCallback(({ nodes: selectedNodes, edges: selectedEdges }) => {
     const nextIds = selectedNodes.map((node) => node.id);
@@ -2031,12 +2090,14 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
   const currentFrameKey = referencePickerSlot === "first"
     ? (pickerTarget?.data?.media?.frames?.firstKey || "")
     : referencePickerSlot === "last" ? (pickerTarget?.data?.media?.frames?.lastKey || "") : "";
+  const pickerUsage = useMemo(() => referenceUsageOf(referencePickerNodeId ? getReferences(referencePickerNodeId) : []), [getReferences, referencePickerNodeId]);
+  const formatReferenceUsage = (type, limit) => `${pickerUsage[type].count}/${limit}${type === "VIDEO" ? ` 段 / ${pickerUsage.VIDEO.seconds}/${REFERENCE_LIMITS.VIDEO_SECONDS}s` : ""}`;
   const pickerQuotaText = pickerSlotLabel
     ? "仅支持图片素材"
     : pickerIsImageNode
-      ? "参考图 ≤30 张"
+      ? `已选参考图 ${formatReferenceUsage("IMAGE", REFERENCE_LIMITS.IMAGE)}`
       : pickerAcceptsVideo
-        ? `参考视频 ≤10 段 / 共 30s · 参考图 ≤30 张${pickerAcceptsAudio ? " · 参考音频 ≤10 段" : ""}`
+        ? `已选 图 ${formatReferenceUsage("IMAGE", REFERENCE_LIMITS.IMAGE)} · 视频 ${formatReferenceUsage("VIDEO", REFERENCE_LIMITS.VIDEO)}${pickerAcceptsAudio ? ` · 音频 ${formatReferenceUsage("AUDIO", REFERENCE_LIMITS.AUDIO)}` : ""}`
         : "";
   // 帧槽位：素材库/本地上传只收图片
   const pickerFrameAssets = useMemo(() => (referenceAssets || []).filter((asset) => asset.type === "IMAGE"), [referenceAssets]);
@@ -2070,6 +2131,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
               posterKey: hasImagePoster ? posterKey : "",
               preview: hasImagePoster ? mediaUrl(posterKey, { w: MEDIA_THUMB_WIDTH }) : "",
               url: src,
+              durationSec: isVideo && Number(item.durationMs) > 0 ? Math.max(1, Math.round(Number(item.durationMs) / 1000)) : 0,
               cover: { type: isVideo ? "video" : isAudio ? "audio" : "image", title, thumb: hasImagePoster ? mediaUrl(posterKey, { w: MEDIA_THUMB_WIDTH }) : "", src },
             };
           }));
@@ -2094,6 +2156,22 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     if (!hit || hit.id == null) return undefined;
     const id = Number(hit.id);
     return Number.isFinite(id) && id > 0 ? id : undefined;
+  }
+
+  async function cancelActiveRun() {
+    const runId = lastRunIdRef.current;
+    if (!runId) return;
+    try {
+      // 先让后端收敛运行状态，再停本地轮询：反过来先 abort，轮询拿不到 CANCELLED 终态，
+      // 节点卡片会一直停在「生成中」，且停止失败时前端已无法感知后端仍在跑
+      const run = await cancelWorkflowRun(runId);
+      if (run?.steps) applyRunToCurrentNodes(setNodes, run);
+      showToast("已停止运行", 2400);
+    } catch (error) {
+      showToast(error.message || "停止请求发送失败", 3000);
+    } finally {
+      runAbortRef.current?.abort();
+    }
   }
 
   async function runGraph(nodeId) {
@@ -2189,7 +2267,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     } finally {
       if (runAbortRef.current === controller) runAbortRef.current = null;
       runLock.current = false;
-      if (!controller.signal.aborted) setRunning(false);
+      setRunning(false);
     }
   }
 
@@ -2425,7 +2503,15 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
             <button onClick={() => fileRef.current?.click()}><Upload size={15} /> 导入</button>
             <button onClick={exportWorkflowFile}><Download size={15} /> 导出</button>
             <button onClick={saveWorkflow}><Save size={15} /> 保存</button>
-            <button className="run-workflow" onClick={() => runGraph()} disabled={running || !nodes.length}>{running ? <><Zap size={15} className="spin" /> {runProgress}/{runTotal || 1}</> : <><CirclePlay size={16} /> 运行</>}</button>
+            {running ? (
+              <button className="run-workflow is-stop" onClick={cancelActiveRun}>
+                <Square size={14} /> 停止 {runProgress}/{runTotal || 1}
+              </button>
+            ) : (
+              <button className="run-workflow" onClick={() => runGraph()} disabled={!nodes.length}>
+                <CirclePlay size={16} /> 运行
+              </button>
+            )}
             <span className="flow-zoom" ref={zoomLabelRef} aria-live="polite" title="画布缩放比例">100%</span>
           </Panel>
         </ReactFlow></WorkflowNodeContext.Provider></NodeEditContext.Provider>
@@ -2444,7 +2530,8 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
                 const type = node.data.assetType || node.data.outputs?.find((port) => ["IMAGE", "VIDEO", "AUDIO"].includes(port.type))?.type || "IMAGE";
                 const attached = edges.some((edge) => edge.source === node.id && edge.target === referencePickerNodeId);
                 const frameKey = pickerSlotLabel ? canvasFrameStorageKey(node) : "";
-                return <button className={attached || (frameKey && frameKey === currentFrameKey) ? "is-selected" : ""} key={node.id} onClick={() => {
+                const limitMessage = attached || pickerSlotLabel ? "" : referenceLimitMessage(referencePickerNodeId, type, referenceDurationOf(node));
+                return <button className={attached || (frameKey && frameKey === currentFrameKey) ? "is-selected" : ""} disabled={Boolean(limitMessage)} title={limitMessage} key={node.id} onClick={() => {
                   if (pickerSlotLabel) {
                     // 帧槽位：把该画布节点的图片产物直接写进 media.frames
                     if (!frameKey) { showToast("该节点还没有图片产出，请先生成"); return; }
@@ -2470,7 +2557,8 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
                   const attached = directReferenceKeys.has(asset.key) || legacyAttached;
                   const isCurrentFrame = Boolean(pickerSlotLabel && asset.key === currentFrameKey);
                   const active = attached || isCurrentFrame;
-                  return <button className={active ? "is-selected" : ""} key={asset.key} onClick={() => {
+                  const limitMessage = active || pickerSlotLabel ? "" : referenceLimitMessage(referencePickerNodeId, asset.type, asset.durationSec);
+                  return <button className={active ? "is-selected" : ""} disabled={Boolean(limitMessage)} title={limitMessage} key={asset.key} onClick={() => {
                     if (pickerSlotLabel) {
                       // 帧槽位：单选，选中即写入并关闭弹框
                       setFrameSlot(referencePickerNodeId, referencePickerSlot, { key: asset.key, title: asset.title });
@@ -2510,7 +2598,17 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
                 setFrameSlot(referencePickerNodeId, referencePickerSlot, { key: asset.storageKey, title: asset.name || file.name });
                 return;
               }
-              addReferenceAsset(referencePickerNodeId, { key: asset.storageKey, title: asset.name || file.name, type, posterKey: storageKeyOf(asset.posterKey || asset.poster || ""), preview: asset.posterUrl || asset.poster || url, url });
+              addReferenceAsset(referencePickerNodeId, {
+                key: asset.storageKey,
+                title: asset.name || file.name,
+                type,
+                posterKey: storageKeyOf(asset.posterKey || asset.poster || ""),
+                preview: asset.posterUrl || asset.poster || url,
+                url,
+                durationSec: type === "VIDEO" && Number(asset.durationMs) > 0
+                  ? Math.max(1, Math.round(Number(asset.durationMs) / 1000))
+                  : 0,
+              });
             } catch (error) { showToast(error.message || "素材上传失败"); }
           }} />
         </div>}
