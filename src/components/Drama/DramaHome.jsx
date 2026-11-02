@@ -124,6 +124,7 @@ export function DramaHome() {
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [nameError, setNameError] = useState("");
   const [menu, setMenu] = useState(null);
   const [renameTarget, setRenameTarget] = useState(null);
   const [renameDraft, setRenameDraft] = useState("");
@@ -245,10 +246,27 @@ export function DramaHome() {
     },
   });
 
+  function resetCreate() {
+    setCreating(false);
+    setForm(emptyForm);
+    setNameError("");
+  }
+
+  function closeCreate() {
+    if (createMutation.isPending) return;
+    resetCreate();
+  }
+
   function onSubmit(event) {
     event.preventDefault();
+    const name = form.name.trim();
+    if (!name) {
+      setNameError("项目名称必填");
+      return;
+    }
+    setNameError("");
     createMutation.mutate({
-      name: form.name.trim(),
+      name,
       synopsis: form.synopsis.trim(),
       textModelId: Number(form.textModelId),
       imageModelId: form.imageModelId,
@@ -413,18 +431,24 @@ export function DramaHome() {
         </>
       )}
       {creating && (
-        <DramaDialog title="创建短剧" eyebrow="从一个故事开始" wide onClose={() => { if (!createMutation.isPending) { setCreating(false); setForm(emptyForm); } }}>
+        <DramaDialog title="创建短剧" eyebrow="从一个故事开始" wide onClose={closeCreate}>
           <form id="create-drama-form" className="drama-create-form" onSubmit={onSubmit}>
             <label>
               项目名称
               <input
                 autoFocus
-                required
                 maxLength={128}
                 value={form.name}
-                onChange={(event) => setForm({ ...form, name: event.target.value })}
-                placeholder="例如：侦探社"
+                aria-invalid={Boolean(nameError)}
+                aria-describedby={nameError ? "create-drama-name-error" : undefined}
+                className={nameError ? "is-invalid" : undefined}
+                onChange={(event) => {
+                  const name = event.target.value;
+                  setForm({ ...form, name });
+                  if (name.trim()) setNameError("");
+                }}
               />
+              {nameError && <small id="create-drama-name-error" className="drama-field-error">{nameError}</small>}
             </label>
             <label>
               故事简介
@@ -530,14 +554,13 @@ export function DramaHome() {
             {createMutation.isError && <p className="drama-form-error">{createMutation.error.message}</p>}
           </form>
           <footer className="drama-create-footer">
-            <button type="button" onClick={() => { setCreating(false); setForm(emptyForm); }}>取消</button>
+            <button type="button" onClick={resetCreate}>取消</button>
             <button
               className="button button--primary"
               type="submit"
               form="create-drama-form"
               disabled={
                 createMutation.isPending
-                || !form.name.trim()
                 || !form.textModelId
                 || (imageModels.length > 0 && !form.imageModelId)
                 || (videoModels.length > 0 && !form.videoModelId)

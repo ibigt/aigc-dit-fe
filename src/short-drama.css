@@ -3454,6 +3454,9 @@
 .drama-create-form input:focus,
 .drama-create-form textarea:focus,
 .drama-create-form select:focus { border-color: var(--brand-primary); background: #222630; box-shadow: 0 0 0 3px rgba(118,104,255,.15); }
+.drama-create-form input.is-invalid,
+.drama-create-form input.is-invalid:focus { border-color: #ef747d; box-shadow: 0 0 0 3px rgba(239,116,125,.14); }
+.drama-create-form .drama-field-error { display: block; margin: 6px 0 0; color: #ff8b96; font-size: 12px; font-weight: 400; line-height: 1.4; }
 .drama-create-form footer,
 .drama-create-footer { display: flex; justify-content: flex-end; gap: 12px; }
 .drama-create-form footer button,
