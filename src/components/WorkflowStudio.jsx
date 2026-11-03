@@ -1241,6 +1241,10 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
   const zoomLabelRef = useRef(null);
   const runLock = useRef(false);
   const runAbortRef = useRef(null);
+  // 快照恢复用的独立控制器：此前它与运行轮询共用 runAbortRef，两者互相覆盖，
+  // 导致「打开画布时正在跑」的场景下运行轮询 abort 不到、runLock 永不释放，
+  // 之后点生成/重试全部被 runGraph 开头静默拦下（表现为「点击没反应」）。
+  const restoreAbortRef = useRef(null);
   const notifiedFailuresRef = useRef(new Set());
   const lastRunIdRef = useRef(null);
   const referenceUploadRef = useRef(null);
@@ -1367,8 +1371,9 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     const workflowId = Number(record.id);
     if (!Number.isFinite(workflowId) || workflowId <= 0 || record.builtin) return;
     const controller = new AbortController();
-    runAbortRef.current = controller;
-    runLock.current = true;
+    restoreAbortRef.current = controller;
+    // 恢复期不占用运行锁：恢复只是把上一次运行的结果画回卡片，
+    // 若在此期间持锁，用户点「生成/重试」会被 runGraph 静默拦下。
     restoreWorkflowSnapshot({ workflowId, signal: controller.signal, snapshot: getWorkflowRuntimeSnapshot, get: getWorkflowRun,
       onSnapshot: (snapshot) => {
         lastRunIdRef.current = snapshot.latestRunId;
@@ -1379,7 +1384,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
       },
     }).catch((error) => { if (!controller.signal.aborted) showToast(error.message || "运行恢复失败，请重新打开工作流", 3600); })
       .finally(() => {
-        if (runAbortRef.current === controller) { runAbortRef.current = null; runLock.current = false; }
+        if (restoreAbortRef.current === controller) restoreAbortRef.current = null;
         if (!controller.signal.aborted) setRunning(false);
       });
     return () => controller.abort();
@@ -2160,7 +2165,10 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
 
   async function cancelActiveRun() {
     const runId = lastRunIdRef.current;
-    if (!runId) return;
+    if (!runId) {
+      showToast("没有正在运行的任务", 2200);
+      return;
+    }
     try {
       // 先让后端收敛运行状态，再停本地轮询：反过来先 abort，轮询拿不到 CANCELLED 终态，
       // 节点卡片会一直停在「生成中」，且停止失败时前端已无法感知后端仍在跑
@@ -2171,6 +2179,10 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
       showToast(error.message || "停止请求发送失败", 3000);
     } finally {
       runAbortRef.current?.abort();
+      // 主动释放运行锁：停止后用户应能立刻重新点「生成/重试」，
+      // 否则 runGraph 开头的锁判断会把这次点击静默拦下（表现为「点击没反应」）
+      runLock.current = false;
+      setRunning(false);
     }
   }
 
@@ -2199,7 +2211,11 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
       showToast(`「${framesMissing.data?.title || "视频节点"}」为参考帧模式，请设置首帧图（图框选图或连接图片/上游视频取其尾帧）`, 3600);
       return;
     }
-    if (runLock.current) return;
+    if (runLock.current) {
+      // 静默 return 会让「点重试/生成」看起来完全没反应，必须给出提示
+      showToast("已有任务在运行，请先停止后再试", 2600);
+      return;
+    }
     const controller = new AbortController();
     runAbortRef.current = controller;
     runLock.current = true;

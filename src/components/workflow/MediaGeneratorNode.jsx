@@ -27,6 +27,7 @@ import { VideoLightbox } from "../Drama/VideoLightbox.jsx";
 import { previewFromData } from "./runtime.js";
 import { useWorkflowNode } from "./WorkflowNodeContext.jsx";
 import { NodeCollapseButton, NodeDeleteButton, NodeLockButton, nodeCollapsedClass } from "./NodeCardParts.jsx";
+import { nodeRuntimeState } from "./nodeViewModel.js";
 
 function UnifiedHandles({ hasInput, hasOutput }) {
   return (
@@ -208,9 +209,8 @@ export default function MediaGeneratorNode({ id, data, selected }) {
   const videoSrc = isVideo ? activeOutput?.url || "" : "";
   const videoPoster = activeOutput?.posterUrl || data.preview || "";
   const runtimeStatus = data.runtime?.status;
-  const runtimeError = runtimeStatus === "FAILED" || runtimeStatus === "BLOCKED"
-    ? data.runtime?.error || (runtimeStatus === "BLOCKED" ? "上游节点未成功，当前节点已阻塞" : "生成失败")
-    : "";
+  // 状态条文案统一走 nodeRuntimeState：用户主动停止（CANCELLED）不是「生成失败」
+  const runtimeState = nodeRuntimeState(data.runtime);
   const queuedReason = runtimeStatus === "QUEUED"
     ? data.runtime?.error || "上游队列繁忙，任务排队等待执行"
     : "";
@@ -300,12 +300,12 @@ export default function MediaGeneratorNode({ id, data, selected }) {
           message={queuedReason}
         />
       )}
-      {runtimeError && (
+      {runtimeState && (
         <NodeStateBar
-          tone="failed"
-          icon={AlertTriangle}
-          title={runtimeStatus === "BLOCKED" ? "已阻塞" : "生成失败"}
-          message={runtimeError}
+          tone={runtimeState.tone}
+          icon={runtimeState.tone === "cancelled" ? X : AlertTriangle}
+          title={runtimeState.title}
+          message={runtimeState.message}
           onRetry={runGeneration}
         />
       )}

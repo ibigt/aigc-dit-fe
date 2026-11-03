@@ -10182,6 +10182,10 @@ a {
 .media-node__state { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 7px; margin: 0 8px 7px; padding: 7px 8px; border: 1px solid transparent; border-radius: 7px; }
 .media-node__state.is-failed { border-color: rgba(248, 113, 113, .24); background: rgba(127, 29, 29, .24); }
 .media-node__state.is-queued { border-color: rgba(251, 191, 36, .2); background: rgba(120, 53, 15, .2); }
+.media-node__state.is-cancelled { border-color: rgba(148, 163, 184, .26); background: rgba(51, 65, 85, .28); }
+.media-node__state.is-cancelled .media-node__state-icon { color: #cbd5e1; }
+.media-node__state.is-cancelled strong { color: #e2e8f0; }
+.media-node__state.is-cancelled small { color: #b6c2d1; }
 .media-node__state-icon { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: rgba(255, 255, 255, .06); }
 .media-node__state.is-failed .media-node__state-icon { color: #fca5a5; }
 .media-node__state.is-queued .media-node__state-icon { color: #fcd34d; }
@@ -10194,6 +10198,8 @@ a {
 .media-node__state.is-queued small { color: #d7c2a1; }
 .media-node__state-retry { display: inline-flex; align-items: center; gap: 3px; height: 22px; padding: 0 7px; border: 1px solid rgba(248, 113, 113, .28); border-radius: 6px; color: #fecaca; background: rgba(248, 113, 113, .1); cursor: pointer; font: inherit; font-size: 8px; font-weight: 650; }
 .media-node__state-retry:hover { background: rgba(248, 113, 113, .18); }
+.media-node__state.is-cancelled .media-node__state-retry { border-color: rgba(148, 163, 184, .3); color: #e2e8f0; background: rgba(148, 163, 184, .12); }
+.media-node__state.is-cancelled .media-node__state-retry:hover { background: rgba(148, 163, 184, .2); }
 .media-node__zoom { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; display: grid; place-items: center; border: 0; border-radius: 5px; color: #fff; background: rgba(18, 30, 45, .76); cursor: zoom-in; z-index: 2; }
 .media-node__modes { margin: 0 8px 7px; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 5px; }
 .media-node__modes button { height: 27px; border: 1px solid #434955; border-radius: 6px; color: #abb2bc; background: #31353d; font-size: 9px; }

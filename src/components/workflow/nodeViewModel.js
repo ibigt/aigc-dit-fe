@@ -2,6 +2,26 @@ import { extractVariableNames, resolveTemplate } from "./variables.js";
 
 const clampProgress = (value) => Math.max(0, Math.min(100, Number(value) || 0));
 
+/**
+ * 节点运行状态 → 状态条文案。
+ * 用户主动停止的步骤后端记为 CANCELLED：不是「生成失败」，要单独呈现为「已取消」，
+ * 否则用户会以为是自己操作出错而反复重试。
+ */
+export function nodeRuntimeState(runtime = {}) {
+  const status = runtime.status || "";
+  const message = runtime.error || "";
+  if (status === "CANCELLED") {
+    return { tone: "cancelled", title: "已取消", message: message || "已取消" };
+  }
+  if (status === "BLOCKED") {
+    return { tone: "failed", title: "已阻塞", message: message || "上游节点未成功，当前节点已阻塞" };
+  }
+  if (status === "FAILED") {
+    return { tone: "failed", title: "生成失败", message: message || "生成失败" };
+  }
+  return null;
+}
+
 export function nodeViewModel(kind, media = {}, runtime = {}) {
   const status = runtime.status || "IDLE";
   const isEditing = kind === "VideoEditing";
