@@ -12,8 +12,9 @@ export function createScriptTask(payload) {
   return api.post("/scripts/tasks", payload);
 }
 
-export function saveScriptDocument(id, document) {
-  return api.put(`/scripts/tasks/${id}/document`, { document });
+export function saveScriptDocument(id, payload) {
+  const body = typeof payload === "string" ? { document: payload } : payload;
+  return api.put(`/scripts/tasks/${id}/document`, body);
 }
 
 export function updateScriptModel(id, modelId) {

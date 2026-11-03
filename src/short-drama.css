@@ -2578,6 +2578,25 @@
   height: auto;
   min-height: 0;
 }
+/* 尚未拆镜时中间栏只有空状态，不要套成片比例，否则 9:16 会收成一条窄栏。 */
+.youxi-storyboard-layout--board .youxi-storyboard-main:has(> .youxi-story-preview:only-child) {
+  grid-template-rows: minmax(0, 1fr);
+}
+.youxi-storyboard-layout--board .youxi-storyboard-main > .youxi-story-preview:only-child {
+  justify-items: stretch;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+}
+.youxi-storyboard-layout--board .youxi-storyboard-main > .youxi-story-preview:only-child > .youxi-story-empty-preview {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  min-height: 0;
+  aspect-ratio: auto;
+  justify-self: stretch;
+}
 .youxi-story-inspector .youxi-story-cast {
   margin: 16px 0 14px;
 }
@@ -3454,6 +3473,9 @@
 .drama-create-form input:focus,
 .drama-create-form textarea:focus,
 .drama-create-form select:focus { border-color: var(--brand-primary); background: #222630; box-shadow: 0 0 0 3px rgba(118,104,255,.15); }
+.drama-create-form input.is-invalid,
+.drama-create-form input.is-invalid:focus { border-color: #ef747d; box-shadow: 0 0 0 3px rgba(239,116,125,.14); }
+.drama-create-form .drama-field-error { display: block; margin: 6px 0 0; color: #ff8b96; font-size: 12px; font-weight: 400; line-height: 1.4; }
 .drama-create-form footer,
 .drama-create-footer { display: flex; justify-content: flex-end; gap: 12px; }
 .drama-create-form footer button,

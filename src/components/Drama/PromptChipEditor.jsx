@@ -218,11 +218,16 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
   // ---------- mention 下拉的滚动 / 缩放跟随 ----------
   useEffect(() => {
     if (!mention.open) return undefined;
-    const update = () => {
-      setMention((m) => {
-        if (!m.open) return m;
-        const rect = computeCaretRect();
-        return rect ? { ...m, rect } : m;
+    const update = (event) => {
+      const target = event?.target;
+      if (target instanceof Element && target.closest(".drama-mention-dropdown")) return;
+      setMention((current) => {
+        if (!current.open) return current;
+        const rect = current.chipTokenId
+          ? measureChipRect(editorRef.current, current.chipTokenId)
+          : caretRectInEditor(editorRef.current);
+        if (!rect) return current;
+        return { ...current, rect };
       });
     };
     const onPointerDown = (event) => {
@@ -645,6 +650,11 @@ export const PromptChipEditor = forwardRef(function PromptChipEditor(
         spellCheck={false}
         data-disabled={disabled ? "true" : undefined}
         data-placeholder={placeholder}
+        onMouseDown={(event) => {
+          if (event.target instanceof Element && event.target.closest("[data-kind=\"asset\"]")) {
+            event.preventDefault();
+          }
+        }}
         onInput={handleInput}
         onKeyDown={handleKeyDown}
         onClick={handleClick}
@@ -711,20 +721,11 @@ function MentionDropdown({
 }) {
   const listRef = useRef(null);
   useEffect(() => {
-    if (!listRef.current) return;
-    const el = listRef.current.querySelector(".drama-mention-dropdown__item.is-active");
-    if (el && typeof el.scrollIntoView === "function") {
-      el.scrollIntoView({ block: "nearest" });
-    }
+    scrollActiveIntoList(listRef.current);
   }, [activeIndex, category]);
 
   if (typeof window === "undefined") return null;
-  const width = 310;
-  const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.left));
-  const estimated = 360;
-  let top = rect.bottom + 6;
-  if (top + estimated > window.innerHeight) top = Math.max(8, rect.top - estimated - 6);
-  const style = { left, top, width };
+  const style = dropdownPosition(rect, 310, 360);
 
   return (
     <div
@@ -804,24 +805,16 @@ function VersionDropdown({
 }) {
   const listRef = useRef(null);
   useEffect(() => {
-    if (!listRef.current) return;
-    const el = listRef.current.querySelector(".drama-mention-dropdown__item.is-active");
-    if (el && typeof el.scrollIntoView === "function") {
-      el.scrollIntoView({ block: "nearest" });
-    }
+    scrollActiveIntoList(listRef.current);
   }, [activeIndex]);
 
   if (typeof window === "undefined") return null;
-  const width = 320;
-  const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.left));
-  const estimated = 280;
-  let top = rect.bottom + 6;
-  if (top + estimated > window.innerHeight) top = Math.max(8, rect.top - estimated - 6);
+  const style = dropdownPosition(rect, 320, 280);
 
   return (
     <div
       className="drama-mention-dropdown drama-mention-dropdown--version"
-      style={{ left, top, width }}
+      style={style}
       role="dialog"
       aria-label="选择版本"
       onMouseDown={(e) => {
@@ -1192,6 +1185,48 @@ function getCaretInTokens(container, range) {
     offset = range.startContainer === target ? 0 : readSpanValue(target).length;
   }
   return { tokenId, offset };
+}
+
+function measureChipRect(editor, tokenId) {
+  if (!editor || !tokenId) return null;
+  const el = editor.querySelector(`[data-token-id="${tokenId}"]`);
+  if (!(el instanceof HTMLElement)) return null;
+  const rect = el.getBoundingClientRect();
+  if (!rect.width && !rect.height) return null;
+  return rect;
+}
+
+function caretRectInEditor(editor) {
+  const rect = computeCaretRect();
+  if (!rect || !editor) return null;
+  const box = editor.getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const y = rect.top + rect.height / 2;
+  if (x < box.left - 12 || x > box.right + 12 || y < box.top - 12 || y > box.bottom + 12) return null;
+  return rect;
+}
+
+function dropdownPosition(rect, width, estimatedHeight) {
+  const margin = 8;
+  const left = Math.max(margin, Math.min(window.innerWidth - width - margin, rect.left));
+  const below = rect.bottom + 6;
+  const above = rect.top - estimatedHeight - 6;
+  let top = below;
+  if (below + estimatedHeight > window.innerHeight - margin && above >= margin) {
+    top = above;
+  } else if (below + estimatedHeight > window.innerHeight - margin) {
+    top = Math.max(margin, Math.min(below, window.innerHeight - estimatedHeight - margin));
+  }
+  return { left, top, width };
+}
+
+function scrollActiveIntoList(list) {
+  const item = list?.querySelector(".drama-mention-dropdown__item.is-active");
+  if (!list || !item) return;
+  const listRect = list.getBoundingClientRect();
+  const itemRect = item.getBoundingClientRect();
+  if (itemRect.top < listRect.top) list.scrollTop -= listRect.top - itemRect.top;
+  else if (itemRect.bottom > listRect.bottom) list.scrollTop += itemRect.bottom - listRect.bottom;
 }
 
 function computeCaretRect() {

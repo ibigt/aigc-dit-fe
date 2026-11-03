@@ -40,16 +40,37 @@ function modeOf(id) {
   return modes.find((item) => item.id === id) || modes[0];
 }
 
-function compactSubmission(mode, text, novelSource, attachments) {
+const MAX_CHARACTER_DRAFTS = 6;
+
+function filledCharacterDrafts(items) {
+  return (Array.isArray(items) ? items : [])
+    .map((item) => ({
+      name: String(item?.name || "").trim(),
+      role: String(item?.role || "").trim(),
+      note: String(item?.note || "").trim(),
+    }))
+    .filter((item) => item.name)
+    .slice(0, MAX_CHARACTER_DRAFTS);
+}
+
+function characterBlock(items) {
+  const filled = filledCharacterDrafts(items);
+  if (!filled.length) return "";
+  const lines = filled.map((item, index) => `${index + 1}. 姓名：${item.name}；身份：${item.role || "未说明"}；设定：${item.note || "未说明"}`);
+  return `【角色设定】\n${lines.join("\n")}`;
+}
+
+function compactSubmission(mode, text, novelSource, attachments, characterText = "") {
   const names = [novelSource?.name, ...attachments.map((item) => item.name)].filter(Boolean);
   const files = names.length ? `\n已挂载素材：${names.join("、")}` : "";
+  const characters = characterText ? `\n${characterText}` : "";
   if (mode === "adapt" && novelSource) {
     return `已提交小说改编任务：${novelSource.name}（原文已作为任务素材保存）${text ? `\n改编要求：${text}` : ""}${files}`;
   }
   if (mode === "review") {
     return `已提交剧本评估任务${text ? `：${text.slice(0, 240)}${text.length > 240 ? "…" : ""}` : ""}${files}`;
   }
-  return `${text.slice(0, 240)}${text.length > 240 ? "…" : ""}${files}`;
+  return `${text.slice(0, 240)}${text.length > 240 ? "…" : ""}${characters}${files}`;
 }
 
 function messageText(task, message) {
@@ -70,11 +91,149 @@ const documentTabs = [
   { id: "setting", label: "故事设定" },
   { id: "characters", label: "人物设定" },
   { id: "outline", label: "分集大纲" },
+  { id: "scenes", label: "首集分场" },
 ];
 const reviewTabs = [{ id: "evaluation", label: "评估报告" }];
+const analysisTab = { id: "analysis", label: "原文分析" };
 
 function tabsForTask(task) {
-  return task?.mode === "review" ? reviewTabs : documentTabs;
+  if (task?.mode === "review") return reviewTabs;
+  if (task?.mode === "adapt") return [...documentTabs, analysisTab];
+  return documentTabs;
+}
+
+function episodeMarkerNumber(digits, chinese, epDigits) {
+  const numeric = digits || epDigits;
+  if (numeric) return Number(numeric);
+  if (!chinese) return Number.MAX_SAFE_INTEGER;
+  const map = "一二三四五六七八九";
+  if (chinese.length === 1 && map.includes(chinese)) return map.indexOf(chinese) + 1;
+  if (chinese === "十") return 10;
+  if (chinese.startsWith("十") && map.includes(chinese.slice(1))) return 10 + map.indexOf(chinese.slice(1)) + 1;
+  if (chinese.endsWith("十") && map.includes(chinese.slice(0, 1))) return (map.indexOf(chinese.slice(0, 1)) + 1) * 10;
+  return Number.MAX_SAFE_INTEGER;
+}
+
+function splitEpisodeScripts(document) {
+  const text = String(document || "").replace(/\r\n/g, "\n").trim().replace(/\n*【已按目标集数截取正文】\s*$/, "").trim();
+  if (!text) return [];
+  const pattern = /(?:^|\n)([ \t]*(?:第\s*(\d+)\s*集|第\s*([一二三四五六七八九十百]+)\s*集|EP\s*(\d+)).*)/gi;
+  const hits = [];
+  let match = pattern.exec(text);
+  while (match) {
+    const episode = episodeMarkerNumber(match[2], match[3], match[4]);
+    if (Number.isFinite(episode) && episode > 0 && episode < 10000) {
+      hits.push({ start: match.index + (match[0].startsWith("\n") ? 1 : 0), episode });
+    }
+    match = pattern.exec(text);
+  }
+  if (!hits.length) return [{ episode: 1, script: text }];
+  const parts = [];
+  if (hits[0].start > 0) {
+    const preamble = text.slice(0, hits[0].start).trim();
+    if (preamble && hits[0].episode === 1) hits[0].start = 0;
+    else if (preamble) parts.push({ episode: 1, script: preamble });
+  }
+  hits.forEach((hit, index) => {
+    const end = index + 1 < hits.length ? hits[index + 1].start : text.length;
+    const script = text.slice(hit.start, end).trim().replace(/\n*【已按目标集数截取正文】\s*$/, "").trim();
+    if (script) parts.push({ episode: hit.episode, script });
+  });
+  return dedupeEpisodeScripts(parts);
+}
+
+function dedupeEpisodeScripts(parts) {
+  const ordered = [];
+  parts.forEach((item) => {
+    const found = ordered.find((entry) => entry.episode === item.episode);
+    if (!found) ordered.push({ episode: item.episode, script: item.script || "" });
+    else if (String(item.script || "").trim()) found.script = `${found.script.trim()}\n\n${String(item.script).trim()}`;
+  });
+  return ordered.sort((left, right) => left.episode - right.episode);
+}
+
+function episodeScriptsOf(task) {
+  const stored = task?.result?.episode_scripts;
+  if (Array.isArray(stored) && stored.length) {
+    const parts = stored.map((item) => ({
+      episode: Number(item?.episode),
+      script: String(item?.script || ""),
+    })).filter((item) => Number.isFinite(item.episode) && item.episode > 0);
+    if (parts.length) return dedupeEpisodeScripts(parts);
+  }
+  return splitEpisodeScripts(task?.document || "");
+}
+
+function joinEpisodeScripts(parts) {
+  return (parts || []).map((item) => String(item.script || "").trim()).filter(Boolean).join("\n\n");
+}
+
+function dramaButtonState(task) {
+  if (!task || task.mode === "review") return null;
+  if (task.dramaSeriesId) return Number(task.unimportedEpisodeCount) > 0 ? "update" : "open";
+  if (String(task.document || "").trim()) return "create";
+  return null;
+}
+
+function dramaButtonLabel(state, pending) {
+  if (pending) return state === "update" ? "更新中" : "创建中";
+  if (state === "update") return "更新后续剧本";
+  if (state === "open") return "进入短剧";
+  return "创建短剧";
+}
+
+function firstEpisodeText(document) {
+  const text = String(document || "").replace(/\r\n/g, "\n").trim();
+  if (!text) return "";
+  const pattern = /(?:^|\n)[ \t]*(?:第\s*(\d+)\s*集|第\s*([一二三四五六七八九十百]+)\s*集|EP\s*(\d+))/gi;
+  let cut = text.length;
+  let seen = false;
+  let match = pattern.exec(text);
+  while (match) {
+    const episode = episodeMarkerNumber(match[1], match[2], match[3]);
+    if (!seen) seen = true;
+    else if (episode > 1) {
+      cut = match.index;
+      break;
+    }
+    match = pattern.exec(text);
+  }
+  return text.slice(0, cut).replace(/\n*【已按目标集数截取正文】\s*$/, "").trim();
+}
+
+function sceneLineEntries(scene) {
+  const direct = Array.isArray(scene?.lines) ? scene.lines.map((line) => normalizeSceneLine(line)).filter((line) => line.text) : [];
+  if (direct.length) return direct;
+  const dialogues = Array.isArray(scene?.dialogues) ? scene.dialogues : [];
+  const narrations = Array.isArray(scene?.narrations) ? scene.narrations : [];
+  return [
+    ...dialogues.map((line) => normalizeSceneLine(line, "dialogue")),
+    ...narrations.map((line) => normalizeSceneLine(line, "narration")),
+  ].filter((line) => line.text);
+}
+
+function normalizeSceneLine(line, forcedType) {
+  if (typeof line === "string") return { type: forcedType || "narration", speaker: "", text: line.trim() };
+  const typeRaw = forcedType || line?.type || line?.kind || "";
+  const dialogue = typeRaw === "dialogue" || typeRaw === "对白" || (!forcedType && !typeRaw && (line?.speaker || line?.name));
+  return {
+    type: dialogue ? "dialogue" : "narration",
+    speaker: String(line?.speaker || line?.name || line?.character || "").trim(),
+    text: String(line?.text || line?.content || line?.line || "").trim(),
+  };
+}
+
+function textItems(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => {
+      if (typeof item === "string") return item.trim();
+      const speaker = String(item?.speaker || item?.name || "").trim();
+      const text = String(item?.text || item?.content || item?.line || "").trim();
+      if (speaker && text) return `${speaker}：${text}`;
+      return text;
+    }).filter(Boolean);
+  }
+  return value ? [String(value).trim()] : [];
 }
 
 function evaluationDimensions(evaluation) {
@@ -129,7 +288,47 @@ function plainResultText(task, tab) {
       `第${item.episode || ""}集 ${item.title || "未命名"}\n${item.summary || "暂无剧情摘要"}\n结尾钩子：${item.hook || "暂无"}`
     ).join("\n\n");
   }
+  if (tab === "scenes") return plainScenesText(task);
+  if (tab === "analysis") return plainAnalysisText(task);
   return "";
+}
+
+function plainScenesText(task) {
+  const scenes = Array.isArray(task?.result?.scenes) ? task.result.scenes : [];
+  if (!scenes.length) {
+    const episode = firstEpisodeText(task?.document);
+    return episode ? `分场未结构化，以下为第 1 集正文。\n\n${episode}` : "";
+  }
+  return scenes.map((scene, index) => {
+    const lines = sceneLineEntries(scene).map((line) => (
+      line.type === "dialogue" ? `对白 ${line.speaker ? `${line.speaker}：` : ""}${line.text}` : `旁白 ${line.text}`
+    ));
+    return [
+      `第${scene.scene || index + 1}场`,
+      `时间：${scene.time || "未注明"}`,
+      `地点：${scene.location || scene.place || "未注明"}`,
+      `动作：${scene.action || "未注明"}`,
+      ...lines,
+    ].join("\n");
+  }).join("\n\n");
+}
+
+function plainAnalysisText(task) {
+  const chunks = Array.isArray(task?.result?.source_chunks) ? task.result.source_chunks : [];
+  const breakdown = task?.result?.source_breakdown || {};
+  const sections = [
+    ["conflicts", "核心冲突"],
+    ["dialogues", "关键对白"],
+    ["narrations", "旁白"],
+    ["scene_changes", "场景转换"],
+  ];
+  return [
+    ...chunks.map((chunk) => `片段 ${chunk.index}\n${chunk.summary || "暂无摘要"}`),
+    ...sections.flatMap(([key, label]) => {
+      const items = textItems(breakdown[key]);
+      return items.length ? [`${label}\n${items.map((item) => `• ${item}`).join("\n")}`] : [];
+    }),
+  ].join("\n\n");
 }
 
 function StructuredDocument({ task, tab, readOnly = false, value, onChange, onRepair, repairing = false }) {
@@ -146,8 +345,36 @@ function StructuredDocument({ task, tab, readOnly = false, value, onChange, onRe
     const characters = Array.isArray(result.characters) ? result.characters : [];
     return <div className="script-structured-list">{characters.length ? characters.map((item, index) => <article key={`${item.name || "character"}-${index}`}><strong>{item.name || "未命名人物"}</strong><span>{item.role || "角色"}</span><p>{item.arc || "暂无人物弧光"}</p></article>) : <div className="script-structured-empty"><p>暂无人物设定</p>{!readOnly && <button type="button" onClick={onRepair} disabled={repairing}>{repairing ? "AI补全中…" : "AI补全人物设定"}</button>}</div>}</div>;
   }
+  if (tab === "scenes") return <ScenesDocument task={task} />;
+  if (tab === "analysis") return <AnalysisDocument task={task} />;
   const outline = Array.isArray(result.outline) ? result.outline : [];
   return <div className="script-structured-list script-outline-list">{outline.length ? outline.map((item, index) => <article key={`${item.episode || index}-${item.title || "episode"}`}><strong>第{item.episode || index + 1}集 · {item.title || "未命名"}</strong><p>{item.summary || "暂无剧情摘要"}</p><small>结尾钩子：{item.hook || "暂无"}</small></article>) : <div className="script-structured-empty"><p>暂无分集大纲</p>{!readOnly && <button type="button" onClick={onRepair} disabled={repairing}>{repairing ? "AI补全中…" : "AI补全分集大纲"}</button>}</div>}</div>;
+}
+
+function ScenesDocument({ task }) {
+  const scenes = Array.isArray(task?.result?.scenes) ? task.result.scenes : [];
+  if (!scenes.length) {
+    const episode = firstEpisodeText(task?.document);
+    return <div className="script-structured-content"><p className="script-scene-note">分场未结构化，以下为第 1 集正文。</p><pre className="script-scene-fallback">{episode || "暂无第 1 集正文"}</pre></div>;
+  }
+  return <div className="script-structured-list script-scene-list">{scenes.map((scene, index) => {
+    const lines = sceneLineEntries(scene);
+    return <article key={`${scene.scene || index}-${scene.location || scene.place || "scene"}`}><strong>第{scene.scene || index + 1}场</strong><dl className="script-scene-meta"><div><dt>时间</dt><dd>{scene.time || "未注明"}</dd></div><div><dt>地点</dt><dd>{scene.location || scene.place || "未注明"}</dd></div><div><dt>动作</dt><dd>{scene.action || "未注明"}</dd></div></dl>{lines.length > 0 && <ul className="script-scene-lines">{lines.map((line, lineIndex) => <li key={lineIndex}><b>{line.type === "dialogue" ? "对白" : "旁白"}</b>{line.type === "dialogue" && line.speaker ? `${line.speaker}：` : ""}{line.text}</li>)}</ul>}</article>;
+  })}</div>;
+}
+
+function AnalysisDocument({ task }) {
+  const chunks = Array.isArray(task?.result?.source_chunks) ? task.result.source_chunks : [];
+  const breakdown = task?.result?.source_breakdown || {};
+  const sections = [
+    ["conflicts", "核心冲突"],
+    ["dialogues", "关键对白"],
+    ["narrations", "旁白"],
+    ["scene_changes", "场景转换"],
+  ];
+  const visibleSections = sections.map(([key, label]) => [label, textItems(breakdown[key])]).filter(([, items]) => items.length);
+  if (!chunks.length && !visibleSections.length) return <div className="script-structured-empty"><p>暂无原文分析</p></div>;
+  return <div className="script-structured-list script-analysis">{chunks.length > 0 && <h3 className="script-analysis-heading">分片摘要</h3>}{chunks.map((chunk) => <article key={`chunk-${chunk.index}`}><strong>片段 {chunk.index}</strong><p>{chunk.summary || "暂无摘要"}</p></article>)}{visibleSections.map(([label, items]) => <section key={label}><h3 className="script-analysis-heading">{label}</h3>{items.map((item, index) => <article key={`${label}-${index}`}><p>{item}</p></article>)}</section>)}</div>;
 }
 
 function EditableTaskTitle({ title, editing, draft, saving, onStart, onChange, onSave, onCancel }) {
@@ -211,7 +438,7 @@ function ScriptLibrary({ tasks, onNew, onOpen, onPreview, onConvert, onDelete })
     <div className="script-library__filters" role="tablist" aria-label="剧本状态筛选">{filters.map((item) => <button type="button" role="tab" aria-selected={filter === item.id} className={filter === item.id ? "active" : ""} onClick={() => setFilter(item.id)} key={item.id}>{item.label} {item.count}</button>)}</div>
     {!tasks.length ? <div className="script-library__empty"><FileText size={30} /><strong>还没有剧本任务</strong><p>从一个灵感、一个 TXT 小说或一份现有剧本开始。</p><button type="button" onClick={onNew}>开始创作</button></div> : !visibleTasks.length ? <div className="script-library__empty"><FileText size={30} /><strong>暂无符合条件的剧本</strong><p>切换其他状态筛选查看全部任务。</p><button type="button" onClick={() => setFilter("all")}>查看全部</button></div> : <div className="script-library__grid">{visibleTasks.map((item) => <article key={item.id}>
       <div className="script-library__cover"><span>{modeOf(item.mode).title}</span><FileText size={34} /></div>
-      <div><span className={`script-status script-status--${String(item.status || "").toLowerCase()}`}>{statusLabel(item.status)}</span><h2>{item.title}</h2><p>{item.mode === "review" ? "仅评估报告" : `${item.genre || "未设置题材"} · 目标 ${item.targetEpisodes || 6} 集`}</p><footer><small>{formatTime(item.updatedAt)} 更新</small><div><button type="button" onClick={() => onPreview(item.id)}>{item.mode === "review" ? "查看报告" : "查看"}</button><button type="button" onClick={() => onOpen(item.id)}>继续创作</button>{item.mode !== "review" && (item.dramaSeriesId ? <button type="button" onClick={() => onConvert(item)}>进入短剧</button> : item.status === "SUCCEEDED" ? <button type="button" onClick={() => onConvert(item)}>创建短剧</button> : null)}<button type="button" className="script-delete" onClick={() => onDelete(item)}>删除</button></div></footer></div>
+      <div><span className={`script-status script-status--${String(item.status || "").toLowerCase()}`}>{statusLabel(item.status)}</span><h2>{item.title}</h2><p>{item.mode === "review" ? "仅评估报告" : `${item.genre || "未设置题材"} · 目标 ${item.targetEpisodes || 6} 集`}</p><footer><small>{formatTime(item.updatedAt)} 更新</small><div><button type="button" onClick={() => onPreview(item.id)}>{item.mode === "review" ? "查看报告" : "查看"}</button><button type="button" onClick={() => onOpen(item.id)}>继续创作</button>{dramaButtonState(item) && <button type="button" onClick={() => onConvert(item)}>{dramaButtonLabel(dramaButtonState(item), false)}</button>}<button type="button" className="script-delete" onClick={() => onDelete(item)}>删除</button></div></footer></div>
     </article>)}</div>}
   </section>;
 }
@@ -241,20 +468,26 @@ function Message({ task, message, onInsert, onCopy, copied }) {
 
 function ScriptPreview({ task, onBack, onOpen, onConvert }) {
   const [tab, setTab] = useState("script");
+  const [episode, setEpisode] = useState(1);
   const [copied, setCopied] = useState(false);
   const visibleTabs = tabsForTask(task);
-  const canCreate = task?.mode !== "review" && task?.status === "SUCCEEDED" && Boolean(task?.document?.trim());
+  const dramaState = dramaButtonState(task);
+  const episodeParts = episodeScriptsOf(task);
+  const visibleEpisode = episodeParts.some((item) => item.episode === episode) ? episode : (episodeParts[0]?.episode || 1);
+  const episodeScript = episodeParts.find((item) => item.episode === visibleEpisode)?.script || "";
   useEffect(() => setTab(task?.mode === "review" ? "evaluation" : "script"), [task?.mode]);
+  useEffect(() => setEpisode(1), [task?.id]);
   if (!task) return <section className="script-library script-library--preview"><p className="script-structured-empty">正在加载剧本…</p></section>;
   async function copyCurrent() {
-    if (await copyText(plainResultText(task, tab))) {
+    const content = tab === "script" && task.mode !== "review" ? episodeScript : plainResultText(task, tab);
+    if (await copyText(content)) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1400);
     }
   }
   return <section className="script-library script-library--preview">
-    <header><div><button type="button" onClick={onBack}>返回我的剧本</button><span>只读预览 · {statusLabel(task.status)}</span><h1>{task.title}</h1><p>{task.mode === "review" ? "仅评估报告" : `${task.genre || "未设置题材"} · 目标 ${task.targetEpisodes || 6} 集`}</p></div><div className="script-preview-actions"><button type="button" onClick={() => onOpen(task.id)}>继续创作 <ChevronRight size={15} /></button>{task.mode !== "review" && (task.dramaSeriesId ? <button type="button" onClick={() => onConvert(task)}>进入短剧</button> : canCreate ? <button type="button" onClick={() => onConvert(task)}>创建短剧</button> : null)}</div></header>
-    <div className="script-preview-body"><div className="script-outline script-preview-tabs">{visibleTabs.map((item) => <button type="button" className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)} key={item.id}>{item.label}</button>)}<button type="button" className={copied ? "is-copied" : ""} onClick={copyCurrent}>{copied ? <><Check size={13} /> 已复制</> : <><Copy size={13} /> 复制本页</>}</button></div><StructuredDocument task={task} tab={tab} readOnly value={task.document} /></div>
+    <header><div><button type="button" onClick={onBack}>返回我的剧本</button><span>只读预览 · {statusLabel(task.status)}</span><h1>{task.title}</h1><p>{task.mode === "review" ? "仅评估报告" : `${task.genre || "未设置题材"} · 目标 ${task.targetEpisodes || 6} 集`}</p></div><div className="script-preview-actions"><button type="button" onClick={() => onOpen(task.id)}>继续创作 <ChevronRight size={15} /></button>{dramaState && <button type="button" onClick={() => onConvert(task)}>{dramaButtonLabel(dramaState, false)}</button>}</div></header>
+    <div className="script-preview-body"><div className="script-outline script-preview-tabs">{visibleTabs.map((item) => <button type="button" className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)} key={item.id}>{item.label}</button>)}{tab === "script" && task.mode !== "review" && episodeParts.length > 0 && <label className="script-episode-switch"><span>当前集</span><select aria-label="当前集" value={visibleEpisode} onChange={(event) => setEpisode(Number(event.target.value))}>{episodeParts.map((item) => <option key={item.episode} value={item.episode}>第{item.episode}集</option>)}</select></label>}<button type="button" className={copied ? "is-copied" : ""} onClick={copyCurrent}>{copied ? <><Check size={13} /> 已复制</> : <><Copy size={13} /> 复制本页</>}</button></div><StructuredDocument task={task} tab={tab} readOnly value={tab === "script" ? episodeScript : task.document} /></div>
   </section>;
 }
 
@@ -264,6 +497,7 @@ export function ScriptCreation() {
   const [page, setPage] = useState("create");
   const [mode, setMode] = useState("idea");
   const [prompt, setPrompt] = useState("");
+  const [characterDrafts, setCharacterDrafts] = useState([]);
   const [genre, setGenre] = useState("");
   const [episodes, setEpisodes] = useState(6);
   const [modelId, setModelId] = useState("");
@@ -277,6 +511,7 @@ export function ScriptCreation() {
   const [streamThinking, setStreamThinking] = useState("");
   const [streamText, setStreamText] = useState("");
   const [documentTab, setDocumentTab] = useState("script");
+  const [activeEpisode, setActiveEpisode] = useState(1);
   const [copiedKey, setCopiedKey] = useState("");
   const [error, setError] = useState("");
   const [editingTitle, setEditingTitle] = useState(false);
@@ -316,8 +551,19 @@ export function ScriptCreation() {
   }, [task?.modelId]);
 
   useEffect(() => {
-    if (task?.mode === "review") setDocumentTab("evaluation");
-    if (task?.mode && task.mode !== "review" && documentTab === "evaluation") setDocumentTab("script");
+    setActiveEpisode(1);
+  }, [activeTaskId]);
+
+  useEffect(() => {
+    if (!task?.mode) return;
+    if (task.mode === "review") {
+      setDocumentTab("evaluation");
+      return;
+    }
+    setDocumentTab((current) => {
+      if (current === "evaluation" || (current === "analysis" && task.mode !== "adapt")) return "script";
+      return current;
+    });
   }, [task?.mode]);
 
   useEffect(() => {
@@ -327,7 +573,7 @@ export function ScriptCreation() {
 
   const createMutation = useMutation({ mutationFn: createScriptTask });
   const generateMutation = useMutation({ mutationFn: generateScriptTask });
-  const saveMutation = useMutation({ mutationFn: ({ id, document }) => saveScriptDocument(id, document) });
+  const saveMutation = useMutation({ mutationFn: ({ id, document, episodeScripts }) => saveScriptDocument(id, { document, episodeScripts }) });
   const completeMutation = useMutation({ mutationFn: completeScriptTask });
   const continueMutation = useMutation({ mutationFn: continueScriptTask });
   const deleteMutation = useMutation({ mutationFn: deleteScriptTask });
@@ -345,7 +591,7 @@ export function ScriptCreation() {
   function reset() {
     streamRequestRef.current += 1;
     activeTaskRef.current = null;
-    setPage("create"); setMode("idea"); setPrompt(""); setGenre(""); setEpisodes(6); setModelId(""); setAttachments([]); setNovelSource(null); setActiveTaskId(null); setStreaming(false); setStreamMessages([]); setStreamText(""); setStreamThinking(""); setDocumentTab("script"); setCopiedKey(""); setEditingTitle(false); setTitleDraft(""); setError("");
+    setPage("create"); setMode("idea"); setPrompt(""); setCharacterDrafts([]); setGenre(""); setEpisodes(6); setModelId(""); setAttachments([]); setNovelSource(null); setActiveTaskId(null); setStreaming(false); setStreamMessages([]); setStreamText(""); setStreamThinking(""); setDocumentTab("script"); setActiveEpisode(1); setCopiedKey(""); setEditingTitle(false); setTitleDraft(""); setError("");
   }
 
   async function generate() {
@@ -355,13 +601,15 @@ export function ScriptCreation() {
     setError(""); setPrompt("");
     try {
       let id = activeTaskId;
-      const displayRequest = compactSubmission(mode, text, sourceFile, attachments);
+      const characterText = mode === "idea" ? characterBlock(characterDrafts) : "";
+      const displayRequest = compactSubmission(mode, text, sourceFile, attachments, characterText);
       setStreamMessages([{ role: "user", content: displayRequest }]);
       if (!id) {
         const references = attachments.map((item) => `\n\n【参考附件：${item.name}】\n${item.content}`).join("");
-        const inputText = (sourceFile
+        const baseInput = sourceFile
           ? `${mode === "review" ? "评估要求" : "改编要求"}：${text || (mode === "review" ? "请评估这份剧本" : "请将上传小说改编为竖屏短剧")}\n\n【${mode === "review" ? "待评估剧本" : "小说原文"}：${sourceFile.name}】\n${sourceFile.content}${references}`
-          : `${text}${references}`).slice(0, 200000);
+          : `${text}${references}`;
+        const inputText = (characterText ? `${baseInput}\n\n${characterText}` : baseInput).slice(0, 200000);
         const attachmentNames = [...(sourceFile ? [sourceFile.name] : []), ...attachments.map((item) => item.name)];
         const created = await createMutation.mutateAsync({ mode, genre: mode === "review" ? undefined : genre, targetEpisodes: mode === "review" ? undefined : Number(episodes), modelId: modelId ? Number(modelId) : undefined, inputText, attachments: [...new Set(attachmentNames)] });
         id = created.id;
@@ -419,7 +667,7 @@ export function ScriptCreation() {
   function openTask(id) {
     streamRequestRef.current += 1;
     activeTaskRef.current = id;
-    setPage("create"); setActiveTaskId(id); setPrompt(""); setStreaming(false); setStreamMessages([]); setStreamText(""); setStreamThinking(""); setDocumentTab("script"); setCopiedKey(""); setError("");
+    setPage("create"); setActiveTaskId(id); setPrompt(""); setStreaming(false); setStreamMessages([]); setStreamText(""); setStreamThinking(""); setDocumentTab("script"); setActiveEpisode(1); setCopiedKey(""); setError("");
   }
 
   function openPreview(id) {
@@ -440,13 +688,22 @@ export function ScriptCreation() {
   }
 
   function insertIntoDocument(content) {
-    const next = `${task?.document || draftFallback}\n\n${content}`;
-    saveDocument(next);
+    const latest = queryClient.getQueryData(["script-task", activeTaskId]) || task;
+    const parts = episodeScriptsOf(latest);
+    const episode = parts.some((item) => item.episode === activeEpisode) ? activeEpisode : (parts[0]?.episode || 1);
+    const current = parts.find((item) => item.episode === episode);
+    const script = `${current?.script || draftFallback}\n\n${content}`.trim();
+    const nextParts = parts.length
+      ? parts.map((item) => item.episode === episode ? { ...item, script } : item)
+      : [{ episode: 1, script }];
+    saveDocument(nextParts);
   }
 
-  function saveDocument(document = task?.document || "") {
+  function saveDocument(parts = episodeScriptsOf(queryClient.getQueryData(["script-task", activeTaskId]) || task)) {
     if (!activeTaskId) return;
-    saveMutation.mutate({ id: activeTaskId, document }, {
+    const episodeScripts = parts.length ? parts : [{ episode: 1, script: "" }];
+    const document = joinEpisodeScripts(episodeScripts);
+    saveMutation.mutate({ id: activeTaskId, document, episodeScripts }, {
       onSuccess: (saved) => {
         queryClient.setQueryData(["script-task", activeTaskId], saved);
         queryClient.invalidateQueries({ queryKey: ["script-tasks"] });
@@ -456,21 +713,44 @@ export function ScriptCreation() {
     });
   }
 
+  function editEpisodeScript(value) {
+    if (!task || task.mode === "review" || !activeTaskId) return;
+    queryClient.setQueryData(["script-task", activeTaskId], (current) => {
+      if (!current) return current;
+      const parts = episodeScriptsOf(current);
+      const episode = parts.some((item) => item.episode === activeEpisode) ? activeEpisode : (parts[0]?.episode || 1);
+      const nextParts = parts.some((item) => item.episode === episode)
+        ? parts.map((item) => item.episode === episode ? { ...item, script: value } : item)
+        : [...parts, { episode, script: value }];
+      return {
+        ...current,
+        document: joinEpisodeScripts(nextParts),
+        result: { ...(current.result || {}), episode_scripts: nextParts },
+        status: current.status === "SUCCEEDED" ? "DRAFT" : current.status,
+      };
+    });
+  }
+
   async function convertToDrama(item = task) {
     if (!item?.id) return;
     if (item.mode === "review") {
       setError("剧本评估任务只生成评估报告，不能创建短剧");
       return;
     }
-    if (!item.dramaSeriesId && !item.document?.trim()) {
+    const editingCurrent = page === "create" && task && String(task.id) === String(item.id);
+    const latest = editingCurrent ? (queryClient.getQueryData(["script-task", item.id]) || task) : item;
+    const episodeScripts = episodeScriptsOf(latest);
+    const document = joinEpisodeScripts(episodeScripts);
+    if (!item.dramaSeriesId && !document.trim()) {
       setError("请先生成或填写剧本正文后再创建短剧");
       return;
     }
-    if (!item.dramaSeriesId && item.status !== "SUCCEEDED") {
-      setError("剧本已保存为草稿，请先点击“完成剧本”后再创建短剧");
-      return;
-    }
     try {
+      if (editingCurrent) {
+        const saved = await saveMutation.mutateAsync({ id: item.id, document, episodeScripts: episodeScripts.length ? episodeScripts : [{ episode: 1, script: "" }] });
+        queryClient.setQueryData(["script-task", item.id], saved);
+        queryClient.invalidateQueries({ queryKey: ["script-tasks"] });
+      }
       const series = await dramaMutation.mutateAsync(item.id);
       navigate(`/console/drama/${series.id}`);
     } catch (requestError) {
@@ -524,17 +804,31 @@ export function ScriptCreation() {
     });
   }
 
-  function continueEpisode() {
-    if (!activeTaskId || continueMutation.isPending) return;
+  async function continueEpisode() {
+    if (!activeTaskId || continueMutation.isPending || saveMutation.isPending) return;
     if (task?.mode === "review") {
       setError("剧本评估任务不能续写下一集");
       return;
     }
     setError("");
+    const latest = queryClient.getQueryData(["script-task", activeTaskId]) || task;
+    const episodeScripts = episodeScriptsOf(latest);
+    try {
+      await saveMutation.mutateAsync({
+        id: activeTaskId,
+        document: joinEpisodeScripts(episodeScripts),
+        episodeScripts: episodeScripts.length ? episodeScripts : [{ episode: 1, script: latest?.document || "" }],
+      });
+    } catch (requestError) {
+      setError(requestError.message || "保存剧本正文失败");
+      return;
+    }
     continueMutation.mutate(activeTaskId, {
       onSuccess: (saved) => {
         queryClient.setQueryData(["script-task", activeTaskId], saved);
         queryClient.invalidateQueries({ queryKey: ["script-tasks"] });
+        const continued = episodeScriptsOf(saved);
+        setActiveEpisode(continued.length ? continued[continued.length - 1].episode : 1);
         setDocumentTab("script");
       },
       onError: (requestError) => setError(requestError.message || "续写下一集失败，请稍后重试"),
@@ -598,6 +892,10 @@ export function ScriptCreation() {
     });
   }
 
+  const episodeParts = episodeScriptsOf(task);
+  const visibleEpisode = episodeParts.some((item) => item.episode === activeEpisode) ? activeEpisode : (episodeParts[0]?.episode || 1);
+  const currentEpisodeScript = episodeParts.find((item) => item.episode === visibleEpisode)?.script || "";
+  const dramaState = dramaButtonState(task);
   const welcome = !activeTaskId && !messages.length && !generationPending;
   const visibleDocumentTabs = tabsForTask(task);
   const documentCopyKey = task?.mode === "review" ? "evaluation" : "document";
@@ -616,6 +914,7 @@ export function ScriptCreation() {
             <div className="script-launch-composer">
               <div className="script-launch-tabs">{modes.map((item) => <button type="button" className={mode === item.id ? "active" : ""} onClick={() => setMode(item.id)} key={item.id}>{item.title}</button>)}</div>
               <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={handleEnter(generate)} placeholder={mode === "adapt" && novelSource ? "补充改编要求，例如：压缩成 6 集、强化前三秒钩子…" : mode === "review" && novelSource ? "补充评估重点，例如：重点看前三集节奏和人物动机…" : activeMode.placeholder} />
+              {mode === "idea" && <div className="script-character-drafts"><div className="script-character-drafts__head"><span>角色设定 <small>可选，最多 6 人。填写姓名后会要求模型原样沿用；留空则由模型自行设计。</small></span><button type="button" disabled={characterDrafts.length >= MAX_CHARACTER_DRAFTS} onClick={() => setCharacterDrafts((current) => current.length >= MAX_CHARACTER_DRAFTS ? current : [...current, { name: "", role: "", note: "" }])}>添加人物</button></div>{characterDrafts.map((item, index) => <div className="script-character-row" key={index}><input aria-label={`人物${index + 1}姓名`} placeholder="姓名" value={item.name} onChange={(event) => setCharacterDrafts((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, name: event.target.value } : entry))} /><input aria-label={`人物${index + 1}身份`} placeholder="身份" value={item.role} onChange={(event) => setCharacterDrafts((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, role: event.target.value } : entry))} /><input aria-label={`人物${index + 1}设定`} placeholder="一句话设定" value={item.note} onChange={(event) => setCharacterDrafts((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, note: event.target.value } : entry))} /><button type="button" aria-label={`移除人物${index + 1}`} onClick={() => setCharacterDrafts((current) => current.filter((_, entryIndex) => entryIndex !== index))}>×</button></div>)}</div>}
               <div className="script-launch-options"><label>题材 <select value={genre} onChange={(event) => setGenre(event.target.value)} disabled={mode === "review"}><option value="">自动判断</option>{genres.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>{mode !== "review" && <label>目标集数 <input type="number" min="1" max="99" value={episodes} onChange={(event) => setEpisodes(event.target.value)} /></label>}<label>模型 <DemoSelect aria-label="文本模型" value={modelId} disabled={!textModels.length} onChange={setModelId} options={[
                   ...(modelsQuery.isLoading ? [{ value: "", label: "正在加载文本模型…", disabled: true }] : []),
                   ...(modelsQuery.isError ? [{ value: "", label: "文本模型加载失败", disabled: true }] : []),
@@ -640,7 +939,7 @@ export function ScriptCreation() {
                   ...textModels.map((item) => ({ value: String(item.id), label: item.name })),
                 ]} /></label><label className="script-thinking-toggle"><input type="checkbox" checked={thinking} onChange={(event) => setThinking(event.target.checked)} /> 深度思考</label><span>Enter 发送 · Shift + Enter 换行</span><button className="script-send" disabled={!prompt.trim() || streaming} onClick={sendChat} aria-label="发送给光驭精灵"><Send size={16} /></button></div></footer>}
       </section>
-      <aside className="script-document"><header><div><span>{task?.mode === "review" ? "剧本评估报告" : `故事底稿 · ${task?.version ? `v${task.version}` : "未保存"}`}</span>{task?.mode === "review" ? <strong>仅评估，不生成剧本</strong> : <EditableTaskTitle title={task?.title} editing={editingTitle} draft={titleDraft} saving={titleMutation.isPending} onStart={startTitleEdit} onChange={setTitleDraft} onSave={saveTitle} onCancel={() => setEditingTitle(false)} />}</div><div className="script-document-actions"><button type="button" className={copiedKey === documentCopyKey ? "is-copied" : ""} onClick={() => handleCopy(documentCopyKey, plainResultText(task, documentTab))}>{copiedKey === documentCopyKey ? <><Check size={14} /> 已复制</> : <><Copy size={14} /> {task?.mode === "review" ? "复制报告" : "复制"}</>}</button>{task?.mode !== "review" && <><button type="button" onClick={() => saveDocument()} disabled={saveMutation.isPending}><Save size={14} /> {saveMutation.isPending ? "保存中" : "保存"}</button>{task && task.status !== "SUCCEEDED" && <button type="button" onClick={completeTask} disabled={completeMutation.isPending || !task.document?.trim()}><Check size={14} /> {completeMutation.isPending ? "完成中" : "完成剧本"}</button>}{task && <button type="button" className="script-convert" disabled={dramaMutation.isPending || task.status !== "SUCCEEDED" || !task.document?.trim()} onClick={() => convertToDrama(task)}><Film size={14} /> {dramaMutation.isPending ? "创建中" : task.dramaSeriesId ? "进入短剧" : "创建短剧"}</button>}</>}</div></header><div className="script-outline">{visibleDocumentTabs.map((item) => <button type="button" className={documentTab === item.id ? "active" : ""} onClick={() => setDocumentTab(item.id)} key={item.id}>{item.label}</button>)}</div><StructuredDocument task={task} tab={documentTab} readOnly={task?.mode === "review"} value={task?.document || ""} onRepair={repairTaskStructure} repairing={structureMutation.isPending} onChange={(event) => { if (!task || task.mode === "review") return; queryClient.setQueryData(["script-task", activeTaskId], { ...task, document: event.target.value, status: task.status === "SUCCEEDED" ? "DRAFT" : task.status }); }} /><footer>{task?.mode === "review" ? <span>评估报告已完成</span> : <><span>{(task?.document || "").length} 字 · 自动版本 {task?.version || 0}</span><button type="button" onClick={continueEpisode} disabled={continueMutation.isPending || !task?.document?.trim()}>{continueMutation.isPending ? "续写中…" : "续写下一集"} <ChevronRight size={13} /></button></>}</footer></aside>
+      <aside className="script-document"><header><div><span>{task?.mode === "review" ? "剧本评估报告" : `故事底稿 · ${task?.version ? `v${task.version}` : "未保存"}`}</span>{task?.mode === "review" ? <strong>仅评估，不生成剧本</strong> : <EditableTaskTitle title={task?.title} editing={editingTitle} draft={titleDraft} saving={titleMutation.isPending} onStart={startTitleEdit} onChange={setTitleDraft} onSave={saveTitle} onCancel={() => setEditingTitle(false)} />}</div><div className="script-document-actions"><button type="button" className={copiedKey === documentCopyKey ? "is-copied" : ""} onClick={() => handleCopy(documentCopyKey, documentTab === "script" && task?.mode !== "review" ? currentEpisodeScript : plainResultText(task, documentTab))}>{copiedKey === documentCopyKey ? <><Check size={14} /> 已复制</> : <><Copy size={14} /> {task?.mode === "review" ? "复制报告" : "复制"}</>}</button>{task?.mode !== "review" && <><button type="button" onClick={() => saveDocument()} disabled={saveMutation.isPending}><Save size={14} /> {saveMutation.isPending ? "保存中" : "保存"}</button>{task && task.status !== "SUCCEEDED" && <button type="button" onClick={completeTask} disabled={completeMutation.isPending || !task.document?.trim()}><Check size={14} /> {completeMutation.isPending ? "完成中" : "完成剧本"}</button>}{task && <button type="button" className="script-convert" disabled={dramaMutation.isPending || saveMutation.isPending || !dramaState} onClick={() => convertToDrama(task)}><Film size={14} /> {dramaButtonLabel(dramaState, dramaMutation.isPending)}</button>}</>}</div></header><div className="script-outline">{visibleDocumentTabs.map((item) => <button type="button" className={documentTab === item.id ? "active" : ""} onClick={() => setDocumentTab(item.id)} key={item.id}>{item.label}</button>)}</div><StructuredDocument task={task} tab={documentTab} readOnly={task?.mode === "review"} value={documentTab === "script" ? currentEpisodeScript : (task?.document || "")} onRepair={repairTaskStructure} repairing={structureMutation.isPending} onChange={(event) => editEpisodeScript(event.target.value)} /><footer>{task?.mode === "review" ? <span>评估报告已完成</span> : <><span>{currentEpisodeScript.length} 字 · 第{visibleEpisode}集 · 自动版本 {task?.version || 0}</span><div className="script-episode-actions"><label className="script-episode-switch"><span>当前集</span><select aria-label="当前集" value={visibleEpisode} onChange={(event) => setActiveEpisode(Number(event.target.value))}>{(episodeParts.length ? episodeParts : [{ episode: 1 }]).map((item) => <option key={item.episode} value={item.episode}>第{item.episode}集</option>)}</select></label><button type="button" onClick={continueEpisode} disabled={continueMutation.isPending || !task?.document?.trim()}>{continueMutation.isPending ? "续写中…" : "续写下一集"} <ChevronRight size={13} /></button></div></>}</footer></aside>
       </div>
     )}
     {error && <div className="script-toast" role="alert">{error}</div>}
