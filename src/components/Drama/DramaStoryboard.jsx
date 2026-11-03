@@ -2239,7 +2239,7 @@ export function DramaStoryboard({ series, episode }) {
   const selectedBatchLocked = Boolean(selected?.id && batchLockedIds.has(selected.id));
   const generating = Boolean(selected && isShotGenerating(selected, busy, selectedBatchLocked));
   const drafting = autoDrafting || draftMutation.isPending;
-  const boardBusy = boardQuery.isLoading || drafting;
+  const boardLoading = boardQuery.isLoading;
   const frozenByRecompile = recompiling;
   const batchCheckedCount = shots.filter((shot) => selectedIds.has(shot.id)).length;
   const allShotsSelected = batchCheckedCount > 0 && batchCheckedCount === shots.length;
@@ -2344,7 +2344,7 @@ export function DramaStoryboard({ series, episode }) {
 
       <div className="youxi-shots-center">
         <div className="youxi-shots-center__body">
-        {!boardBusy && (
+        {!boardLoading && !drafting && (
         <div className="youxi-story-banners">
         {!scriptLocked && (
           <div className="drama-asset-gate youxi-story-gate">
@@ -2418,9 +2418,13 @@ export function DramaStoryboard({ series, episode }) {
         </div>
         )}
 
-        {boardBusy ? (
+        {boardLoading ? (
           <div className="youxi-storyboard-main youxi-storyboard-main--loading" aria-busy="true">
             <p className="youxi-storyboard-loading" role="status">分镜信息加载中</p>
+          </div>
+        ) : drafting ? (
+          <div className="youxi-storyboard-main youxi-storyboard-main--loading" aria-busy="true">
+            <p className="youxi-storyboard-loading" role="status">正在自动拆镜</p>
           </div>
         ) : !shots.length ? (
           <div className="youxi-storyboard-main">
