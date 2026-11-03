@@ -7,6 +7,8 @@ export const imageRatios = ["21:9", "16:9", "5:4", "4:3", "3:2", "1:1", "2:3", "
 export const videoDurations = [4, 5, 6, 7, 8, 9, 10, 11, 12];
 export const miniMaxDurations = [4, 5, 6, 7, 8, 9, 10, 11, 12];
 export const miniMaxMaxDurations = Array.from({ length: 11 }, (_, index) => index + 5);
+// SGLang 部署的 H3 服务端约束 target.duration_seconds ∈ [5, 15]，4 秒会 HTTP 400（官方 API 才允许 4 秒）
+export const miniMaxSglangDurations = Array.from({ length: 11 }, (_, index) => index + 5);
 export const miniMaxComfyDurations = Array.from({ length: 11 }, (_, index) => index + 5);
 export const agnesDurations = Array.from({ length: 9 }, (_, index) => index + 4);
 export const videoResolutions = ["480P", "720P", "1080P", "2K", "4K"];
@@ -41,6 +43,11 @@ export function isMiniMaxH3(model) {
 
 export function isMiniMaxComfy(model) {
   return isMiniMaxH3(model) && /comfy/i.test(String(model?.provider || ""));
+}
+
+export function isMiniMaxSglang(model) {
+  const adapter = String(model?.adapterKey || "").toLowerCase();
+  return adapter === "minimax-h3-sglang" || (isMiniMaxH3(model) && /sglang/i.test(String(model?.provider || "")));
 }
 
 export function isMiniMaxOfficial(model) {
@@ -94,6 +101,7 @@ export function isMiniMaxH3Max(model) {
 }
 
 export function durationOptionsFor(model) {
+  if (isMiniMaxSglang(model)) return miniMaxSglangDurations;
   if (isMiniMaxH3Max(model)) return miniMaxMaxDurations;
   if (isMiniMaxComfy(model)) return miniMaxComfyDurations;
   if (isMiniMaxH3(model)) return miniMaxDurations;
