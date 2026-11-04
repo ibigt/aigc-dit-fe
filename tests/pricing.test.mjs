@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { billableCharacters, calculateCreditEstimate, capabilityPricingError, characterRuleText, configuredPricingAmount, convertPricingUnit, highestTierUnitPrice, normalizePricing, normalizePricingUnit, parsePricingAmount, pricingUnits, pricingValidationError, resolveCjkWeight } from "../src/lib/pricing.js";
+import { billableCharacters, calculateCreditEstimate, capabilityPricingError, characterRuleText, configuredPricingAmount, convertPricingUnit, highestTierUnitPrice, highestVideoTier, normalizePricing, normalizePricingUnit, parsePricingAmount, pricingUnits, pricingValidationError, referenceVideoCreditCost, resolveCjkWeight, videoTierOf } from "../src/lib/pricing.js";
 
 test("pricing units are constrained by model category", () => {
   // 2026-10-22 起「次」已从所有类型移除（视频秒/图片张/语音字符/文本Token）
@@ -57,13 +57,23 @@ test("image estimate matches backend quality and resolution", () => {
   }), 12);
 });
 
-test("reference video is billed at the model highest tier price", () => {
-  // 能力之间不分价，但参考视频（r2v 的视频输入）按最高档价计：上游对输入视频也按最高档扣费
+test("reference video is billed by its own resolution tier, highest tier as fallback", () => {
+  // 能力之间不分价；参考视频（r2v 的视频输入）按它自己的分辨率档价计：
+  // 上游按输入视频自己的 token 计费，各档售价即各档成本 × 倍率
   const pricing = {
     unit: "秒",
     sale: { output: "33 积分", tiers: { "480P": "7", "720P": "15", "1080P": "33" } },
   };
-  // 输出 5s × 720P 档 15 = 75；参考 6s × 最高档 33 = 198
+  // 输出 5s × 720P 档 15 = 75；参考 6s 按它自己的 480P 档 7 = 42
+  assert.equal(calculateCreditEstimate({
+    pricing,
+    category: "video",
+    resolution: "720P",
+    durationSec: 5,
+    referenceVideoSeconds: 6,
+    referenceVideoResolution: "480P",
+  }), 75 + 42);
+  // 查不到参考视频档位 → 退回模型最高档（保守不亏本）：75 + 33*6 = 273
   assert.equal(calculateCreditEstimate({
     pricing,
     category: "video",
@@ -78,9 +88,30 @@ test("reference video is billed at the model highest tier price", () => {
     resolution: "720P",
     durationSec: 5,
     referenceVideoSeconds: 6,
+    referenceVideoResolution: "480P",
     copies: 2,
-  }), 75 * 2 + 198);
+  }), 75 * 2 + 42);
   assert.equal(highestTierUnitPrice(pricing, 33), 33);
+});
+
+test("reference video tier helpers mirror the backend rules", () => {
+  assert.equal(videoTierOf({ resolution: "480p" }), "480P");
+  assert.equal(videoTierOf({ width: 1920, height: 1080 }), "1080P");
+  assert.equal(videoTierOf({ width: 480, height: 854 }), "480P");
+  assert.equal(videoTierOf({}), null);
+  assert.equal(highestVideoTier("480P", "1080P"), "1080P");
+  assert.equal(highestVideoTier("1080P", "480P"), "1080P");
+  assert.equal(highestVideoTier(null, "720P"), "720P");
+  // 参考视频那部分的积分单独算：480P 档 7 积分/秒 × 6s = 42
+  assert.equal(referenceVideoCreditCost({
+    pricing: { unit: "秒", sale: { output: "33 积分", tiers: { "480P": "7" } } },
+    referenceVideoSeconds: 6,
+    referenceVideoResolution: "480P",
+  }), 42);
+  assert.equal(referenceVideoCreditCost({
+    pricing: { unit: "秒", sale: { output: "33 积分", tiers: { "480P": "7" } } },
+    referenceVideoSeconds: 0,
+  }), 0);
 });
 
 test("capability pricing rejects a tier priced below its cost", () => {

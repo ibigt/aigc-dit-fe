@@ -20,7 +20,8 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DemoSelect } from "../DemoSelect.jsx";
 import { normalizeWorkflowMedia, resolveWorkflowModel, workflowModeLabel } from "../../lib/modelCapabilities.js";
-import { mediaNodeCreditCost } from "../../lib/nodeCredits.js";
+import { mediaNodeCreditBreakdown, mediaNodeCreditCost } from "../../lib/nodeCredits.js";
+import { highestVideoTier, videoTierOf } from "../../lib/pricing.js";
 import { mediaUrl } from "../../lib/media.js";
 import StableTextarea from "./StableTextarea.jsx";
 import { VideoLightbox } from "../Drama/VideoLightbox.jsx";
@@ -156,20 +157,44 @@ export default function MediaGeneratorNode({ id, data, selected }) {
   // （须先于 referenceVideoSeconds 声明——那里直接用到它）
   const isVideoRefMode = isVideo && values.mode === "参考视频";
   // 左下角积分：按所选模型的售价 × 分辨率/清晰度/时长 × 副本数实时估算；跑完显示实际扣费
-  // 「参考视频」模式另计参考视频秒数（按模型最高档价，与后端 CreditCalculator 同口径）
-  const referenceVideoSeconds = isVideoRefMode
-    ? references
-      .filter((reference) => reference.type === "VIDEO")
-      .reduce((sum, reference) => sum + (Number(reference.durationSec) || 0), 0)
-    : 0;
-  const estimateCost = mediaNodeCreditCost({ media: effectiveMedia, models, isVideo, referenceVideoSeconds });
+  // 「参考视频」模式另计参考视频秒数（按参考视频自己的分辨率档价，与后端 CreditCalculator 同口径）
+  const videoReferences = isVideoRefMode
+    ? references.filter((reference) => reference.type === "VIDEO")
+    : [];
+  const referenceVideoSeconds = videoReferences
+    .reduce((sum, reference) => sum + (Number(reference.durationSec) || 0), 0);
+  // 多段参考视频取最贵的一档；有一段认不出档位就整体留空，由后端按最高档兜底（前端同样退回最高档）
+  const referenceVideoResolution = videoReferences.reduce(
+    (best, reference) => highestVideoTier(best, videoTierOf(reference)),
+    null,
+  );
+  const estimateCost = mediaNodeCreditCost({ media: effectiveMedia, models, isVideo, referenceVideoSeconds, referenceVideoResolution });
   const actualCost = data.runtime?.creditCost;
-  const creditCost = actualCost != null ? actualCost : estimateCost;
+  // 复用了历史产物的步骤本次没扣积分（creditCost=0），照搬成「0 积分」会被误读成「这个视频免费」——
+  // 这种情况下显示这个节点生成一次的价格，并打「复用」标；真跑过才显示实际扣费。
+  const reused = Boolean(data.runtime?.reused);
+  const creditCost = actualCost != null && !(actualCost === 0 && reused) ? actualCost : estimateCost;
+  // 有参考视频时把两部分拆开显示：参考视频是额外计费的一项，别混在总价里看不出来
+  const referenceBreakdown = referenceVideoSeconds > 0
+    ? mediaNodeCreditBreakdown({ media: effectiveMedia, models, isVideo, referenceVideoSeconds, referenceVideoResolution })
+    : null;
+  const referencePart = referenceBreakdown ? referenceBreakdown.reference : 0;
+  const outputPart = referenceBreakdown ? referenceBreakdown.output : estimateCost;
+  const referenceLabel = referenceVideoResolution ? `${referenceVideoResolution} 档` : "最高档";
+  const costTitle = reused
+    ? `复用已有结果，本次未扣积分（生成一次约 ${estimateCost} 积分）`
+    : actualCost != null
+      ? referenceBreakdown
+        ? `实际扣费 ${actualCost} 积分（输出 ${outputPart} + 参考视频 ${referencePart}）`
+        : `实际扣费 ${actualCost} 积分`
+      : referenceBreakdown
+        ? `估算 ${estimateCost} 积分（输出 ${outputPart} + 参考视频 ${referencePart}，按${referenceLabel}价计）`
+        : "按所选模型的售价、分辨率、时长与副本数估算";
 
   const duration = values.duration ?? 5;
   const summary = isVideo
     ? `${values.ratio} · ${values.resolution} · ${duration}s${media.audio !== false ? " · 音效" : ""}`
-    : `${values.ratio} · ${values.resolution} · ${media.quality || "高"}`;
+    : `${values.ratio} · ${values.resolution} · ${media.quality || "中"}`;
 
   // 参考帧模式（i2v）：显式首帧/尾帧图框（B2），数据存 media.frames = { firstKey, lastKey }。
   // 后端 planner 直读 frames 组 FrameInput，不再从连线引用里按顺序推断。
@@ -226,6 +251,7 @@ export default function MediaGeneratorNode({ id, data, selected }) {
       return;
     }
     setGenerating(true);
+    setSettingsOpen(false);
     generateMedia?.(id);
   };
 
@@ -394,10 +420,10 @@ export default function MediaGeneratorNode({ id, data, selected }) {
           </div>
         )}
         {isFramesMode && !media.frames?.firstKey && frameSourceCount < 1 && (
-          <small className="media-node__frames-hint">参考帧：设置首帧图（必需），尾帧可选；也可连接图片或上游视频（取其尾帧）作首帧</small>
+          <small className="media-node__frames-hint">首尾帧：设置首帧图（必需），尾帧可选；也可连接图片或上游视频（取其尾帧）作首帧</small>
         )}
         {isVideoRefMode && (
-          <small className="media-node__frames-hint">参考视频：图片+视频（+音频）混合参考——视频保留动作与运镜，图片定人物与风格</small>
+          <small className="media-node__frames-hint">参考生成：图片+视频（+音频）混合参考——视频保留动作与运镜，图片定人物与风格</small>
         )}
         {supplements.length > 0 && (
           <div className="media-node__supplements" aria-label="提示词补充">
@@ -454,12 +480,11 @@ export default function MediaGeneratorNode({ id, data, selected }) {
           options={options.copies.map((copy) => ({ value: copy, label: `${copy} 份` }))}
         />
         <span
-          className="media-node__cost"
-          title={actualCost != null
-            ? `实际扣费 ${actualCost} 积分`
-            : "按所选模型的售价、分辨率、时长与副本数估算"}
+          className={`media-node__cost${reused ? " is-reused" : ""}`}
+          title={costTitle}
         >
           <Zap size={11} /> {creditCost}
+          {reused && <em className="media-node__cost-tag">复用</em>}
         </span>
         <button className="media-node__generate" onClick={runGeneration}>
           {isBusy ? (

@@ -216,7 +216,7 @@ function isCjk(char) {
 }
 
 // 模型最高档单价（每单位）：取 sale.tiers 里最高的档价，与基准价取大者。
-// 参考视频按此价计费——上游对输入视频也按最高档扣费，任何能力组合都不能亏本。
+// 参考视频查不到自身档位时按此价兜底——上游对输入视频也按 token 计费，保守不亏本。
 export function highestTierUnitPrice(pricing, fallbackUnitPrice = 0) {
   let highest = Math.max(0, Number(fallbackUnitPrice) || 0);
   const tiers = pricing?.sale?.tiers || {};
@@ -225,6 +225,47 @@ export function highestTierUnitPrice(pricing, fallbackUnitPrice = 0) {
     if (amount != null && amount > highest) highest = amount;
   }
   return highest;
+}
+
+// 视频分辨率档位（与后端 VideoTiers 同规则）：上游分辨率名或素材宽高 → 定价档位名。
+const VIDEO_TIERS = ["480P", "720P", "768P", "1080P", "2K", "4K"];
+
+export function videoTierOf({ resolution, width, height } = {}) {
+  const value = String(resolution ?? "").trim().toUpperCase();
+  if (value && VIDEO_TIERS.includes(value)) return value;
+  const w = Number(width) || 0;
+  const h = Number(height) || 0;
+  if (w <= 0 || h <= 0) return null;
+  const shortSide = Math.min(w, h);
+  if (shortSide <= 480) return "480P";
+  if (shortSide <= 720) return "720P";
+  if (shortSide <= 768) return "768P";
+  if (shortSide <= 1080) return "1080P";
+  if (shortSide <= 1440) return "2K";
+  return "4K";
+}
+
+// 多段参考视频取更贵的一档（档位未知时返回 null，由调用方按最高档兜底）。
+export function highestVideoTier(current, candidate) {
+  if (!candidate) return current || null;
+  if (!current) return candidate;
+  const currentRank = VIDEO_TIERS.indexOf(current);
+  const candidateRank = VIDEO_TIERS.indexOf(candidate);
+  if (currentRank < 0) return candidate;
+  if (candidateRank < 0) return current;
+  return candidateRank > currentRank ? candidate : current;
+}
+
+/**
+ * 参考视频（视频输入）的单价：按它自己的分辨率档取价。
+ * 上游按输入视频自己的 token 计费，各档售价即各档成本 × 倍率，按自身档计价刚好保本；
+ * 查不到档位或该模型没有这一档的价时退回模型最高档，保守不亏本。与后端 CreditCalculator 同口径。
+ */
+export function referenceUnitPrice(pricing, referenceVideoResolution, fallbackUnitPrice = 0) {
+  const tier = String(referenceVideoResolution ?? "").trim().toUpperCase();
+  const own = tier ? configuredPricingAmount(pricing?.sale?.tiers?.[tier]) : null;
+  if (own != null) return Math.max(0, own);
+  return highestTierUnitPrice(pricing, fallbackUnitPrice);
 }
 
 /** 1 元 = 10 积分（充值口径）；售价积分 ÷ 10 = 售价金额（元）。 */
@@ -261,7 +302,15 @@ export function capabilityPricingError(pricing, category) {
   return "";
 }
 
-export function calculateCreditEstimate({ pricing, category, resolution, quality, durationSec, referenceVideoSeconds = 0, characterCount, copies = 1 }) {
+/** 参考视频（视频输入）那部分的积分：按它自己的分辨率档价 × 秒数。 */
+export function referenceVideoCreditCost({ pricing, referenceVideoSeconds = 0, referenceVideoResolution = null } = {}) {
+  const seconds = Math.max(0, Number(referenceVideoSeconds) || 0);
+  if (seconds <= 0) return 0;
+  const unitPrice = configuredPricingAmount(pricing?.sale?.output ?? pricing?.sale) ?? 0;
+  return Math.ceil(referenceUnitPrice(pricing, referenceVideoResolution, unitPrice) * seconds);
+}
+
+export function calculateCreditEstimate({ pricing, category, resolution, quality, durationSec, referenceVideoSeconds = 0, referenceVideoResolution = null, characterCount, copies = 1 }) {
   const configured = configuredPricingAmount(pricing?.sale?.output ?? pricing?.sale);
   const unitPrice = configured == null ? (DEFAULT_UNIT_PRICE[category] || 0) : Math.max(0, configured);
   const res = String(resolution || "").toUpperCase();
@@ -292,11 +341,12 @@ export function calculateCreditEstimate({ pricing, category, resolution, quality
   if (category === "video" && pricing?.unit === "秒") {
     // 输出部分：所选分辨率档价 × 时长 × 副本数。
     let total = effectivePrice * quantity * safeCopies;
-    // 参考视频（r2v 的视频输入）：按模型最高档价计一次（同一份输入多副本不重复计）——
-    // 上游把输入视频 token 也按最高档价扣费，取最高标准保证任何能力组合都不亏本。
+    // 参考视频（r2v 的视频输入）：按它自己的分辨率档价计一次（同一份输入多副本不重复计）——
+    // 上游按输入视频自己的 token 计费，各档售价即各档成本 × 倍率，按自身档计价刚好保本；
+    // 查不到参考视频档位时退回模型最高档，保守不亏本。
     const refSeconds = Math.max(0, Number(referenceVideoSeconds) || 0);
     if (refSeconds > 0) {
-      total += highestTierUnitPrice(pricing, unitPrice) * refSeconds;
+      total += referenceUnitPrice(pricing, referenceVideoResolution, unitPrice) * refSeconds;
     }
     return Math.ceil(total * qualityMultiplier);
   }

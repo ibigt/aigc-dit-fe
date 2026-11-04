@@ -200,8 +200,8 @@ export function findWorkflowModel(models, modelName) {
 // value 是**落库 + 发给后端**的档位名。后端 WorkflowGraphPlanner 按显式白名单判定，
 // 新旧档位写法（参考帧 / 首尾帧）都认；「参考视频」判定视频整段透传。
 export const WORKFLOW_VIDEO_MODES = [
-  { value: "参考视频", label: "参考视频", cap: "r2v", videoRef: true, default: true },
-  { value: "参考帧", label: "参考帧", cap: "i2v" },
+  { value: "参考视频", label: "参考生成", cap: "r2v", videoRef: true, default: true },
+  { value: "参考帧", label: "首尾帧", cap: "i2v" },
 ];
 
 // 旧工作流落库的档位名 → 现档位。「参考图/全能参考」本质是 r2v 图片参考，
@@ -269,7 +269,7 @@ export function normalizeWorkflowMedia(media = {}, model, isVideo) {
   const options = workflowMediaOptions(model, isVideo);
   const next = {
     ratio: options.ratios.includes(media.ratio) ? media.ratio : "16:9",
-    resolution: pickResolution(media.resolution, options.resolutions, isVideo ? ["1080P", "720P"] : ["2K"]),
+    resolution: pickResolution(media.resolution, options.resolutions, isVideo ? ["1080P", "720P"] : ["1K"]),
     copies: Math.min(options.copies.length, Math.max(1, Number(media.copies) || 1)),
   };
   if (isVideo) {
