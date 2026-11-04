@@ -1,4 +1,5 @@
 import { mediaUrl } from "../../lib/media.js";
+import { cleanPersistedValue } from "./serializer.js";
 
 // 运行结果只带 storageKey（如 users/1/outputs/2084/1.png），展示前归一化出可直接访问的 url。
 // 后端 run 响应虽附带 url，但缺 token（/api/media 鉴权 401），因此凡有 storageKey 一律用
@@ -22,6 +23,8 @@ export function applyRunToNodes(nodes, run) {
       status: step.status,
       progress: step.progress || 0,
       creditCost: step.creditCost ?? null,
+      // 复用标记：命中指纹复用了历史产物，本次没真跑、没扣积分（creditCost 为 0）
+      reused: Boolean(step.reused),
       resolvedPrompt: step.resolvedPrompt || "",
       outputs: displayOutputs(step.outputs, node.data?.runtime?.outputs),
       error: step.errorMessage || "",
@@ -83,12 +86,13 @@ export function waitForWorkflowPoll(signal, delay = 1500) {
   });
 }
 
-export async function executeWorkflowRun({ graph, workflowId, previousRunId, modelId, nodeId, save, start, get, wait, onRun, signal }) {
+export async function executeWorkflowRun({ graph, requestGraph, workflowId, previousRunId, modelId, nodeId, forceRegenerate, save, start, get, wait, onRun, signal }) {
   try {
     if (signal?.aborted) return null;
     if (workflowId != null) await save(workflowId, graph);
     if (signal?.aborted) return null;
-    const request = { ...(workflowId != null ? { workflowId } : {}), ...(previousRunId != null ? { previousRunId } : {}), modelId, ...(nodeId ? { nodeId } : {}), graph };
+    // requestGraph：只影响本次提交的图（如整图运行时跳过缺首帧的节点），落库仍用 graph 原图
+    const request = { ...(workflowId != null ? { workflowId } : {}), ...(previousRunId != null ? { previousRunId } : {}), modelId, ...(nodeId ? { nodeId } : {}), ...(forceRegenerate ? { forceRegenerate: true } : {}), graph: requestGraph || graph };
     const run = await start(request);
     if (signal?.aborted) return null;
     return await resumeWorkflowRun({ run, get, wait, onRun, signal });
@@ -173,15 +177,6 @@ export async function restoreWorkflowSnapshot({ workflowId, snapshot, get, wait 
 }
 
 export function persistableWorkflowGraph(nodes, edges) {
-  const drop = new Set(["selected", "dragging", "measured", "resizing", "runtime", "scopes", "icon"]);
-  const clean = (value) => {
-    if (typeof value === "function" || (typeof value === "string" && value.startsWith("blob:"))) return undefined;
-    if (Array.isArray(value)) return value.map(clean);
-    if (value && typeof value === "object") {
-      return Object.fromEntries(Object.entries(value).filter(([key]) => !drop.has(key))
-        .map(([key, item]) => [key, clean(item)]).filter(([, item]) => item !== undefined));
-    }
-    return value;
-  };
-  return { nodes: nodes.map(clean), edges: edges.map(clean) };
+  // 与标准 JSON 导出共用同一份清洗口径（serializer.js），避免保存与导出结果不一致。
+  return { nodes: nodes.map(cleanPersistedValue), edges: edges.map(cleanPersistedValue) };
 }

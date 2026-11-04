@@ -108,6 +108,8 @@ test("maps all runtime fields without mutating nodes or unmatched nodes", () => 
     status: "FAILED",
     progress: 0,
     creditCost: 4,
+    // 复用标记：命中指纹复用了历史产物时为 true（本次没真跑、没扣积分）
+    reused: false,
     resolvedPrompt: "resolved",
     outputs: ["out"],
     error: "failed",
