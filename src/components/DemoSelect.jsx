@@ -10,10 +10,13 @@ export function DemoSelect({
   menuClassName = "",
   ariaLabel,
   placeholder = "请选择",
+  icon = null,
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
   const selected = options.find((item) => String(item.value) === String(value));
+  const isNoDrag = className.includes("nodrag");
+  const isNoWheel = className.includes("nowheel");
 
   useEffect(() => {
     if (!open) return undefined;
@@ -34,7 +37,12 @@ export function DemoSelect({
   }, [open]);
 
   return (
-    <div ref={rootRef} className={`demo-select custom-select${open ? " open" : ""}${className ? ` ${className}` : ""}`}>
+    <div
+      ref={rootRef}
+      className={`demo-select custom-select${open ? " open" : ""}${className ? ` ${className}` : ""}`}
+      onPointerDown={isNoDrag ? (event) => event.stopPropagation() : undefined}
+      onWheel={isNoWheel ? (event) => event.stopPropagation() : undefined}
+    >
       <button
         type="button"
         className="select-trigger"
@@ -44,8 +52,9 @@ export function DemoSelect({
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
       >
+        {icon}
         <span className="select-value">{selected?.label || placeholder}</span>
-        <ChevronDown size={18} />
+        <ChevronDown size={18} className="select-chevron" />
       </button>
       {open && (
         <div className={`select-menu${menuClassName ? ` ${menuClassName}` : ""}`} role="listbox" aria-label={ariaLabel}>

@@ -7,65 +7,40 @@ import { IMAGE_POLL_TIMEOUT_MS, pollGenerateTask, submitGenerate, VIDEO_POLL_TIM
 import { friendlyGenerateError, FRAMES_EMPTY_PROMPT_LABEL, materialToAsset, promptForDisplay, promptForResult, tasksToMessages, taskToResultMessage } from "../lib/createFlow.js";
 import { downloadMediaFile, formatDateTime, mediaDownloadName, mediaUrl, storageKeyOf } from "../lib/media.js";
 import { billableCharacters, calculateCreditEstimate, resolveCjkWeight } from "../lib/pricing.js";
+import {
+  clampDurationForModel,
+  durationOptionsFor,
+  imageOnlyRefs,
+  imageRatios,
+  imageResolutions,
+  isAgnes,
+  isMiniMaxComfy,
+  isMiniMaxH3,
+  isMiniMaxH3Max,
+  isMiniMaxOfficial,
+  isSeedance20Official,
+  isSeedance25,
+  isSeedanceOfficial,
+  isWan3Model,
+  maxCopiesFor,
+  modelSupports,
+  resolutionOptionsFor,
+  supportsLibraryCite,
+  videoRatios,
+  videoResolutions,
+  videoResolutionsFor,
+} from "../lib/modelCapabilities.js";
 import { modelCatalogMessage } from "../lib/modelCatalog.js";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { AssetPickerDialog } from "./AssetPickerDialog.jsx";
+import QuickAudioPopover from "./QuickAudioPopover.jsx";
+import { voiceIdOf, voiceLabel, voiceLanguage } from "../lib/voices.js";
 import { sameAsset } from "../lib/assetPicker.js";
 import { WorksTypeIcon } from "./WorksTypeIcon.jsx";
 import { WorkWaveform } from "./AudioPreview.jsx";
 
-const videoRatios = ["自动", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
-const imageRatios = ["21:9", "16:9", "5:4", "4:3", "3:2", "1:1", "2:3", "3:4", "4:5", "9:16"];
-const videoDurations = [4, 5, 6, 7, 8, 9, 10, 11, 12];
-const miniMaxDurations = [4, 5, 6, 7, 8, 9, 10, 11, 12];
-const miniMaxMaxDurations = Array.from({ length: 11 }, (_, index) => index + 5);
-const miniMaxComfyDurations = Array.from({ length: 11 }, (_, index) => index + 5);
-const agnesDurations = Array.from({ length: 9 }, (_, index) => index + 4);
-const videoResolutions = ["480P", "720P", "1080P", "2K", "4K"];
-// 图片分辨率档位与图片计费分档保持一致（1K 为基准档）
-const imageResolutions = ["1K", "2K", "4K"];
 const qualityLevels = ["Low", "Medium", "High"];
 const DEFAULT_SESSION_ID = "new-creation-default";
-const MODE_CAPS = ["t2i", "i2i", "t2v", "r2v", "i2v", "t2a"];
-const voiceLabels = {
-  "male-qn-qingse": "青涩青年男声",
-  "male-qn-jingying": "精英青年男声",
-  "male-qn-badao": "霸道青年男声",
-  "male-qn-daxuesheng": "青年大学生",
-  "female-shaonv": "少女音",
-  "female-yujie": "御姐音",
-  "female-chengshu": "成熟女声",
-  "female-tianmei": "甜美女声",
-};
-function voiceLabel(voice) {
-  if (voice && typeof voice === "object") return voice.name || voice.label || voice.id;
-  return voiceLabels[voice] || voice;
-}
-function voiceIdOf(voice) {
-  return voice && typeof voice === "object" ? voice.id : voice;
-}
-function voiceLanguage(voice) {
-  return voice && typeof voice === "object" ? voice.language || "其他" : "其他";
-}
-function canonicalCap(cap) {
-  if (cap === "frames" || cap === "frame" || cap === "v2v") return "i2v";
-  return cap;
-}
-function modelSupports(model, mode) {
-  if (mode === "r2v" && isMiniMaxH3Max(model)) return false;
-  const caps = Array.isArray(model?.capabilities) ? model.capabilities.map(canonicalCap) : [];
-  if (!caps.length) return true;
-  const specific = caps.filter((item) => MODE_CAPS.includes(item));
-  if (!specific.length) return true;
-  return specific.includes(mode);
-}
-function supportsLibraryCite(model, generationType, videoMode) {
-  if (generationType === "audio") return false;
-  if (generationType === "image") return modelSupports(model, "i2i");
-  if (videoMode === "frames") return modelSupports(model, "i2v");
-  return modelSupports(model, "r2v");
-}
-
 const videoDurationCache = new Map();
 // 读参考视频时长（秒），读不到按 0：本地新选的素材服务端还没探测时长，先用浏览器元数据估。
 function readVideoDuration(url) {
@@ -103,116 +78,6 @@ function sumReferenceVideoSeconds(items) {
 
 function isImageMaterial(item) {
   return item?.type !== "video" && item?.type !== "audio" && item?.kind !== "video" && item?.kind !== "audio";
-}
-function isMiniMaxH3(model) {
-  return model?.adapterKey === "minimax-h3" || String(model?.modelKey || "").toLowerCase().includes("minimax");
-}
-function isMiniMaxComfy(model) {
-  return isMiniMaxH3(model) && /comfy/i.test(String(model?.provider || ""));
-}
-function isMiniMaxOfficial(model) {
-  return isMiniMaxH3(model) && !isMiniMaxComfy(model);
-}
-function isAgnes(model) {
-  const key = String(model?.adapterKey || model?.modelKey || "").toLowerCase();
-  return key.includes("agnes");
-}
-function isSeedance25(model) {
-  const key = String(model?.adapterKey || model?.modelKey || "").toLowerCase();
-  return key.includes("seedance-2.5") || key.includes("seedance-2-5") || key.includes("doubao-seedance-2-5");
-}
-function isSeedance20Official(model) {
-  const adapter = String(model?.adapterKey || "").toLowerCase();
-  const key = String(model?.modelKey || "").toLowerCase();
-  return adapter === "seedance-2.0" || key.includes("doubao-seedance-2-0") || key.includes("doubao-seedance-2.0");
-}
-function isSeedanceOfficial(model) {
-  return isSeedance25(model) || isSeedance20Official(model);
-}
-function isSeedanceFast(model) {
-  return String(model?.modelKey || "").toLowerCase().includes("fast");
-}
-function isSeedanceMini(model) {
-  return String(model?.modelKey || "").toLowerCase().includes("mini");
-}
-function imageOnlyRefs(model) {
-  return isAgnes(model);
-}
-function isMiniMaxH3Max(model) {
-  return String(model?.modelKey || "").toLowerCase().includes("h3-max")
-    || String(model?.modelKey || "").toLowerCase().includes("h3_max");
-}
-function durationOptionsFor(model) {
-  if (isMiniMaxH3Max(model)) return miniMaxMaxDurations;
-  if (isMiniMaxComfy(model)) return miniMaxComfyDurations;
-  if (isMiniMaxH3(model)) return miniMaxDurations;
-  if (isAgnes(model)) return agnesDurations;
-  return videoDurations;
-}
-function videoResolutionsFor(model) {
-  if (isAgnes(model)) return ["720P"];
-  if (isMiniMaxH3Max(model) && isMiniMaxOfficial(model)) return ["480P", "768P"];
-  if (isMiniMaxOfficial(model)) return ["768P", "2K"];
-  if (isMiniMaxComfy(model)) return videoResolutions;
-  // Seedance fast 与 mini 官方仅支持 480P / 720P
-  if (isSeedance25(model) || (isSeedance20Official(model) && (isSeedanceFast(model) || isSeedanceMini(model)))) return ["480P", "720P"];
-  if (isSeedance20Official(model)) return ["480P", "720P", "1080P"];
-  // Wan 3.0 官方接口只支持 480P / 720P / 1080P，其余档位会被服务端静默降级成 720P，
-  // 展示出来会导致按高档位收费却只生成 720P
-  if (isWan3Model(model)) return ["480P", "720P", "1080P"];
-  return videoResolutions;
-}
-// 各创作类型的可选分辨率：视频按模型能力收敛，图片固定 1K/2K/4K（与计费分档一致）
-function resolutionOptionsFor(model, generationType) {
-  if (generationType === "video") return videoResolutionsFor(model);
-  if (generationType === "image") return imageResolutions;
-  return [];
-}
-function clampDurationForModel(model, duration) {
-  const options = durationOptionsFor(model);
-  if (options.includes(duration)) return duration;
-  return options.find((item) => item >= duration) || options[options.length - 1] || 5;
-}
-function isMockModel(model) {
-  const adapter = String(model?.adapterKey || "").toLowerCase();
-  const key = String(model?.modelKey || "").toLowerCase();
-  const provider = String(model?.provider || "").toLowerCase();
-  const endpoint = String(model?.endpoint || "").toLowerCase();
-  return adapter === "mock" || key.startsWith("mock") || provider.includes("mock") || endpoint.includes("/mock-api");
-}
-function isSeedreamModel(model) {
-  const adapter = String(model?.adapterKey || "").toLowerCase();
-  const key = String(model?.modelKey || "").toLowerCase();
-  return adapter.startsWith("seedream") || key.includes("seedream");
-}
-function isOpenAiImageModel(model) {
-  const adapter = String(model?.adapterKey || "").toLowerCase();
-  const key = String(model?.modelKey || "").toLowerCase();
-  return adapter === "gpt-image-2.0" || adapter === "gpt-image-2.5"
-    || ((adapter.startsWith("gpt-image") || key.includes("gpt-image")) && /官方|openai/i.test(String(model?.provider || "")));
-}
-function isWan3Model(model) {
-  const adapter = String(model?.adapterKey || "").toLowerCase();
-  const key = String(model?.modelKey || "").toLowerCase();
-  const provider = String(model?.provider || "").toLowerCase();
-  return adapter === "wan3" || key.includes("wan3") || key.includes("wan-3")
-    || provider.includes("dashscope") || provider.includes("百炼");
-}
-function isRunningHubModel(model) {
-  const adapter = String(model?.adapterKey || "").toLowerCase();
-  return adapter === "gpt-image-2" || adapter === "seedance-2"
-    || String(model?.provider || "").toLowerCase() === "runninghub";
-}
-function maxCopiesFor(model) {
-  if (model?.category === "audio") return 1;
-  const configured = Number(model?.maxCopies ?? model?.adapterConfig?.maxCopies ?? model?.pricing?.maxCopies);
-  if (Number.isFinite(configured)) return Math.min(4, Math.max(1, Math.floor(configured)));
-  if (isRunningHubModel(model) || isAgnes(model) || isMiniMaxH3(model) || isSeedanceOfficial(model)) return 1;
-  if (isSeedreamModel(model) || isOpenAiImageModel(model) || isWan3Model(model)
-    || /comfyui/i.test(String(model?.provider || ""))) {
-    return 4;
-  }
-  return isMockModel(model) ? 4 : 1;
 }
 function capabilityBlockReason(model, generationType, referenceImages, firstFrame, lastFrame, videoMode) {
   const hasRefs = (referenceImages || []).length > 0;
@@ -333,68 +198,6 @@ function makeInitialSession() {
 }
 
 const MAX_REFERENCE_ASSETS = 15;
-
-function QuickAudioPopover({ voices, formats, voiceId, setVoiceId, audioFormat, setAudioFormat, speed, setSpeed, minSpeed, maxSpeed }) {
-  const [voiceKeyword, setVoiceKeyword] = useState("");
-  const [voiceLanguageFilter, setVoiceLanguageFilter] = useState("全部");
-  const languages = [...new Set(voices.map(voiceLanguage))];
-  const normalizedKeyword = voiceKeyword.trim().toLowerCase();
-  const visibleVoices = voices.filter((voice) => {
-    const matchesLanguage = voiceLanguageFilter === "全部" || voiceLanguage(voice) === voiceLanguageFilter;
-    const matchesKeyword = !normalizedKeyword || `${voiceLabel(voice)} ${voiceIdOf(voice)}`.toLowerCase().includes(normalizedKeyword);
-    return matchesLanguage && matchesKeyword;
-  });
-  const speedProgress = Math.min(100, Math.max(0, ((speed - minSpeed) / (maxSpeed - minSpeed || 1)) * 100));
-  return (
-    <div className="select-menu quick-audio-popover" role="dialog" aria-label="语音参数设置">
-      <section className="quick-audio-section">
-        <label><span>音色</span><small>共 {voices.length} 个</small></label>
-        <div className="quick-voice-tools">
-          <input value={voiceKeyword} onChange={(event) => setVoiceKeyword(event.target.value)} placeholder="搜索音色名称或 Voice ID" />
-          <select value={voiceLanguageFilter} onChange={(event) => setVoiceLanguageFilter(event.target.value)}>
-            <option value="全部">全部语言</option>
-            {languages.map((language) => <option key={language} value={language}>{language}</option>)}
-          </select>
-        </div>
-        <div className="quick-voice-grid">
-          {visibleVoices.map((voice) => {
-            const id = voiceIdOf(voice);
-            const selected = voiceId === id;
-            return (
-              <button type="button" className={selected ? "selected" : ""} key={id} onClick={() => setVoiceId(id)}>
-                <span>{voiceLabel(voice)}</span>
-                <small>{voiceLanguage(voice)} · {id}</small>
-                {selected && <Check size={12} className="quick-option-check" />}
-              </button>
-            );
-          })}
-        </div>
-        {!visibleVoices.length && <div className="quick-voice-empty">没有匹配的音色</div>}
-      </section>
-
-      <section className="quick-audio-section">
-        <label>格式</label>
-        <div className="quick-format-grid">
-          {formats.map((fmt) => {
-            const selected = audioFormat === fmt;
-            return (
-              <button type="button" role="option" aria-selected={selected} className={`quick-param-option ${selected ? "selected" : ""}`} key={fmt} onClick={() => setAudioFormat(fmt)}>
-                <span>{fmt.toUpperCase()}</span>
-                {selected && <Check size={13} className="quick-option-check" />}
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="quick-audio-section quick-audio-speed">
-        <label><span>语速</span><b>{speed.toFixed(2)}x</b></label>
-        <input type="range" style={{ "--range-progress": `${speedProgress}%` }} min={minSpeed} max={maxSpeed} step="0.05" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} />
-        <div><small>{minSpeed}x</small><small>{maxSpeed}x</small></div>
-      </section>
-    </div>
-  );
-}
 
 /**
  * 单条生成结果的消息卡片。

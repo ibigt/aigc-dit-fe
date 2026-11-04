@@ -214,7 +214,7 @@ function supportedTiers(model) {
   const provider = String(model?.provider || "").toLowerCase();
   if (model?.category !== "video") return all;
   if (adapter.includes("agnes")) return all.filter((t) => t === "720P");
-  if (adapter === "minimax-h3") {
+  if (adapter === "minimax-h3" || adapter === "minimax-h3-sglang") {
     if (/comfy/i.test(provider)) return all;
     if (key.includes("h3-max") || key.includes("h3_max")) return all.filter((t) => t === "480P" || t === "768P");
     return all.filter((t) => t === "768P" || t === "2K");

@@ -23,6 +23,7 @@ const PROJECT_FILTERS = [
   { id: "all", label: "全部项目" },
   { id: "quick", label: "快速创作" },
   { id: "drama", label: "短剧创作" },
+  { id: "workflow", label: "高级工作台" },
 ];
 
 const TYPE_LABELS = { video: "视频", image: "图片", audio: "语音" };
@@ -184,6 +185,8 @@ export function MyCreations({ onReuse }) {
       category: filter === "all" ? undefined : filter,
       q: query || undefined,
       project: projectFilter === "all" ? undefined : projectFilter,
+      // 默认「全部项目」不展示高级工作台（工作流）生成的产物，避免混入快速创作视图
+      exclude: projectFilter === "all" ? "workflow" : undefined,
       from: createdFrom(timeRange),
     }),
     placeholderData: keepPreviousData,
