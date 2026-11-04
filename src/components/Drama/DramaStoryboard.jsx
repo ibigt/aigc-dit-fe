@@ -8,13 +8,11 @@ import {
   clearDramaShotFirstFrame,
   compileDramaShot,
   compileDramaStoryboard,
-  convertDramaAssetToSeedream,
   copyDramaShotPrevEndFrame,
   createDramaShot,
   deleteDramaShot,
   deleteDramaShotGeneration,
   draftDramaStoryboard,
-  fetchDramaAssetGenerateTask,
   fetchDramaShotCaptions,
   fetchDramaShotGenerations,
   fetchDramaStoryboard,
@@ -297,32 +295,12 @@ function isRealPersonReject(message) {
 function friendlyShotError(message, model) {
   const text = message || "出片失败";
   if (isRealPersonReject(text)) {
-    return "官方 Seedance 把本镜参考图判成了真人脸，已停止出片。可对相关角色资产使用「转资产图」后再出片，或换用其他视频模型。";
+    return "官方 Seedance 把本镜参考图判成了真人脸，已停止出片。请更换参考图或换用其他视频模型后再生成。";
   }
   if (isOfficialSeedance(model) && /agnes/i.test(text)) {
     return "官方 Seedance 仍在生成中，请稍后刷新。若确认失败，请换参考图后再点「生成当前镜头」";
   }
   return text;
-}
-
-function pictureRefs(shot) {
-  return (shot?.references || []).filter((item) => item?.assetId);
-}
-
-function characterPictureRefs(shot) {
-  return pictureRefs(shot).filter((item) => item.type === "角色");
-}
-
-function convertProgressText(index, total, name, phase) {
-  const who = name ? `「${name}」` : "";
-  const step = `${index}/${total}`;
-  if (phase === "describe") {
-    return `正在转资产图 ${step}：${who}图生文中…`;
-  }
-  if (phase === "t2i") {
-    return `正在转资产图 ${step}：${who}文生图中…`;
-  }
-  return `正在转资产图 ${step}${who ? `：${who}` : ""}…`;
 }
 
 function isInFlightStatus(status) {
@@ -1491,9 +1469,6 @@ export function DramaStoryboard({ series, episode }) {
   const [draftDurationSec, setDraftDurationSec] = useState(15);
   const [busy, setBusy] = useState({});
   const [actionError, setActionError] = useState("");
-  const [realPersonConvertShotId, setRealPersonConvertShotId] = useState(null);
-  const [convertingAssets, setConvertingAssets] = useState(false);
-  const [convertProgress, setConvertProgress] = useState("");
   const [preview, setPreview] = useState(null);
   const [videoPreview, setVideoPreview] = useState(null);
   const [switchFinalOpen, setSwitchFinalOpen] = useState(false);
@@ -2064,13 +2039,52 @@ export function DramaStoryboard({ series, episode }) {
   async function confirmDeleteShotGeneration() {
     const record = deleteGenerationTarget;
     if (!selected?.id || !record?.id) return;
-    setBusy((current) => ({ ...current, [selected.id]: "history" }));
+    const shotId = selected.id;
+    const removingCurrent = Boolean(
+      record.selected
+      || (record.videoKey && record.videoKey === selected.videoKey),
+    );
+    const others = generations.filter((item) => item.id !== record.id);
+    setBusy((current) => ({ ...current, [shotId]: "history" }));
     setActionError("");
     try {
-      await deleteDramaShotGeneration(selected.id, record.id);
+      await deleteDramaShotGeneration(shotId, record.id);
       setDeleteGenerationTarget(null);
+      if (removingCurrent) {
+        const nextRecord = others[0];
+        patchShot(nextRecord
+          ? {
+            id: shotId,
+            selectedGenerationId: nextRecord.id,
+            videoKey: nextRecord.videoKey || null,
+            videoUrl: nextRecord.videoUrl || null,
+            videoPosterKey: nextRecord.videoPosterKey || null,
+            videoPosterUrl: nextRecord.videoPosterUrl || null,
+            videoTailKey: nextRecord.videoTailKey || null,
+            videoTailUrl: nextRecord.videoTailUrl || null,
+            genTaskId: nextRecord.genTaskId ?? null,
+          }
+          : {
+            id: shotId,
+            selectedGenerationId: null,
+            videoKey: null,
+            videoUrl: null,
+            videoPosterKey: null,
+            videoPosterUrl: null,
+            videoTailKey: null,
+            videoTailUrl: null,
+            genTaskId: null,
+            videoGeneratedMode: null,
+            captionStatus: null,
+            captionVideoKey: null,
+            captionVideoUrl: null,
+            subtitleJsonKey: null,
+            subtitleJsonUrl: null,
+          });
+      }
+      queryClient.setQueryData(["drama-shot-generations", shotId], others);
       queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
-      queryClient.invalidateQueries({ queryKey: ["drama-shot-generations", selected.id] });
+      queryClient.invalidateQueries({ queryKey: ["drama-shot-generations", shotId] });
       queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
       queryClient.invalidateQueries({ queryKey: ["creations"] });
     } catch (error) {
@@ -2078,7 +2092,7 @@ export function DramaStoryboard({ series, episode }) {
     } finally {
       setBusy((current) => {
         const next = { ...current };
-        delete next[selected.id];
+        delete next[shotId];
         return next;
       });
     }
@@ -2107,7 +2121,6 @@ export function DramaStoryboard({ series, episode }) {
         if (done?.task?.status === "FAILED") {
           const msg = done.task.errorMessage;
           setActionError(friendlyShotError(msg, videoModels.find((item) => String(item.id) === String(videoModelId))));
-          setRealPersonConvertShotId(isRealPersonReject(msg) ? shot.id : null);
         }
       }
       queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
@@ -2119,7 +2132,6 @@ export function DramaStoryboard({ series, episode }) {
       queryClient.invalidateQueries({ queryKey: ["drama-shot-generations", shot.id] });
       if (!isRetryableRequestError(error)) {
         setActionError(error.message || "出片失败");
-        setRealPersonConvertShotId(isRealPersonReject(error.message) ? shot.id : null);
       }
     } finally {
       setBusy((current) => {
@@ -2127,67 +2139,6 @@ export function DramaStoryboard({ series, episode }) {
         delete next[shot.id];
         return next;
       });
-    }
-  }
-
-  async function convertShotRefsAfterRealPersonReject(shot) {
-    const refs = characterPictureRefs(shot);
-    const targets = [];
-    const seen = new Set();
-    for (const item of refs) {
-      const assetId = item.assetId;
-      if (!assetId || seen.has(assetId)) continue;
-      seen.add(assetId);
-      targets.push({ assetId, name: item.name || `资产 ${assetId}` });
-    }
-    if (!targets.length) {
-      setActionError("本镜没有可转的角色参考图");
-      return;
-    }
-    setConvertingAssets(true);
-    setConvertProgress(`正在转资产图 0/${targets.length}…`);
-    setActionError(`正在转资产图 0/${targets.length}…`);
-    try {
-      for (let i = 0; i < targets.length; i += 1) {
-        const { assetId, name } = targets[i];
-        const index = i + 1;
-        const total = targets.length;
-        setConvertProgress(convertProgressText(index, total, name, "describe"));
-        setActionError(convertProgressText(index, total, name, "describe"));
-        const result = await convertDramaAssetToSeedream(assetId, {});
-        const taskId = result?.task?.id;
-        if (!taskId) {
-          throw new Error(`「${name}」转图未返回任务`);
-        }
-        let status = result?.task?.status;
-        let sawRunning = status === "RUNNING";
-        while (status === "PENDING" || status === "RUNNING") {
-          if (status === "RUNNING" && !sawRunning) {
-            sawRunning = true;
-            setConvertProgress(convertProgressText(index, total, name, "t2i"));
-            setActionError(convertProgressText(index, total, name, "t2i"));
-          }
-          await new Promise((resolve) => setTimeout(resolve, 4000));
-          const done = await fetchDramaAssetGenerateTask(assetId, taskId);
-          status = done?.task?.status;
-          if (status === "FAILED") {
-            throw new Error(done?.task?.errorMessage || `「${name}」转图失败`);
-          }
-        }
-        if (status && status !== "SUCCEEDED" && status !== "SUCCESS") {
-          throw new Error(`「${name}」转图异常：${status}`);
-        }
-      }
-      setConvertProgress("");
-      setActionError("转资产图完成，请确认选用图后再次生成当前镜头。");
-      setRealPersonConvertShotId(null);
-      queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
-      queryClient.invalidateQueries({ queryKey: ["drama-assets", activeEpisodeId] });
-    } catch (error) {
-      setActionError(error.message || "转资产图失败");
-    } finally {
-      setConvertingAssets(false);
-      setConvertProgress("");
     }
   }
 
@@ -2400,19 +2351,6 @@ export function DramaStoryboard({ series, episode }) {
                 <Wand2 size={14} /> 重新拆镜
               </button>
             )}
-          </div>
-        )}
-        {realPersonConvertShotId && selected?.id === realPersonConvertShotId && (
-          <div className="youxi-story-gate" style={{ marginTop: 8 }}>
-            <button
-              type="button"
-              disabled={convertingAssets || frozenByRecompile}
-              onClick={() => convertShotRefsAfterRealPersonReject(selected)}
-            >
-              {convertingAssets
-                ? (convertProgress || "正在转资产图…")
-                : "对参考资产转 Seedream 资产图"}
-            </button>
           </div>
         )}
         </div>

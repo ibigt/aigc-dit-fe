@@ -31,7 +31,6 @@ import {
   fetchDramaAssetGenerations,
   fetchDramaAssets,
   fetchDramaImageModels,
-  convertDramaAssetToSeedream,
   generateDramaAssetImage,
   importDramaAssetGeneration,
   pollDramaAssetGenerate,
@@ -456,6 +455,8 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   const [creating, setCreating] = useState(false);
   const [imageModelId, setImageModelId] = useState(series?.imageModelId || "");
   const [resolution, setResolution] = useState("1K");
+  // 暂时关闭前端切换 Seedream 绑定图。后端仍返回 seedreamBindKey。
+  // const [bindPreviewIds, setBindPreviewIds] = useState(() => new Set());
   const [nameDraft, setNameDraft] = useState("");
   const [editingNameId, setEditingNameId] = useState(null);
   const [promptDrafts, setPromptDrafts] = useState({});
@@ -483,6 +484,26 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   const [preview, setPreview] = useState(null);
   const [deleteGenerationTarget, setDeleteGenerationTarget] = useState(null);
   const toastTimer = useRef(0);
+
+  // function showingBind(asset) {
+  //   return Boolean(asset?.seedreamBindKey && bindPreviewIds.has(asset.id));
+  // }
+  //
+  // function toggleBindPreview(assetId, event) {
+  //   event?.stopPropagation();
+  //   event?.preventDefault();
+  //   setBindPreviewIds((current) => {
+  //     const next = new Set(current);
+  //     if (next.has(assetId)) next.delete(assetId);
+  //     else next.add(assetId);
+  //     return next;
+  //   });
+  // }
+
+  function imageKeyOf(asset) {
+    // if (showingBind(asset)) return asset.seedreamBindKey;
+    return asset?.imageStorageKey || asset?.imageUrl;
+  }
 
   function showToast(message) {
     if (!message) return;
@@ -854,30 +875,6 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
       invalidate();
     } finally {
       markBusy(asset.id, "generate", false);
-    }
-  }
-
-  /** 打回后补救 / origin 过期续链：有图即可，不要求提示词。 */
-  async function convertToSeedream(asset) {
-    if (!asset?.id) return;
-    if (!hasImage(asset)) {
-      showToast("请先上传或选用参考图");
-      return;
-    }
-    markBusy(asset.id, "convert", true);
-    try {
-      showToast("正在转资产图…");
-      const result = await convertDramaAssetToSeedream(asset.id, { resolution });
-      if (!result?.task?.id) {
-        throw new Error("转资产图未返回任务");
-      }
-      await pollDramaAssetGenerate(asset.id, result.task.id);
-      invalidate();
-      showToast("转资产图完成");
-    } catch (err) {
-      showToast(err.message || "转资产图失败");
-    } finally {
-      markBusy(asset.id, "convert", false);
     }
   }
 
@@ -1296,7 +1293,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                 const item = activeVersionOf(card) || card.asset;
                 const familyName = baseNameOf(item?.name || card.asset?.name);
                 const base = versions.find((v) => isBaseAsset(v)) || card.asset;
-                const src = mediaUrl(item.imageStorageKey || item.imageUrl, { w: MEDIA_THUMB_WIDTH });
+                const src = mediaUrl(imageKeyOf(item), { w: MEDIA_THUMB_WIDTH });
                 const generating = Boolean(item.generating) || isBusy(item.id, "generate");
                 const uploading = isBusy(item.id, "upload");
                 const busyCard = generating || uploading || batchRunning;
@@ -1404,6 +1401,19 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                           <span>或在下方生成资产图</span>
                         </div>
                       )}
+                      {/*
+                      {item.seedreamBindKey && (
+                        <button
+                          type="button"
+                          className={`asset-bind-toggle${showingBind(item) ? " is-on" : ""}`}
+                          aria-pressed={showingBind(item)}
+                          title={showingBind(item) ? "正在看分镜出片时生成的 Seedream 绑定图" : "切换查看 Seedream 绑定图"}
+                          onClick={(event) => toggleBindPreview(item.id, event)}
+                        >
+                          {showingBind(item) ? "绑定图" : "原图"}
+                        </button>
+                      )}
+                      */}
                       {(generating || uploading) && (
                         <div className="asset-image-status" role="status">
                           <span className="asset-spinner" />
@@ -1678,6 +1688,31 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                   </div>
                   <p className="asset-reference-hint">可上传本地图片，或从素材库中选择。选中后会替换当前资产图，并写入生成历史。</p>
                 </section>
+                {/*
+                {detailAsset.seedreamBindKey && (
+                  <div className="asset-bind-preview">
+                    <button
+                      type="button"
+                      className={`asset-bind-toggle${showingBind(detailAsset) ? " is-on" : ""}`}
+                      aria-pressed={showingBind(detailAsset)}
+                      onClick={(event) => toggleBindPreview(detailAsset.id, event)}
+                    >
+                      {showingBind(detailAsset) ? "正在看绑定图" : "看 Seedream 绑定图"}
+                    </button>
+                    <button
+                      type="button"
+                      className="asset-bind-preview-image"
+                      onClick={() => setPreview({
+                        src: mediaUrl(imageKeyOf(detailAsset)),
+                        title: `${detailAsset.name || ""} · ${showingBind(detailAsset) ? "Seedream 绑定图" : "原图"}`,
+                      })}
+                    >
+                      <img src={mediaUrl(imageKeyOf(detailAsset), { w: 960 })} alt="" onError={retryMediaOnce} />
+                    </button>
+                    <p>原图仍是当前选用图。绑定图是分镜出片时按这张非 Seedream 图生成的，只供对照。</p>
+                  </div>
+                )}
+                */}
                 <div className="asset-generate-action">
                   <button
                     type="button"
@@ -1686,15 +1721,6 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                     onClick={() => generate(detailAsset).catch((err) => showToast(err.message))}
                   >
                     {selectedGenerating ? "正在生成…" : <><Sparkles size={16} /> 开始生成</>}
-                  </button>
-                  <button
-                    type="button"
-                    className="asset-modal-generate"
-                    disabled={!modelBound || !hasImage(detailAsset) || isBusy(detailAsset.id, "convert") || selectedGenerating}
-                    title="真人打回后的补救，或 origin 过期后续链"
-                    onClick={() => convertToSeedream(detailAsset)}
-                  >
-                    {isBusy(detailAsset.id, "convert") ? "转资产图中…" : "转资产图"}
                   </button>
                 </div>
               </div>
@@ -1707,7 +1733,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                     <>
                       “当前选中”即页面正在使用的图片。
                       <br />
-                      点击缩略图可看大图、生成时间与模型来源；roundtrip 图会显示 origin 状态。
+                      点击缩略图可看大图。
                     </>
                   )}
                   switchLabel="切换当前资产"
@@ -1719,7 +1745,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                   selecting={finalSelectMode}
                   selectedBadge="当前选中"
                   itemName={detailAsset.name}
-                  busy={isBusy(detailAsset.id, "history") || generationsQuery.isLoading || selectedGenerating || isBusy(detailAsset.id, "convert")}
+                  busy={isBusy(detailAsset.id, "history") || generationsQuery.isLoading || selectedGenerating}
                   onSwitchClick={() => setFinalSelectMode((current) => !current)}
                   onSelect={(record) => selectGeneration(record)}
                   onPreview={(record) => setPreview({
@@ -1885,6 +1911,18 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                     }}
                   />
                   <div className="workspace-version-actions">
+                    {/*
+                    {workspaceAsset.seedreamBindKey && (
+                      <button
+                        type="button"
+                        className={`asset-bind-toggle${showingBind(workspaceAsset) ? " is-on" : ""}`}
+                        aria-pressed={showingBind(workspaceAsset)}
+                        onClick={(event) => toggleBindPreview(workspaceAsset.id, event)}
+                      >
+                        {showingBind(workspaceAsset) ? "正在看绑定图" : "看 Seedream 绑定图"}
+                      </button>
+                    )}
+                    */}
                     <button
                       type="button"
                       className="asset-generate-button"
@@ -1898,18 +1936,6 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                         ? "生成中…"
                         : "图片生成"}
                     </button>
-                    <button
-                      type="button"
-                      className="asset-generate-button"
-                      disabled={!modelBound || !hasImage(workspaceAsset) || isBusy(workspaceAsset.id, "convert")}
-                      title="真人打回后的补救，或 origin 过期后续链"
-                      onClick={() => {
-                        setActiveVersion(workspaceAsset);
-                        convertToSeedream(workspaceAsset);
-                      }}
-                    >
-                      {isBusy(workspaceAsset.id, "convert") ? "转资产图中…" : "转资产图"}
-                    </button>
                     <button type="button" className="asset-generate-button" onClick={() => pickUpload(workspaceAsset)}>
                       上传图片
                     </button>
@@ -1918,13 +1944,13 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                     </button>
                   </div>
                   {(() => {
-                    const src = mediaUrl(workspaceAsset.imageStorageKey || workspaceAsset.imageUrl, { w: 960 });
+                    const src = mediaUrl(imageKeyOf(workspaceAsset), { w: 960 });
                     return src ? (
                       <button
                         type="button"
                         className="workspace-version-preview"
                         onClick={() => setPreview({
-                          src: mediaUrl(workspaceAsset.imageStorageKey || workspaceAsset.imageUrl),
+                          src: mediaUrl(imageKeyOf(workspaceAsset)),
                           title: `${baseNameOf(workspaceAsset.name)}·${stateLabel(workspaceAsset)}`,
                         })}
                       >
