@@ -139,3 +139,28 @@ test("排版保持原有节点与连线不动（纯函数）", () => {
   autoArrange(nodes, edges);
   assert.equal(JSON.stringify({ nodes, edges }), snapshot, "autoArrange 不应修改入参");
 });
+
+test("重心法消交叉：orderLayers 已接入 autoArrange", () => {
+  // 层0: a；层1: b(上)、c(下)；层2: e(上)、d(下，故意反转)
+  // 边 a->b, a->c, b->d, c->e。初始层1 顺序与层2 顺序反向 → 两条边交叉。
+  // 接入 orderLayers 后重心法应翻转层2，使 b->d、c->e 同侧（无交叉）。
+  const nodes = [
+    node("a", 0, 0),
+    node("b", 0, 0),
+    node("c", 0, 400),
+    node("e", 0, 0),
+    node("d", 0, 400),
+  ];
+  const edges = [
+    { source: "a", target: "b" },
+    { source: "a", target: "c" },
+    { source: "b", target: "d" },
+    { source: "c", target: "e" },
+  ];
+  const { positions } = autoArrange(nodes, edges);
+  assert.equal(positions.b.x, positions.c.x, "层1 同列");
+  assert.equal(positions.d.x, positions.e.x, "层2 同列");
+  // 两条边 (b->d, c->e) 交叉当且仅当层1 与层2 的相对上下顺序相反；消交叉后二者同号（>0）。
+  const cross = (positions.b.y - positions.c.y) * (positions.d.y - positions.e.y);
+  assert.ok(cross > 0, `重心法应消除同层连线交叉（b.y=${positions.b.y}, c.y=${positions.c.y}, d.y=${positions.d.y}, e.y=${positions.e.y}）`);
+});

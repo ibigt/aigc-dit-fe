@@ -75,6 +75,46 @@ test("serializeWorkflow 把 groupFrame 归入 groups 而不是 nodes", () => {
   assert.equal(doc.groups[0].size.width, 600);
 });
 
+test("deserializeWorkflow 恢复分组及其子节点相对坐标", () => {
+  const child = generatorNode("a", 30, 50);
+  const group = {
+    id: "g1",
+    type: "groupFrame",
+    position: { x: -10, y: -10 },
+    style: { width: 600, height: 400 },
+    data: { label: "镜头组", color: "#7584ff" },
+  };
+  const doc = serializeWorkflow([{ ...child, parentId: "g1", extent: "parent" }, group], [], {});
+  const result = deserializeWorkflow(doc);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.graph.nodes.length, 2);
+  assert.equal(result.graph.nodes[0].id, "g1");
+  assert.equal(result.graph.nodes[0].type, "groupFrame");
+  assert.equal(result.graph.nodes[0].data.label, "镜头组");
+  assert.equal(result.graph.nodes[0].data.color, "#7584ff");
+  assert.deepEqual(result.graph.nodes[0].style, { width: 600, height: 400 });
+  assert.equal(result.graph.nodes[1].parentId, "g1");
+  assert.equal(result.graph.nodes[1].extent, "parent");
+  assert.deepEqual(result.graph.nodes[1].position, { x: 30, y: 50 });
+});
+
+test("deserializeWorkflow 跳过无效分组并保留未分组位置", () => {
+  const result = deserializeWorkflow({
+    schemaVersion: SCHEMA_VERSION,
+    nodes: [generatorNode("a", 12, 34)],
+    edges: [],
+    groups: [{ id: "bad", label: "无效尺寸", position: { x: 0, y: 0 }, size: { width: 0, height: 0 }, childIds: ["a"] }],
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.graph.nodes.length, 1);
+  assert.equal(result.graph.nodes[0].parentId, undefined);
+  assert.deepEqual(result.graph.nodes[0].position, { x: 12, y: 34 });
+  assert.ok(result.warnings.some((message) => message.includes("无效尺寸")));
+});
+
 test("serializeWorkflow 收集参考素材资产", () => {
   const assetNode = generatorNode("ref", 0, 0, "ReferenceAsset");
   assetNode.data = { ...assetNode.data, assetKey: "users/1/ref.png", assetType: "image", assetUrl: "/files/users/1/ref.png" };
@@ -286,4 +326,66 @@ test("parseImportedFileText 拒绝无法识别的格式", () => {
   assert.equal(parsed.ok, false);
   assert.equal(parsed.kind, "unknown");
   assert.ok(parsed.errors[0].includes("无法识别"));
+});
+
+test("serializeWorkflow 剥离运行时态、函数与 blob: 临时地址", () => {
+  const node = generatorNode("a", 0, 0);
+  node.data.runtime = { status: "SUCCEEDED", outputs: [{ url: "https://example.com/x.png" }] };
+  node.data.icon = () => null;
+  node.data.scopes = [{ values: {} }];
+  node.data.media = {
+    prompt: "保留的参数",
+    preview: "blob:preview-1",
+    nested: { runtime: { status: "RUNNING" }, keep: 1 },
+  };
+
+  const doc = serializeWorkflow([node], [], {});
+  const text = JSON.stringify(doc);
+
+  assert.equal(doc.nodes[0].data.runtime, undefined);
+  assert.equal(doc.nodes[0].data.icon, undefined);
+  assert.equal(doc.nodes[0].data.scopes, undefined);
+  assert.equal(doc.nodes[0].data.media.prompt, "保留的参数");
+  assert.equal(doc.nodes[0].data.media.preview, undefined);
+  assert.equal(doc.nodes[0].data.media.nested.runtime, undefined);
+  assert.equal(doc.nodes[0].data.media.nested.keep, 1);
+  assert.ok(!text.includes("SUCCEEDED"));
+  assert.ok(!text.includes("blob:"));
+});
+
+test("带运行结果的画布导出再导入不携带运行时态", () => {
+  const node = generatorNode("a", 0, 0);
+  node.data.runtime = { status: "SUCCEEDED", outputs: [{ storageKey: "users/1/x.png" }] };
+
+  const result = deserializeWorkflow(serializeWorkflow([node], [], {}));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.graph.nodes[0].data.runtime, undefined);
+  assert.equal(result.graph.nodes[0].data.fields.prompt, "prompt-a");
+});
+
+test("低版本文件补齐可选字段并保留未知字段原值", () => {
+  const result = deserializeWorkflow({
+    schemaVersion: "0.9",
+    nodes: [{ id: "a", type: "ImageGenerator", position: { x: 0, y: 0 }, data: { title: "旧节点" } }],
+    edges: [],
+    legacyQuota: 12,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.graph.nodes[0].data.title, "旧节点");
+  assert.equal(result.extensions.legacyFields.legacyQuota, 12);
+  assert.ok(result.warnings.some((message) => message.includes("0.9")));
+  assert.ok(result.warnings.some((message) => message.includes("旧版本文件缺少")));
+  assert.ok(result.warnings.some((message) => message.includes("legacyQuota")));
+  assert.deepEqual(result.viewport, { x: 0, y: 0, zoom: 1 });
+});
+
+test("标准版本文件导入不产生补齐噪音", () => {
+  const doc = serializeWorkflow([generatorNode("a", 0, 0)], [], {});
+  const result = deserializeWorkflow(doc);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.warnings, []);
+  assert.deepEqual(result.extensions, {});
 });

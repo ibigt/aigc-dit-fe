@@ -112,6 +112,50 @@ export function layeredOrder(nodes, edges, { layerGap, nodeGap } = LAYOUT_DEFAUL
 }
 
 /**
+ * 同层排序（重心法 / barycenter，Sugiyama 消交叉的简化实现）：
+ * 每个节点取相邻层邻居的序号平均值作为排序键，左→右、右→左双向扫描。
+ * 仅按当前 y 排序会让"框选前的散乱位置"决定层内顺序，与连线拓扑无关，
+ * 表现为自动规整后连线大量交叉；重心法让同层顺序对齐上下游，消除这类交叉。
+ * 无邻居的节点（孤立/仅连环外）回退当前序号，保证排序稳定。
+ */
+function orderLayers(layers, edges) {
+  const layerIndexes = [...layers.keys()].sort((a, b) => a - b);
+  const layerOf = new Map();
+  layers.forEach((list, li) => list.forEach((node) => layerOf.set(node.id, li)));
+  const succs = new Map();
+  const preds = new Map();
+  (edges || []).forEach((edge) => {
+    if (!layerOf.has(edge.source) || !layerOf.has(edge.target)) return;
+    if (!succs.has(edge.source)) succs.set(edge.source, []);
+    succs.get(edge.source).push(edge.target);
+    if (!preds.has(edge.target)) preds.set(edge.target, []);
+    preds.get(edge.target).push(edge.source);
+  });
+  const rank = new Map();
+  layerIndexes.forEach((li) => layers.get(li).forEach((node, idx) => rank.set(node.id, idx)));
+
+  const sortByNeighbors = (list, neighbors) => {
+    const bary = (id) => {
+      const values = (neighbors.get(id) || [])
+        .map((nid) => rank.get(nid))
+        .filter((value) => value !== undefined);
+      return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+    };
+    const keyed = list.map((node, idx) => ({ node, key: bary(node.id) ?? idx, cur: idx }));
+    keyed.sort((a, b) => a.key - b.key || a.cur - b.cur);
+    keyed.forEach((item, idx) => {
+      list[idx] = item.node;
+      rank.set(item.node.id, idx);
+    });
+  };
+
+  for (let sweep = 0; sweep < 2; sweep += 1) {
+    for (let i = 1; i < layerIndexes.length; i += 1) sortByNeighbors(layers.get(layerIndexes[i]), preds);
+    for (let i = layerIndexes.length - 2; i >= 0; i -= 1) sortByNeighbors(layers.get(layerIndexes[i]), succs);
+  }
+}
+
+/**
  * DAG 自动排版：从左至右分层布局。
  * 返回 { positions, cycleIds, cycleEdgeIds }；positions 为 id -> {x,y} 映射，调用方应用时保留可撤销性。
  * cycleEdgeIds（TC-008）：环上连线（两端节点均在环内），供画布高亮环路使用。
@@ -139,6 +183,9 @@ export function autoArrange(nodes, edges, options = {}) {
   });
   // 同层排序保持既有视觉顺序（按当前 y，其次 x），减少排版跳动
   [...layers.values()].forEach((layer) => layer.sort((a, b) => (a.position?.y ?? 0) - (b.position?.y ?? 0) || (a.position?.x ?? 0) - (b.position?.x ?? 0)));
+  // 重心法（barycenter）消交叉：在初始顺序基础上，按上下游邻居序号双向扫描，
+  // 让同层节点顺序对齐连线拓扑，消除自动规整后大量连线交叉（需求 4.5 收尾；原 orderLayers 仅定义未调用）。
+  orderLayers(layers, edges);
 
   const columnX = new Map();
   const positions = new Map();

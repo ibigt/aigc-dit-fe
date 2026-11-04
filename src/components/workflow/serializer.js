@@ -6,6 +6,29 @@ import { nodesOnCycles } from "./autoLayout.js";
 
 export const SCHEMA_VERSION = "1.0";
 
+// 保存（runtime.js）与导出共用同一份清洗口径：运行时态不进工程文件。
+// 需求 4.4.1.6「参数必须保存用户实际值」，反过来要求 runtime / selected /
+// measured / icon 这类派生值、函数与 blob: 临时地址不得落盘。
+export const PERSIST_DROP_KEYS = new Set([
+  "selected", "dragging", "measured", "resizing", "runtime", "scopes", "icon",
+]);
+
+export function cleanPersistedValue(value) {
+  if (typeof value === "function" || (typeof value === "string" && value.startsWith("blob:"))) return undefined;
+  if (Array.isArray(value)) {
+    return value.map(cleanPersistedValue).filter((item) => item !== undefined);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => !PERSIST_DROP_KEYS.has(key))
+        .map(([key, item]) => [key, cleanPersistedValue(item)])
+        .filter(([, item]) => item !== undefined),
+    );
+  }
+  return value;
+}
+
 const KNOWN_KINDS = new Set([
   "ImageGenerator", "VideoGenerator", "AudioGenerator", "VideoEditing",
   "ReferenceAsset", "ReferenceAudio", "MarkdownNote", "Prompt", "DataTable",
@@ -35,19 +58,19 @@ function normalizePorts(ports, kind) {
   }));
 }
 
-export function serializeWorkflow(nodes, edges, { viewport, title, description } = {}) {
+export function serializeWorkflow(nodes, edges, { viewport, title, description, createdAt, updatedAt } = {}) {
   const assets = [];
   const assetKeys = new Set();
   const collectAsset = (node) => {
     const key = node?.data?.assetKey || node?.data?.media?.storageKey;
     if (key && !assetKeys.has(key)) {
       assetKeys.add(key);
-      assets.push({
+      assets.push(cleanPersistedValue({
         key,
         type: node.data.assetType || node.data.media?.type || "unknown",
         title: node.data.title,
         url: node.data.assetUrl || node.data.media?.url || undefined,
-      });
+      }));
     }
   };
   const standardNodes = (nodes || []).filter((node) => node.type !== "groupFrame").map((node) => {
@@ -57,6 +80,8 @@ export function serializeWorkflow(nodes, edges, { viewport, title, description }
     return {
       id: node.id,
       type: node.data?.kind || "unknown",
+      parentId: node.parentId || undefined,
+      extent: node.parentId ? (node.extent || "parent") : undefined,
       position: { x: Math.round(node.position?.x || 0), y: Math.round(node.position?.y || 0) },
       size: { width: Math.round(width), ...(height ? { height: Math.round(height) } : {}) },
       collapsed: Boolean(node.data?.collapsed),
@@ -64,12 +89,13 @@ export function serializeWorkflow(nodes, edges, { viewport, title, description }
         ...normalizePorts(node.data?.inputs, "input"),
         ...normalizePorts(node.data?.outputs, "output"),
       ],
-      data: node.data || {},
+      data: cleanPersistedValue(node.data || {}),
     };
   });
   const groups = (nodes || []).filter((node) => node.type === "groupFrame").map((node) => ({
     id: node.id,
     label: node.data?.label || "节点组合",
+    color: node.data?.color || undefined,
     position: { x: Math.round(node.position?.x || 0), y: Math.round(node.position?.y || 0) },
     size: { width: Math.round(Number(node.style?.width) || 0), height: Math.round(Number(node.style?.height) || 0) },
     childIds: (nodes || []).filter((child) => child.parentId === node.id).map((child) => child.id),
@@ -87,8 +113,9 @@ export function serializeWorkflow(nodes, edges, { viewport, title, description }
     metadata: {
       name: title || "未命名工作流",
       description: description || "",
-      createdAt: now,
-      updatedAt: now,
+      createdAt: createdAt || now,
+      updatedAt: updatedAt || now,
+      exportedAt: now,
       exportedFrom: "advanced-workbench",
     },
     canvas: {
@@ -104,12 +131,69 @@ export function serializeWorkflow(nodes, edges, { viewport, title, description }
   };
 }
 
+const OPTIONAL_TOP_LEVEL = {
+  metadata: () => ({}),
+  canvas: () => ({ offsetX: 0, offsetY: 0, scale: 1 }),
+  groups: () => [],
+  assets: () => [],
+  extensions: () => ({}),
+};
+const KNOWN_TOP_LEVEL = new Set(["schemaVersion", "nodes", "edges", ...Object.keys(OPTIONAL_TOP_LEVEL)]);
+
+// 版本迁移：目前只有 schemaVersion 1.0。低版本 / 未知版本文件按「结构补齐 +
+// 未知字段原值保留」做兼容读取，后续新增版本在此按版本号顺序追加迁移步骤。
+// 需求 4.4.2.5：无法自动迁移的字段必须保留原始值并标记兼容警告。
 function migrateDocument(doc, warnings) {
   const version = String(doc.schemaVersion || "");
-  if (version === SCHEMA_VERSION) return doc;
-  // 低版本迁移钩子：目前只有 1.0；未来版本在此按序迁移并记录兼容警告。
-  warnings.push(`schemaVersion "${version || "(缺失)"}" 与当前版本 ${SCHEMA_VERSION} 不一致，已尝试按兼容模式读取`);
-  return doc;
+  const legacy = version !== SCHEMA_VERSION;
+  if (legacy) {
+    warnings.push(`schemaVersion "${version || "(缺失)"}" 与当前版本 ${SCHEMA_VERSION} 不一致，已按兼容模式读取`);
+  }
+  const migrated = { ...doc };
+  const filled = [];
+  Object.entries(OPTIONAL_TOP_LEVEL).forEach(([key, fallback]) => {
+    if (migrated[key] === undefined || migrated[key] === null) {
+      migrated[key] = fallback();
+      filled.push(key);
+    }
+  });
+  if (legacy && filled.length) {
+    warnings.push(`旧版本文件缺少 ${filled.join("、")}，已按默认值补齐`);
+  }
+
+  let missingPorts = 0;
+  if (Array.isArray(migrated.nodes)) {
+    migrated.nodes = migrated.nodes.map((node) => {
+      if (!node || typeof node !== "object" || Array.isArray(node.ports)) return node;
+      missingPorts += 1;
+      return { ...node, ports: [] };
+    });
+  }
+  if (legacy && missingPorts) {
+    warnings.push(`${missingPorts} 个节点缺少 ports 声明，已按空端口导入（连线将回退到默认端口）`);
+  }
+
+  const legacyFields = {};
+  Object.entries(migrated).forEach(([key, value]) => {
+    if (!KNOWN_TOP_LEVEL.has(key)) {
+      legacyFields[key] = value;
+      delete migrated[key];
+    }
+  });
+  const rawExtensions = migrated.extensions;
+  const extensions = rawExtensions && typeof rawExtensions === "object" && !Array.isArray(rawExtensions)
+    ? rawExtensions : {};
+  if (rawExtensions !== undefined && extensions !== rawExtensions) {
+    warnings.push("extensions 字段格式非法，已重置为空对象");
+  }
+  const extras = Object.keys(legacyFields);
+  if (extras.length) {
+    migrated.extensions = { ...extensions, legacyFields };
+    warnings.push(`以下字段无法自动迁移，已保留原始值至 extensions.legacyFields：${extras.join("、")}`);
+  } else {
+    migrated.extensions = extensions;
+  }
+  return migrated;
 }
 
 // 精确环检测（自环 + 强连通分量），供导入警告与排版引擎共用
@@ -170,6 +254,54 @@ export function deserializeWorkflow(json) {
     };
   });
   const byId = new Map(nodes.map((node) => [node.id, node]));
+  const groupSources = Array.isArray(doc.groups) ? doc.groups : [];
+  const groupNodes = [];
+  const childParents = new Map();
+  const usedGroupIds = new Set();
+  groupSources.forEach((group, index) => {
+    const id = String(group?.id || "");
+    if (!id) {
+      warnings.push(`groups[${index}] 缺少 id，已跳过该分组`);
+      return;
+    }
+    if (seenIds.has(id) || usedGroupIds.has(id)) {
+      warnings.push(`分组 ${id} 的 id 与节点或其他分组重复，已跳过该分组`);
+      return;
+    }
+    const width = Number(group?.size?.width);
+    const height = Number(group?.size?.height);
+    if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+      warnings.push(`分组 ${id}「${group.label || "未命名分组"}」尺寸无效，已跳过该分组`);
+      return;
+    }
+    usedGroupIds.add(id);
+    groupNodes.push({
+      id,
+      type: "groupFrame",
+      position: { x: Number(group.position?.x) || 0, y: Number(group.position?.y) || 0 },
+      style: { width, height },
+      data: { label: group.label || "节点组合", ...(group.color ? { color: group.color } : {}) },
+      selectable: true,
+      draggable: true,
+      zIndex: -1,
+    });
+    (Array.isArray(group.childIds) ? group.childIds : []).forEach((childId) => {
+      const key = String(childId || "");
+      if (!seenIds.has(key)) {
+        warnings.push(`分组 ${id} 引用的节点不存在：${key}`);
+        return;
+      }
+      if (childParents.has(key)) {
+        warnings.push(`节点 ${key} 被多个分组引用，已保留第一个分组`);
+        return;
+      }
+      childParents.set(key, id);
+    });
+  });
+  const groupedNodes = nodes.map((node) => {
+    const parentId = childParents.get(node.id);
+    return parentId ? { ...node, parentId, extent: "parent" } : node;
+  });
   const edges = doc.edges.map((edge) => {
     const source = byId.get(edge.sourceNodeId);
     const target = byId.get(edge.targetNodeId);
@@ -196,8 +328,10 @@ export function deserializeWorkflow(json) {
     errors,
     viewport,
     metadata: doc.metadata || {},
+    // 兼容模式下无法迁移的字段原值，供调用方展示与再次导出时保留。
+    extensions: doc.extensions || {},
     graph: {
-      nodes: nodes.map(({ __ports, ...node }) => node),
+      nodes: [...groupNodes, ...groupedNodes.map(({ __ports, ...node }) => node)],
       edges,
     },
   };
