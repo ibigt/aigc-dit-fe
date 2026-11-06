@@ -1,6 +1,6 @@
 import { Check, FileJson, Film, Image, LayoutGrid, Music2, Search, Upload, WandSparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { listWorkflowTemplateTags, listWorkflowTemplates } from "../api/workflows.js";
+import { listWorkflowTemplates } from "../api/workflows.js";
 import { parseImportedFileText } from "./workflow/serializer.js";
 import { WorksTypeIcon } from "./WorksTypeIcon.jsx";
 
@@ -21,12 +21,6 @@ const CATEGORIES = [
   { id: "video", label: "视频", Icon: Film },
   { id: "image", label: "图像", Icon: Image },
   { id: "audio", label: "音频", Icon: Music2 },
-];
-
-const SOURCES = [
-  { id: "all", label: "全部来源" },
-  { id: "official", label: "官方模板" },
-  { id: "custom", label: "我的模板" },
 ];
 
 // 节点拓扑缩略图：用后端下发的坐标直接画 SVG，避免加载完整画布（需求 4.3.1.4 / 4.3.2.2）
@@ -62,10 +56,7 @@ function TopologyThumbnail({ topology, cover }) {
 
 export function TemplateModal({ open, onClose, onUse, onImportFile }) {
   const [templates, setTemplates] = useState([]);
-  const [tags, setTags] = useState([]);
   const [category, setCategory] = useState("all");
-  const [source, setSource] = useState("all");
-  const [activeTags, setActiveTags] = useState([]);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState(null);
   const [imported, setImported] = useState(null);
@@ -77,13 +68,9 @@ export function TemplateModal({ open, onClose, onUse, onImportFile }) {
     if (!open) return undefined;
     let cancelled = false;
     setStatus({ text: "正在加载模板…" });
-    Promise.all([
-      listWorkflowTemplates(),
-      listWorkflowTemplateTags().catch(() => []),
-    ]).then(([items, tagItems]) => {
+    listWorkflowTemplates().then((items) => {
       if (cancelled) return;
       setTemplates(items || []);
-      setTags(tagItems || []);
       setStatus(null);
     }).catch((error) => {
       if (cancelled) return;
@@ -101,17 +88,14 @@ export function TemplateModal({ open, onClose, onUse, onImportFile }) {
     setPending(null);
   }, [open]);
 
+  // 内置官方模板已下线：模板库只展示后续「保存为模板」写入的用户模板
   const visible = useMemo(() => templates.filter((item) => {
+    if (item.builtin) return false;
     if (category !== "all" && item.category !== category) return false;
-    if (source === "official" && !item.builtin) return false;
-    if (source === "custom" && item.builtin) return false;
-    if (activeTags.length && !activeTags.every((tag) => (item.tags || []).includes(tag))) return false;
     const keyword = query.trim().toLowerCase();
     if (!keyword) return true;
-    return `${item.title}${item.description}${item.modelLabel}${(item.tags || []).join("")}`.toLowerCase().includes(keyword);
-  }), [templates, category, source, activeTags, query]);
-
-  const toggleTag = (tag) => setActiveTags((current) => (current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag]));
+    return `${item.title}${item.description}${item.modelLabel}${(item.outputModels || []).join("")}${(item.tags || []).join("")}`.toLowerCase().includes(keyword);
+  }), [templates, category, query]);
 
   // 导入本地工作流 JSON（需求 4.4.2）：先读文件并做格式校验，失败时给出逐项错误清单且不改动画布
   async function selectFile(file) {
@@ -138,7 +122,7 @@ export function TemplateModal({ open, onClose, onUse, onImportFile }) {
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <section className="template-modal" role="dialog" aria-modal="true" aria-labelledby="template-title">
-        <header><div><span className="modal-kicker">WORKFLOW TEMPLATES</span><h2 id="template-title">从模板开始</h2><p>选择官方模板一键实例化到画布，也可导入已有的 ComfyUI 或工作台 JSON。</p></div><button className="modal-close" aria-label="关闭模板窗口" onClick={onClose}><X size={19} /></button></header>
+        <header><div><span className="modal-kicker">WORKFLOW TEMPLATES</span><h2 id="template-title">从模板开始</h2><p>选择已保存的工作流模板一键实例化到画布，也可导入已有的 ComfyUI 或工作台 JSON。</p></div><button className="modal-close" aria-label="关闭模板窗口" onClick={onClose}><X size={19} /></button></header>
         <div className="template-modal__toolbar works-controls">
           <div className="works-type-tabs" role="tablist" aria-label="模板分类">
             {CATEGORIES.map((item) => (
@@ -158,25 +142,21 @@ export function TemplateModal({ open, onClose, onUse, onImportFile }) {
           <label className="works-search">
             <Search size={17} aria-hidden="true" />
             <span className="visually-hidden">搜索模板</span>
-            <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索模板名称、模型或标签" autoComplete="off" />
+            <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索模板名称或模型" autoComplete="off" />
           </label>
         </div>
-        <div className="template-modal__filters">
-          <div className="template-modal__sources">{SOURCES.map((item) => <button key={item.id} className={source === item.id ? "active" : ""} onClick={() => setSource(item.id)}>{item.label}</button>)}</div>
-          {tags.length > 0 && <div className="template-modal__tags">{tags.map((tag) => <button key={tag} className={activeTags.includes(tag) ? "active" : ""} onClick={() => toggleTag(tag)}>{tag}</button>)}</div>}
-        </div>
         {status && <p className={`template-modal__status${status.error ? " is-error" : ""}`}>{status.text}</p>}
-        {!status && visible.length === 0 && <p className="template-modal__status">没有匹配的模板，换个关键字或筛选条件试试。</p>}
+        {!status && visible.length === 0 && <p className="template-modal__status">暂无模板，把生成的工作流保存为模板后会显示在这里。</p>}
         <div className="template-grid">{visible.map((item) => (
           <article key={item.id} className="template-card">
             <TopologyThumbnail topology={item.topology} cover={item.coverPath} />
             <div>
-              <span className="official-badge"><Check size={11} /> {item.builtin ? "官方" : "我的"}</span>
+              <span className="official-badge"><Check size={11} /> 我的模板</span>
               <h3>{item.title}</h3>
               <p>{item.description}</p>
               {(item.tags || []).length > 0 && <div className="template-card__tags">{item.tags.map((tag) => <em key={tag}>{tag}</em>)}</div>}
               <footer>
-                <span>{item.nodeCount ? `${item.nodeCount} 个节点` : "官方模板"}{item.version ? ` · v${item.version}` : ""}</span>
+                <span>{item.nodeCount ? `${item.nodeCount} 个节点` : "我的模板"}{item.version ? ` · v${item.version}` : ""}</span>
                 <button onClick={() => setPending({ source: "template", ...item })}>使用模板</button>
               </footer>
             </div>
