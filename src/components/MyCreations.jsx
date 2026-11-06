@@ -1,4 +1,4 @@
-import { CalendarDays, Check, Copy, Download, FolderInput, Grid3X3, Image, List, Search, Sparkles, Trash2, X } from "lucide-react";
+import { CalendarDays, Check, Download, FolderInput, Grid3X3, Image, List, Search, Sparkles, Trash2, X } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteCreation, fetchCreations, saveCreationToAsset } from "../api/creations.js";
@@ -285,16 +285,6 @@ export function MyCreations({ onReuse }) {
     });
   }
 
-  async function copyLink(item) {
-    const url = new URL(item.src, window.location.origin).toString();
-    try {
-      await navigator.clipboard.writeText(url);
-      setNotice({ tone: "ok", text: "已复制链接" });
-    } catch {
-      setNotice({ tone: "error", text: "复制失败，请手动复制地址" });
-    }
-  }
-
   function reuse(item) {
     onReuse?.({
       token: Date.now(),
@@ -537,7 +527,6 @@ export function MyCreations({ onReuse }) {
                 </div>
               </div>
               <div className="work-preview-dialog__actions">
-                <button type="button" className="works-text-button" onClick={() => copyLink(selected)}><Copy size={15} /> 复制链接</button>
                 <button type="button" className="works-download-button" disabled={saveMutation.isPending && saveMutation.variables === selected.id} onClick={() => saveMutation.mutate(selected.id)}>
                   {savedIds.includes(selected.id) ? <Check size={16} /> : <FolderInput size={16} />}
                   {savedIds.includes(selected.id) ? "已存入素材库" : "存入素材库"}
