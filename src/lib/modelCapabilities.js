@@ -4,13 +4,16 @@
 
 export const videoRatios = ["自动", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
 export const imageRatios = ["21:9", "16:9", "5:4", "4:3", "3:2", "1:1", "2:3", "3:4", "4:5", "9:16"];
-export const videoDurations = [4, 5, 6, 7, 8, 9, 10, 11, 12];
-export const miniMaxDurations = [4, 5, 6, 7, 8, 9, 10, 11, 12];
+// 时长兜底档位：合同 5–15 逐秒（与后端 DramaContract.DURATION_OPTIONS 一致）。
+// 后端 /api/models 的 durations 为权威来源，这里只是后端未下发时的兜底。
+export const videoDurations = Array.from({ length: 11 }, (_, index) => index + 5);
+export const miniMaxDurations = Array.from({ length: 11 }, (_, index) => index + 5);
 export const miniMaxMaxDurations = Array.from({ length: 11 }, (_, index) => index + 5);
 // SGLang 部署的 H3 服务端约束 target.duration_seconds ∈ [5, 15]，4 秒会 HTTP 400（官方 API 才允许 4 秒）
 export const miniMaxSglangDurations = Array.from({ length: 11 }, (_, index) => index + 5);
 export const miniMaxComfyDurations = Array.from({ length: 11 }, (_, index) => index + 5);
-export const agnesDurations = Array.from({ length: 9 }, (_, index) => index + 4);
+// Agnes 适配器真实区间 [4, 12]，与合同 5–15 求交后为 5–12
+export const agnesDurations = Array.from({ length: 8 }, (_, index) => index + 5);
 export const videoResolutions = ["480P", "720P", "1080P", "2K", "4K"];
 // 图片分辨率档位与图片计费分档保持一致（1K 为基准档）
 export const imageResolutions = ["1K", "2K", "4K"];
@@ -100,7 +103,19 @@ export function isMiniMaxH3Max(model) {
     || String(model?.modelKey || "").toLowerCase().includes("h3_max");
 }
 
+/**
+ * 视频时长可选档位（需求 A4 统一口径）。
+ *
+ * **后端是唯一权威来源**：`/api/models` 的 `durations` 字段由服务端按
+ * 「合同 5–15 逐秒 ∩ 当前适配器真实区间」算出，快速创作 / 高级工作台 / 短剧分镜
+ * 三处共用同一份数据。此前前端各自按品牌名硬编码（工作台给出 4–12、分镜给出 5–15），
+ * 导致同一模型在不同页面可选时长不一致，且 4 秒在 MiniMax 官方会直接 HTTP 400。
+ *
+ * 下面的本地常量仅作**兜底**（后端未下发该字段时使用），取值同样对齐 5–15 合同。
+ */
 export function durationOptionsFor(model) {
+  const fromServer = normalizeDurationList(model?.durations);
+  if (fromServer.length) return fromServer;
   if (isMiniMaxSglang(model)) return miniMaxSglangDurations;
   if (isMiniMaxH3Max(model)) return miniMaxMaxDurations;
   if (isMiniMaxComfy(model)) return miniMaxComfyDurations;
@@ -109,6 +124,16 @@ export function durationOptionsFor(model) {
   return videoDurations;
 }
 
+function normalizeDurationList(value) {
+  if (!Array.isArray(value)) return [];
+  const list = value.map(Number).filter((item) => Number.isFinite(item) && item >= 1);
+  return list.length ? [...new Set(list)].sort((a, b) => a - b) : [];
+}
+
+/**
+ * 视频清晰度可选档位。仍按品牌在前端判定：后端 DramaResolutions 与本地口径
+ * 对 MiniMax 官方（768P/2K）、Wan（4K）尚未对齐，贸然改用后端会收窄已支持档位。
+ */
 export function videoResolutionsFor(model) {
   if (isAgnes(model)) return ["720P"];
   if (isMiniMaxH3Max(model) && isMiniMaxOfficial(model)) return ["480P", "768P"];
