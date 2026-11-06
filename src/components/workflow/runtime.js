@@ -1,6 +1,16 @@
 import { mediaUrl } from "../../lib/media.js";
 import { cleanPersistedValue } from "./serializer.js";
 
+// 进度分母口径与后端 WorkflowRunService.workSteps 对齐：只算 GENERATE / EDIT 步骤。
+// 文本节点是 TEXT、本地上传音频是 ASSET，两者零成本直通，不计入分母，
+// 否则工具条会显示「3/5」而后端只跑了 2 步。
+export const WORK_KINDS = ["ImageGenerator", "VideoGenerator", "AudioGenerator", "VideoEditing"];
+export function isWorkStep(node) {
+  const data = node?.data || {};
+  if (!WORK_KINDS.includes(data.kind) || data.enabled === false) return false;
+  return !(data.kind === "AudioGenerator" && data.media?.selectedAudioSource === "uploaded");
+}
+
 // 运行结果只带 storageKey（如 users/1/outputs/2084/1.png），展示前归一化出可直接访问的 url。
 // 后端 run 响应虽附带 url，但缺 token（/api/media 鉴权 401），因此凡有 storageKey 一律用
 // 本地 mediaUrl 重建带 token 的 url/posterUrl，否则输出网格和视频/音频播放都会加载失败
@@ -40,6 +50,7 @@ const PORT_TYPE_GROUPS = [["IMAGE", "MASK"]];
 const PORT_ADAPTER_PAIRS = new Set([
   "IMAGE|MEDIA", "MEDIA|IMAGE",
   "VIDEO|MEDIA", "MEDIA|VIDEO",
+  "AUDIO|MEDIA", "MEDIA|AUDIO",
 ]);
 
 export function portTypesCompatible(left, right) {
@@ -143,11 +154,45 @@ export function nodePreviewUrl(node) {
   return previewFromData(node?.data);
 }
 
+// /api/media?key=xxx%2F1.mp4&token=… 这类地址里扩展名后面跟的是 & 而不是 ?，必须一并覆盖
+const VIDEO_URL_PATTERN = /\.(mp4|webm|mov|m4v|mkv)(&|#|\?|$)/i;
+
+/**
+ * 只返回能塞进 <img> 的地址：视频产物没有封面时 previewFromData 会兜底成 mp4 的 url，
+ * 交给 <img> 必然破图（只显示 alt 文本）。视频请改用 nodePlaybackUrl + <video> 取首帧。
+ */
+export function nodePosterUrl(node) {
+  const url = nodePreviewUrl(node);
+  return VIDEO_URL_PATTERN.test(url) ? "" : url;
+}
+
+/** 视频/音频的播放地址（<video>/<audio> 用），优先运行时产物 url。 */
+export function nodePlaybackUrl(node) {
+  const outputs = node?.data?.runtime?.outputs || [];
+  const index = node?.data?.media?.selectedOutputIndex ?? node?.data?.runtime?.selectedOutputIndex ?? 0;
+  const output = outputs[index] || outputs[0];
+  return output?.url || node?.data?.preview || "";
+}
+
+// 导入工程文件带回的产物只有 storageKey（url 含会过期的 token，导出时被剥离）。
+// 水合时按 storageKey 重建可访问的 url/posterUrl，媒体/剪辑/音频节点才能显示与播放。
+export function hydrateImportedOutputs(outputs) {
+  return (outputs || []).map((output) => {
+    if (!output?.storageKey) return output;
+    return {
+      ...output,
+      url: mediaUrl(output.storageKey),
+      posterUrl: output.posterKey ? mediaUrl(output.posterKey) : output.posterUrl ? mediaUrl(output.posterUrl) : undefined,
+    };
+  });
+}
+
 export function applyWorkflowSnapshotToNodes(nodes, snapshot) {
   const steps = snapshot.steps || [];
   const covered = new Set(steps.map((step) => step.nodeId));
   // 只清快照覆盖到的节点：刚生成完就保存时快照里还没有这次运行，
-  // 若一律清空会把刚出的图抹掉（工作流首次保存时 record.id 变化会触发运行态恢复）
+  // 若一律清空会把刚出的图抹掉（工作流首次保存时 record.id 变化会触发运行态恢复）；
+  // 导入的工作流没有本地运行历史（不在 covered 里），水合回来的产物也不会被清。
   const cleared = nodes.map((node) => (covered.has(node.id)
     ? { ...node, data: { ...node.data, runtime: undefined } }
     : node));
@@ -178,5 +223,36 @@ export async function restoreWorkflowSnapshot({ workflowId, snapshot, get, wait 
 
 export function persistableWorkflowGraph(nodes, edges) {
   // 与标准 JSON 导出共用同一份清洗口径（serializer.js），避免保存与导出结果不一致。
-  return { nodes: nodes.map(cleanPersistedValue), edges: edges.map(cleanPersistedValue) };
+  // 产物（runtime.outputs）在清洗时被剥离后，以 storageKey 形式补写到节点级 outputs：
+  // 导入的工作流没有本地运行历史，快照恢复回填不了产物，落库带上 outputs 才能在
+  // 重新打开 / 刷新后水合回来（hydrateStoredNode）。与本机生成的工作流不冲突——
+  // 它们的产物由运行历史快照恢复，节点级 outputs 只作双保险。
+  const persisted = (node) => {
+    const clean = cleanPersistedValue(node);
+    const outputs = (node?.data?.runtime?.outputs || [])
+      .map(({ url, posterUrl, ...rest }) => rest)
+      .filter((output) => output && (output.storageKey || output.url));
+    return outputs.length ? { ...clean, outputs } : clean;
+  };
+  return { nodes: nodes.map(persisted), edges: edges.map(cleanPersistedValue) };
+}
+
+// 画布视口（需求 4.1.1.6）：保存、打开、导入共用同一份校验口径。
+// 缩放范围与 ReactFlow 的 minZoom/maxZoom 一致；非法值一律视为「没有视口」，
+// 由调用方回退 fitView，避免脏数据把画布甩到看不见的地方。
+export const VIEWPORT_ZOOM_MIN = 0.2;
+export const VIEWPORT_ZOOM_MAX = 3;
+
+export function normalizeViewport(value) {
+  const x = Number(value?.x);
+  const y = Number(value?.y);
+  const zoom = Number(value?.zoom);
+  if (![x, y, zoom].every(Number.isFinite) || zoom <= 0) return null;
+  return { x, y, zoom: Math.min(VIEWPORT_ZOOM_MAX, Math.max(VIEWPORT_ZOOM_MIN, zoom)) };
+}
+
+// 只给落库的 graph 加视口；运行请求的 graph 保持 {nodes,edges}，别让后端 planner 见到多余字段。
+export function graphWithViewport(graph, viewport) {
+  const clean = normalizeViewport(viewport);
+  return clean ? { ...graph, viewport: clean } : graph;
 }

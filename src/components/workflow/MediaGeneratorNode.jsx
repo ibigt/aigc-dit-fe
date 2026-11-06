@@ -12,6 +12,7 @@ import {
   Settings2,
   Sparkles,
   Type,
+  Volume2,
   WandSparkles,
   X,
   Zap,
@@ -27,7 +28,7 @@ import StableTextarea from "./StableTextarea.jsx";
 import { VideoLightbox } from "../Drama/VideoLightbox.jsx";
 import { previewFromData } from "./runtime.js";
 import { useWorkflowNode } from "./WorkflowNodeContext.jsx";
-import { NodeCollapseButton, NodeDeleteButton, NodeLockButton, nodeCollapsedClass } from "./NodeCardParts.jsx";
+import { NodeCollapseButton, NodeDeleteButton, MediaFallback, NodeLockButton, OutputGrid, GenerationSkeleton, NodeTagBadges, nodeCollapsedClass } from "./NodeCardParts.jsx";
 import { nodeRuntimeState } from "./nodeViewModel.js";
 
 function UnifiedHandles({ hasInput, hasOutput }) {
@@ -118,6 +119,7 @@ export default function MediaGeneratorNode({ id, data, selected }) {
     getPromptSupplements,
     removeReference,
     openReferencePicker,
+    selectOutput,
     models,
     running,
   } = useWorkflowNode();
@@ -126,6 +128,10 @@ export default function MediaGeneratorNode({ id, data, selected }) {
   const [, setPlaying] = useState(false);
   const [videoZoom, setVideoZoom] = useState(null);
   const videoRef = useRef(null);
+  // 主预览加载失败兜底（需求 4.2.1.5）：媒体地址过期/网络失败时给出重新加载入口，而不是空白框
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const [previewAttempt, setPreviewAttempt] = useState(0);
+  const reloadPreview = () => { setPreviewFailed(false); setPreviewAttempt((value) => value + 1); };
 
   const media = data.media || {};
   const isVideo = data.kind === "VideoGenerator" || media.type === "video";
@@ -233,6 +239,10 @@ export default function MediaGeneratorNode({ id, data, selected }) {
   const activeOutput = outputs[media.selectedOutputIndex ?? data.runtime?.selectedOutputIndex ?? 0] || outputs[0];
   const videoSrc = isVideo ? activeOutput?.url || "" : "";
   const videoPoster = activeOutput?.posterUrl || data.preview || "";
+  // 产物地址变了（新一轮生成/换了主结果）就清掉失败态，否则会一直卡在兜底界面
+  // 注意：依赖的 previewSrc / videoSrc 必须先声明，否则渲染期求值会踩 TDZ 报
+  // "Cannot access 'previewSrc' before initialization"
+  useEffect(() => { setPreviewFailed(false); }, [previewSrc, videoSrc]);
   const runtimeStatus = data.runtime?.status;
   // 状态条文案统一走 nodeRuntimeState：用户主动停止（CANCELLED）不是「生成失败」
   const runtimeState = nodeRuntimeState(data.runtime);
@@ -246,6 +256,11 @@ export default function MediaGeneratorNode({ id, data, selected }) {
   // 生成：真实跑该节点（后端按节点自己的提示词与模型执行），不再贴静态占位图
   const runGeneration = () => {
     if (isBusy) return;
+    // 需求 1.4 异常流 3a：未填写提示词时提示补充，不提交（上游文本节点的补充也不算——本节点至少要有自己的提示词）
+    if (!String(media.prompt || "").trim()) {
+      notify?.("请补充提示词后再生成");
+      return;
+    }
     if (isFramesMode && !media.frames?.firstKey && frameSourceCount < 1) {
       notify?.("参考帧模式请设置首帧图（图框选图或连接图片/上游视频取其尾帧），尾帧可选");
       return;
@@ -275,10 +290,17 @@ export default function MediaGeneratorNode({ id, data, selected }) {
         <NodeLockButton id={id} locked={data.locked} />
         <NodeDeleteButton id={id} title={data.title} locked={data.locked} />
       </header>
+      <NodeTagBadges tags={data.tags} />
       <div className={`media-node__preview ${previewSrc || videoSrc ? "has-preview" : ""}`}>
-        {videoSrc ? (
+        {isBusy && !activeOutput ? (
+          // 生成中：进度骨架（需求 4.2.1.3 前端原位展示进度）
+          <GenerationSkeleton progress={Number(data.runtime?.progress) || 0} />
+        ) : previewFailed ? (
+          <MediaFallback label="媒体加载失败" onRetry={reloadPreview} />
+        ) : videoSrc ? (
           <>
             <video
+              key={`video-${previewAttempt}`}
               ref={videoRef}
               className="nodrag nowheel"
               controls
@@ -286,6 +308,7 @@ export default function MediaGeneratorNode({ id, data, selected }) {
               preload="metadata"
               src={videoSrc}
               poster={videoPoster || undefined}
+              onError={() => setPreviewFailed(true)}
               onPlay={() => setPlaying(true)}
               onPause={() => setPlaying(false)}
               onEnded={() => setPlaying(false)}
@@ -306,18 +329,31 @@ export default function MediaGeneratorNode({ id, data, selected }) {
           </>
         ) : previewSrc ? (
           <img
+            key={`img-${previewAttempt}`}
             src={previewSrc}
             alt={isVideo ? "视频生成预览" : "图像生成预览"}
+            onError={() => setPreviewFailed(true)}
           />
         ) : isVideo ? (
           <Film size={30} />
         ) : (
           <ImagePlus size={30} />
         )}
-        {!previewSrc && !videoSrc && (
+        {!previewSrc && !videoSrc && !isBusy && (
           <small>{isVideo ? "等待生成视频" : "等待生成图像"}</small>
         )}
       </div>
+      {/* 多结果网格：副本数 >1 时列出全部产物，可选主结果、可下载（需求 4.2.3.5） */}
+      {outputs.length > 1 && (
+        <div className="media-node__output-grid nodrag nowheel" onPointerDown={(event) => event.stopPropagation()}>
+          <OutputGrid
+            outputs={outputs}
+            kind={isVideo ? "video" : "image"}
+            selectedOutput={activeOutput}
+            onSelect={(index) => selectOutput?.(id, index)}
+          />
+        </div>
+      )}
       {runtimeStatus === "QUEUED" && (
         <NodeStateBar
           tone="queued"
@@ -391,9 +427,15 @@ export default function MediaGeneratorNode({ id, data, selected }) {
               >
                 {reference.preview ? (
                   <img src={reference.preview} alt={reference.title} />
-                ) : reference.direct && reference.type === "VIDEO" ? (
-                  // 素材库直接附加的视频常没有海报图，用 <video> 取首帧当缩略图
-                  <video src={reference.src} muted playsInline preload="metadata" />
+                ) : reference.type === "VIDEO" && reference.src ? (
+                  // 视频参考常没有海报图（连线或素材库直接附加都算），用 <video> 取首帧当缩略图
+                  <video src={`${reference.src}#t=0.1`} muted playsInline preload="metadata" aria-label={reference.title} />
+                ) : reference.type === "AUDIO" ? (
+                  // 音频参考没有画面（需求 1.5 AC-009）：用波形图标占位，不再显示误导性的「待生成」
+                  <span className="media-node__reference-placeholder is-audio" aria-label={`音频参考：${reference.title}`}>
+                    <Volume2 size={13} />
+                    <small>音频</small>
+                  </span>
                 ) : (
                   <span className="media-node__reference-placeholder">
                     <ImageIcon size={13} />
@@ -403,6 +445,11 @@ export default function MediaGeneratorNode({ id, data, selected }) {
                 {reference.type === "VIDEO" && (
                   <span>
                     <Film size={9} />
+                  </span>
+                )}
+                {reference.type === "AUDIO" && (
+                  <span>
+                    <Volume2 size={9} />
                   </span>
                 )}
                 <button
@@ -420,10 +467,10 @@ export default function MediaGeneratorNode({ id, data, selected }) {
           </div>
         )}
         {isFramesMode && !media.frames?.firstKey && frameSourceCount < 1 && (
-          <small className="media-node__frames-hint">首尾帧：设置首帧图（必需），尾帧可选；也可连接图片或上游视频（取其尾帧）作首帧</small>
+          <small className="media-node__frames-hint">首尾帧模式请补齐首帧与尾帧：首帧必填（图框选图或连接图片/上游视频取其尾帧），尾帧可选但推荐设置以锁定结束画面</small>
         )}
         {isVideoRefMode && (
-          <small className="media-node__frames-hint">参考生成：图片+视频（+音频）混合参考——视频保留动作与运镜，图片定人物与风格</small>
+          <small className="media-node__frames-hint">参考生成：图片+视频（+音频，作口型或节奏参考）混合参考——视频保留动作与运镜，图片定人物与风格</small>
         )}
         {supplements.length > 0 && (
           <div className="media-node__supplements" aria-label="提示词补充">

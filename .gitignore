@@ -7,3 +7,4 @@ dist-verify
 .idea
 .vscode
 .worktrees/
+dist-check-*
