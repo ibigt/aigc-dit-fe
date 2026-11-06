@@ -382,7 +382,6 @@ export function MyCreations({ onReuse }) {
             <Search size={17} aria-hidden="true" />
             <span className="visually-hidden">搜索作品</span>
             <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索提示词或作品" autoComplete="off" />
-            <kbd aria-hidden="true">/</kbd>
           </label>
           <div className="works-view-switch" aria-label="展示模式">
             <button type="button" className={view === "grid" ? "is-active" : ""} onClick={() => setView("grid")} aria-label="卡片模式" aria-pressed={view === "grid"}><Grid3X3 size={17} /></button>
