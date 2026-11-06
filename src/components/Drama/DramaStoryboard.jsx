@@ -1740,7 +1740,7 @@ export function DramaStoryboard({ series, episode }) {
       queryClient.setQueryData(["drama-storyboard", activeEpisodeId], data);
       queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
       if (!data?.drafting) {
-        queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+        queryClient.invalidateQueries({ queryKey: ["drama-series"] });
         queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
         queryClient.invalidateQueries({ queryKey: ["creations"] });
         setShotId(data?.chapters?.[0]?.shots?.[0]?.id || null);
@@ -1792,7 +1792,7 @@ export function DramaStoryboard({ series, episode }) {
     mutationFn: (payload) => createDramaShot(activeEpisodeId, payload),
     onSuccess: (shot) => {
       queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
-      queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+      queryClient.invalidateQueries({ queryKey: ["drama-series"] });
       if (shot?.id) setShotId(shot.id);
       setActionError("");
     },
@@ -1803,7 +1803,7 @@ export function DramaStoryboard({ series, episode }) {
     mutationFn: (target) => deleteDramaShot(target.id),
     onSuccess: (data, target) => {
       queryClient.setQueryData(["drama-storyboard", activeEpisodeId], data);
-      queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+      queryClient.invalidateQueries({ queryKey: ["drama-series"] });
       queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
       queryClient.invalidateQueries({ queryKey: ["creations"] });
       const pool = (data?.chapters || []).flatMap((item) => item.shots || []);
@@ -1868,6 +1868,12 @@ export function DramaStoryboard({ series, episode }) {
     return "";
   }
 
+  function cacheSeries(next) {
+    if (!next || seriesId == null) return;
+    // 工作台查询键用的是路由里的字符串 id，数字 id 对不上，界面会停在旧比例/清晰度。
+    queryClient.setQueryData(["drama-series", String(seriesId)], next);
+  }
+
   useEffect(() => {
     const current = series?.defaultResolution;
     if (!seriesId || !selectedVideoModel || !current) return undefined;
@@ -1875,8 +1881,10 @@ export function DramaStoryboard({ series, episode }) {
     if (options.includes(current)) return undefined;
     let cancelled = false;
     updateDramaSeries(seriesId, { defaultResolution: preferredResolution(options, current) })
-      .then(() => {
-        if (!cancelled) queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+      .then((next) => {
+        if (cancelled) return;
+        cacheSeries(next);
+        queryClient.invalidateQueries({ queryKey: ["drama-series"] });
       })
       .catch((error) => {
         if (!cancelled) setActionError(error.message || "清晰度保存失败");
@@ -1896,7 +1904,7 @@ export function DramaStoryboard({ series, episode }) {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+      queryClient.invalidateQueries({ queryKey: ["drama-series"] });
       queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
       setActionError("");
     },
@@ -1905,8 +1913,9 @@ export function DramaStoryboard({ series, episode }) {
 
   const ratioMutation = useMutation({
     mutationFn: (aspectRatio) => updateDramaSeries(seriesId, { aspectRatio }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+    onSuccess: (next) => {
+      cacheSeries(next);
+      queryClient.invalidateQueries({ queryKey: ["drama-series"] });
       setActionError("");
     },
     onError: (error) => setActionError(error.message || "更新视频比例失败"),
@@ -1914,8 +1923,9 @@ export function DramaStoryboard({ series, episode }) {
 
   const resolutionMutation = useMutation({
     mutationFn: (defaultResolution) => updateDramaSeries(seriesId, { defaultResolution }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+    onSuccess: (next) => {
+      cacheSeries(next);
+      queryClient.invalidateQueries({ queryKey: ["drama-series"] });
       setActionError("");
     },
     onError: (error) => setActionError(error.message || "更新清晰度失败"),
@@ -2002,7 +2012,7 @@ export function DramaStoryboard({ series, episode }) {
       });
     }
     queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
-    queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+    queryClient.invalidateQueries({ queryKey: ["drama-series"] });
     if (shot.videoKey && patch.durationSec != null && Number(patch.durationSec) !== Number(shot.durationSec)) {
       setActionError("须重新生成当前镜头");
     }
@@ -2126,7 +2136,7 @@ export function DramaStoryboard({ series, episode }) {
       queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
       queryClient.invalidateQueries({ queryKey: ["drama-shot-generations", shot.id] });
       queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
-      queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+      queryClient.invalidateQueries({ queryKey: ["drama-series"] });
     } catch (error) {
       queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
       queryClient.invalidateQueries({ queryKey: ["drama-shot-generations", shot.id] });
@@ -2159,7 +2169,7 @@ export function DramaStoryboard({ series, episode }) {
           }
           queryClient.invalidateQueries({ queryKey: ["drama-storyboard", activeEpisodeId] });
           queryClient.invalidateQueries({ queryKey: ["drama-film", activeEpisodeId] });
-          queryClient.invalidateQueries({ queryKey: ["drama-series", seriesId] });
+          queryClient.invalidateQueries({ queryKey: ["drama-series"] });
         })
         .catch((error) => {
           if (cancelled || selected?.id !== shot.id) return;
