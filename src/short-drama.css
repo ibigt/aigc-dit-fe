@@ -4310,15 +4310,6 @@
 .asset-voice-library-tools { display: flex; align-items: center; gap: 8px; }
 .asset-voice-library-tools button { height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid #383840; border-radius: 8px; color: #d9d7e1; background: #24242a; cursor: pointer; }
 .asset-voice-library-tools button[aria-label] { width: 32px; justify-content: center; padding: 0; }
-/* 暂时关闭前端切换 Seedream 绑定图
-.asset-bind-toggle { height: 28px; padding: 0 10px; border: 1px solid #383840; border-radius: 8px; color: #d9d7e1; background: rgba(20, 20, 24, .88); font-size: 12px; font-weight: 650; cursor: pointer; }
-.asset-bind-toggle.is-on { color: #fff; border-color: #6d5ef0; background: #3a2f86; }
-.asset-image-wrap .asset-bind-toggle { position: absolute; z-index: 2; top: 8px; left: 8px; }
-.asset-bind-preview { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 12px; }
-.asset-bind-preview p { margin: 0; color: #9b98a6; font-size: 12px; line-height: 1.5; }
-.asset-bind-preview-image { width: 100%; padding: 0; border: 0; border-radius: 10px; overflow: hidden; background: #111216; cursor: pointer; }
-.asset-bind-preview-image img { display: block; width: 100%; max-height: 220px; object-fit: contain; background: #111216; }
-*/
 .asset-generate-action { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 10px; padding: 0 1px 2px; flex: 0 0 auto; }
 .asset-image-modal.is-compact { height: auto; }
 .asset-image-modal.is-compact .asset-generate-action { margin-top: 10px; }

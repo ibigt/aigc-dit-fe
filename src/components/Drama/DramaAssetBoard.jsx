@@ -455,8 +455,6 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   const [creating, setCreating] = useState(false);
   const [imageModelId, setImageModelId] = useState(series?.imageModelId || "");
   const [resolution, setResolution] = useState("1K");
-  // 暂时关闭前端切换 Seedream 绑定图。后端仍返回 seedreamBindKey。
-  // const [bindPreviewIds, setBindPreviewIds] = useState(() => new Set());
   const [nameDraft, setNameDraft] = useState("");
   const [editingNameId, setEditingNameId] = useState(null);
   const [promptDrafts, setPromptDrafts] = useState({});
@@ -485,23 +483,7 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
   const [deleteGenerationTarget, setDeleteGenerationTarget] = useState(null);
   const toastTimer = useRef(0);
 
-  // function showingBind(asset) {
-  //   return Boolean(asset?.seedreamBindKey && bindPreviewIds.has(asset.id));
-  // }
-  //
-  // function toggleBindPreview(assetId, event) {
-  //   event?.stopPropagation();
-  //   event?.preventDefault();
-  //   setBindPreviewIds((current) => {
-  //     const next = new Set(current);
-  //     if (next.has(assetId)) next.delete(assetId);
-  //     else next.add(assetId);
-  //     return next;
-  //   });
-  // }
-
   function imageKeyOf(asset) {
-    // if (showingBind(asset)) return asset.seedreamBindKey;
     return asset?.imageStorageKey || asset?.imageUrl;
   }
 
@@ -1401,19 +1383,6 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                           <span>或在下方生成资产图</span>
                         </div>
                       )}
-                      {/*
-                      {item.seedreamBindKey && (
-                        <button
-                          type="button"
-                          className={`asset-bind-toggle${showingBind(item) ? " is-on" : ""}`}
-                          aria-pressed={showingBind(item)}
-                          title={showingBind(item) ? "正在看分镜出片时生成的 Seedream 绑定图" : "切换查看 Seedream 绑定图"}
-                          onClick={(event) => toggleBindPreview(item.id, event)}
-                        >
-                          {showingBind(item) ? "绑定图" : "原图"}
-                        </button>
-                      )}
-                      */}
                       {(generating || uploading) && (
                         <div className="asset-image-status" role="status">
                           <span className="asset-spinner" />
@@ -1688,31 +1657,6 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                   </div>
                   <p className="asset-reference-hint">可上传本地图片，或从素材库中选择。选中后会替换当前资产图，并写入生成历史。</p>
                 </section>
-                {/*
-                {detailAsset.seedreamBindKey && (
-                  <div className="asset-bind-preview">
-                    <button
-                      type="button"
-                      className={`asset-bind-toggle${showingBind(detailAsset) ? " is-on" : ""}`}
-                      aria-pressed={showingBind(detailAsset)}
-                      onClick={(event) => toggleBindPreview(detailAsset.id, event)}
-                    >
-                      {showingBind(detailAsset) ? "正在看绑定图" : "看 Seedream 绑定图"}
-                    </button>
-                    <button
-                      type="button"
-                      className="asset-bind-preview-image"
-                      onClick={() => setPreview({
-                        src: mediaUrl(imageKeyOf(detailAsset)),
-                        title: `${detailAsset.name || ""} · ${showingBind(detailAsset) ? "Seedream 绑定图" : "原图"}`,
-                      })}
-                    >
-                      <img src={mediaUrl(imageKeyOf(detailAsset), { w: 960 })} alt="" onError={retryMediaOnce} />
-                    </button>
-                    <p>原图仍是当前选用图。绑定图是分镜出片时按这张非 Seedream 图生成的，只供对照。</p>
-                  </div>
-                )}
-                */}
                 <div className="asset-generate-action">
                   <button
                     type="button"
@@ -1911,18 +1855,6 @@ export function DramaAssetBoard({ series, episode, onPrev, onNext }) {
                     }}
                   />
                   <div className="workspace-version-actions">
-                    {/*
-                    {workspaceAsset.seedreamBindKey && (
-                      <button
-                        type="button"
-                        className={`asset-bind-toggle${showingBind(workspaceAsset) ? " is-on" : ""}`}
-                        aria-pressed={showingBind(workspaceAsset)}
-                        onClick={(event) => toggleBindPreview(workspaceAsset.id, event)}
-                      >
-                        {showingBind(workspaceAsset) ? "正在看绑定图" : "看 Seedream 绑定图"}
-                      </button>
-                    )}
-                    */}
                     <button
                       type="button"
                       className="asset-generate-button"
