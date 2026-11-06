@@ -3081,6 +3081,12 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     const modelId = Number(selectedModel);
     // 视口随画布一起落库，下次打开 / 刷新还原（需求 4.1.1.6）
     const graph = graphWithViewport(persistableGraph(nodes, edges), flowInstance?.getViewport?.());
+    // 贴纸图层随画布落库（需求 1.8）：只存展示字段，坐标钳为有限数
+    const savedStickers = stickers.map(({ id, label, glyph, tone, x, y }) => ({
+      id, label, glyph, tone,
+      x: Number.isFinite(x) ? x : 0,
+      y: Number.isFinite(y) ? y : 0,
+    }));
     const body = {
       title: record.title || "未命名工作流",
       description: record.description || "",
@@ -3089,7 +3095,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
       origin: record.origin || "高级工作台",
       demoKey: record.demo,
       sourcePath: record.source,
-      graph,
+      graph: savedStickers.length ? { ...graph, stickers: savedStickers } : graph,
     };
     try {
       const numericId = Number(record.id);
