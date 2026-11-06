@@ -13,6 +13,10 @@ export function nodeRuntimeState(runtime = {}) {
   if (status === "CANCELLED") {
     return { tone: "cancelled", title: "已取消", message: message || "已取消" };
   }
+  if (status === "SKIPPED") {
+    // 前置条件不满足被跳过（需求 4.6.4.2 / 4.6.3.4）：不是失败，单独呈现为「已跳过」并展示原因
+    return { tone: "skipped", title: "已跳过", message: message || "前置条件不满足，本次运行已跳过" };
+  }
   if (status === "BLOCKED") {
     return { tone: "failed", title: "已阻塞", message: message || "上游节点未成功，当前节点已阻塞" };
   }

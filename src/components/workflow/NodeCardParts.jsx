@@ -7,6 +7,19 @@ import { useWorkflowNode } from "./WorkflowNodeContext.jsx";
 export const stopNodePointer = (event) => event.stopPropagation();
 export const controlClass = "nodrag nowheel";
 
+/**
+ * 节点标签徽标（需求 1.3 AC-016）：展示节点已打的标签（角色/场景/道具/参考）。
+ * 画布节点卡与工作台卡片两处共用。
+ */
+export function NodeTagBadges({ tags = [], limit = 4 }) {
+  const list = Array.isArray(tags) ? tags.filter(Boolean) : [];
+  if (!list.length) return null;
+  return <div className="comfy-node__tags">
+    {list.slice(0, limit).map((tag) => <em key={tag}>{tag}</em>)}
+    {list.length > limit && <small>+{list.length - limit}</small>}
+  </div>;
+}
+
 // 节点删除入口（需求 4.2.5）：悬停卡片时出现在标题栏右侧，点击即删（可 Ctrl+Z 撤销）
 export function NodeDeleteButton({ id, title, locked }) {
   const { remove } = useWorkflowNode();
@@ -52,6 +65,7 @@ export function NodeCard({ id, data, selected, kind, view, icon: Icon, children,
     {view.hasInputHandle && <Handle id="input" type="target" position={Position.Left} className="comfy-node__unified-handle comfy-node__unified-handle--input" />}
     {view.hasOutputHandle && <Handle id="output" type="source" position={Position.Right} className="comfy-node__unified-handle comfy-node__unified-handle--output" />}
     <header><NodeCollapseButton id={id} collapsed={data.collapsed} /><strong>{data.title || kind}</strong>{Icon && <Icon size={14} />}<NodeLockButton id={id} locked={data.locked} /><NodeDeleteButton id={id} title={data.title || kind} locked={data.locked} /></header>
+    <NodeTagBadges tags={data.tags} />
     {children}
     <footer><span>光驭画布节点</span><small>{footer}</small></footer>
   </div>;
@@ -69,7 +83,7 @@ export function NodeError({ message, onRetry }) {
 }
 
 // 媒体预览失败兜底（需求 4.2.1.5）：加载失败时给出占位与重新加载入口
-function MediaFallback({ label, onRetry }) {
+export function MediaFallback({ label, onRetry }) {
   return <div className="workflow-card__media-error" role="alert">
     <span>{label}</span>
     {onRetry && <button className={controlClass} onPointerDown={stopNodePointer} onClick={onRetry}><RotateCcw size={12} />重新加载</button>}

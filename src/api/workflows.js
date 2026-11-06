@@ -8,10 +8,6 @@ export function listWorkflowTemplates(params) {
   return api.get("/workflows/templates", { params });
 }
 
-export function listWorkflowTemplateTags() {
-  return api.get("/workflows/templates/tags");
-}
-
 export function getWorkflow(id) {
   return api.get(`/workflows/${id}`);
 }

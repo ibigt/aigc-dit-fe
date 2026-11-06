@@ -42,15 +42,18 @@ test("runBatchDelete keeps succeeded order matching input", async () => {
 test("formatMediaMeta combines size and duration", () => {
   assert.deepEqual(
     formatMediaMeta({ width: 1920, height: 1080, durationMs: 65000 }),
-    { size: "1920 × 1080", duration: "1:05" },
+    { size: "1920 × 1080", duration: "1:05", durationMs: 65000, format: null },
   );
   assert.deepEqual(
     formatMediaMeta({ width: 800, height: 600 }),
-    { size: "800 × 600", duration: null },
+    { size: "800 × 600", duration: null, durationMs: null, format: null },
   );
   assert.deepEqual(
     formatMediaMeta({ durationMs: 5000 }),
-    { size: null, duration: "5s" },
+    { size: null, duration: "5s", durationMs: 5000, format: null },
   );
-  assert.deepEqual(formatMediaMeta(null), { size: null, duration: null });
+  assert.deepEqual(
+    formatMediaMeta(null),
+    { size: null, duration: null, durationMs: null, format: null },
+  );
 });

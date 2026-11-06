@@ -86,6 +86,22 @@ test("serialized graphs omit ephemeral runtime so a reopen cannot freeze at RUNN
   assert.deepEqual(graph, { nodes: [{ id: "v", data: { media: { prompt: "hi", uploadedAudio: { storageKey: "users/7/a.wav" } } } }], edges: [] });
 });
 
+test("persistableWorkflowGraph 把产物迁到节点级 outputs（storageKey-only，供导入工作流回显）", () => {
+  const graph = runtime.persistableWorkflowGraph?.([
+    { id: "a", data: { kind: "VideoGenerator", runtime: { status: "SUCCEEDED", runId: 7, outputs: [
+      { storageKey: "users/1/outputs/7/1.mp4", url: "https://expiring/x.mp4", posterUrl: "https://expiring/p.jpg" },
+    ] } } },
+    { id: "b", data: { kind: "Prompt" } },
+  ], []);
+  // runtime 仍被剥离，产物以 storageKey 形式落到节点顶层 outputs
+  assert.equal(graph.nodes[0].data.runtime, undefined);
+  assert.equal(graph.nodes[0].outputs.length, 1);
+  assert.equal(graph.nodes[0].outputs[0].storageKey, "users/1/outputs/7/1.mp4");
+  assert.equal(graph.nodes[0].outputs[0].url, undefined, "不带会过期的 token URL");
+  assert.ok(!JSON.stringify(graph).includes("expiring"));
+  assert.equal(graph.nodes[1].outputs, undefined, "无产物节点不写 outputs");
+});
+
 test("maps step outputs and errors into their nodes", () => {
   const result = applyRunToNodes([{ id: "v1", data: { kind: "VideoGenerator" } }], {
     id: 9,
@@ -238,4 +254,39 @@ test("aborting an in-flight poll cancels its request without another node update
   assert.equal(await pending, null);
   assert.equal(cancellationObserved, true);
   assert.equal(updates, 1);
+});
+
+test("isWorkStep 与后端 workSteps 同口径：排除 TEXT/ASSET/禁用节点", () => {
+  const node = (kind, data = {}) => ({ id: kind, data: { kind, ...data } });
+
+  assert.equal(runtime.isWorkStep(node("ImageGenerator")), true);
+  assert.equal(runtime.isWorkStep(node("VideoGenerator")), true);
+  assert.equal(runtime.isWorkStep(node("VideoEditing")), true);
+  assert.equal(runtime.isWorkStep(node("AudioGenerator")), true, "配音朗读是 GENERATE，计入分母");
+  assert.equal(runtime.isWorkStep(node("MarkdownNote")), false, "文本节点是 TEXT，零成本直通");
+  assert.equal(runtime.isWorkStep(node("AudioGenerator", { media: { selectedAudioSource: "uploaded" } })), false, "本地上传音频是 ASSET，零成本直通");
+  assert.equal(runtime.isWorkStep(node("AudioGenerator", { media: { selectedAudioSource: "tts" } })), true);
+  assert.equal(runtime.isWorkStep(node("VideoEditing", { enabled: false })), false);
+  assert.equal(runtime.isWorkStep({ data: {} }), false);
+  assert.equal(runtime.isWorkStep(null), false);
+});
+
+test("画布视口：有效值规范化、越界缩放夹紧、脏数据回退 fitView", () => {
+  assert.deepEqual(runtime.normalizeViewport({ x: -120, y: 48.5, zoom: 0.8 }), { x: -120, y: 48.5, zoom: 0.8 });
+  assert.deepEqual(runtime.normalizeViewport({ x: "30", y: "0", zoom: "1.25" }), { x: 30, y: 0, zoom: 1.25 });
+  assert.deepEqual(runtime.normalizeViewport({ x: 0, y: 0, zoom: 0.01 }), { x: 0, y: 0, zoom: runtime.VIEWPORT_ZOOM_MIN });
+  assert.deepEqual(runtime.normalizeViewport({ x: 0, y: 0, zoom: 9 }), { x: 0, y: 0, zoom: runtime.VIEWPORT_ZOOM_MAX });
+  [null, undefined, {}, { x: 1, y: 2 }, { x: NaN, y: 0, zoom: 1 },
+    { x: 0, y: 0, zoom: 0 }, { x: 0, y: 0, zoom: -1 }, "bad"].forEach((value) => {
+    assert.equal(runtime.normalizeViewport(value), null);
+  });
+});
+
+test("落库 graph 带视口，运行 graph 保持纯净", () => {
+  const graph = { nodes: [{ id: "a" }], edges: [] };
+  const saved = runtime.graphWithViewport(graph, { x: -240, y: 96, zoom: 1.4 });
+  assert.deepEqual(saved.viewport, { x: -240, y: 96, zoom: 1.4 });
+  assert.deepEqual(graph, { nodes: [{ id: "a" }], edges: [] }, "不改原图，运行请求仍是纯 {nodes,edges}");
+  assert.equal(runtime.graphWithViewport(graph, null), graph, "无有效视口时不加字段");
+  assert.deepEqual(runtime.normalizeViewport(saved.viewport), saved.viewport, "保存值可原样读回");
 });

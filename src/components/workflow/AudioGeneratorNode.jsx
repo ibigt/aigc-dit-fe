@@ -1,6 +1,7 @@
 import { Handle, Position } from "@xyflow/react";
 import {
   ChevronDown,
+  Download,
   Film,
   Mic2,
   Music2,
@@ -24,7 +25,7 @@ import StableTextarea from "./StableTextarea.jsx";
 import { useWorkflowNode } from "./WorkflowNodeContext.jsx";
 import AudioWaveform from "./AudioWaveform.jsx";
 import QuickAudioPopover from "../QuickAudioPopover.jsx";
-import { NodeCollapseButton, NodeDeleteButton, NodeLockButton, nodeCollapsedClass } from "./NodeCardParts.jsx";
+import { MediaFallback, NodeCollapseButton, NodeDeleteButton, NodeLockButton, NodeTagBadges, nodeCollapsedClass } from "./NodeCardParts.jsx";
 
 // 情感档位：value 是 MiniMax 的合法枚举，空值表示不指定（与快速创作一致，避免厂商 2013 invalid params）
 const AUDIO_EMOTIONS = [
@@ -60,20 +61,50 @@ function UnifiedHandles({ hasInput, hasOutput }) {
   );
 }
 
+// 单个副本的播放器：加载失败给兜底与重新加载，正常时带下载（需求 4.2.1.5 / 4.2.4.5）
+function AudioOutputPlayer({ output, index, showIndex }) {
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const fileName = output.name || output.fileName || `audio-${index + 1}.mp3`;
+  return (
+    <div className="audio-node__result-item">
+      {showIndex && <b>{index + 1}</b>}
+      {failed ? (
+        <MediaFallback label="音频加载失败" onRetry={() => { setFailed(false); setAttempt((value) => value + 1); }} />
+      ) : (
+        <audio key={attempt} controls preload="metadata" src={output.src} onError={() => setFailed(true)} />
+      )}
+      <a
+        className="audio-node__result-download nodrag"
+        href={output.src}
+        download={fileName}
+        title="下载音频"
+        aria-label={`下载音频 ${index + 1}`}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <Download size={11} />
+      </a>
+    </div>
+  );
+}
+
 export default function AudioGeneratorNode({ id, data, selected }) {
   const { updateMedia, generateMedia, notify, models, getReferences, getPromptSupplements, removeReference, uploadAudio } = useWorkflowNode();
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [playing, setPlaying] = useState(false);
+  // 主产物加载失败（地址过期 / 文件被清）：给兜底与重新加载，需求 4.2.1.5
+  const [heroFailed, setHeroFailed] = useState(false);
+  const [heroAttempt, setHeroAttempt] = useState(0);
   const uploadRef = useRef(null);
   const primaryAudioRef = useRef(null);
 
   const media = data.media || {};
   const update = (patch) => updateMedia?.(id, patch);
-  // 画面参考：上游图片/视频连到本节点的 visual 端口，作为配乐/旁白的画面语境（对齐快速创作的素材引用）
-  const visualRefs = (getReferences ? getReferences(id) : []).filter((reference) => ["IMAGE", "VIDEO"].includes(reference.type));
-  // 提示词补充：上游文本节点（脚本/台词）连到本节点时作为朗读文本补充
+  // 提示词补充：上游文本节点（脚本/台词）连到本节点时作为朗读文本补充。
+  // 画面参考已移除（需求 1.6）：音频节点只接受文本输入（AC-011）。
+  // 配音/音乐页签暂不做：当前启用的声音模型不支持音乐生成。
   const supplements = getPromptSupplements ? getPromptSupplements(id) : [];
   const uploadedAudio = media.uploadedAudio || null;
 
@@ -107,6 +138,8 @@ export default function AudioGeneratorNode({ id, data, selected }) {
   const runFailed = data.runtime?.status === "FAILED";
   // 主产物：放在卡片最上方的内容框展示（与图片/视频节点的顶部预览区一致）
   const primaryAudio = audioOutputs[0] || null;
+  // 换了产物地址（重新生成 / 刷新产物）就复位失败态，否则兜底会一直挂在新的可用产物上
+  useEffect(() => { setHeroFailed(false); }, [primaryAudio?.src]);
 
   // 顶部播放按钮：驱动隐藏的 audio 元素播放/暂停主产物
   const togglePlay = () => {
@@ -121,6 +154,12 @@ export default function AudioGeneratorNode({ id, data, selected }) {
 
   const runGeneration = () => {
     if (isBusy) return;
+    // 需求 1.6 异常流 3a：台词为空时提示补充内容，不提交。
+    // 本地已上传音频的模式不受限（selectedAudioSource === "uploaded" 直通素材）。
+    if (media.selectedAudioSource !== "uploaded" && !String(media.prompt || "").trim()) {
+      notify?.("请补充台词后再生成");
+      return;
+    }
     setGenerating(true);
     window.setTimeout(() => {
       generateMedia?.(id);
@@ -143,8 +182,17 @@ export default function AudioGeneratorNode({ id, data, selected }) {
         <NodeLockButton id={id} locked={data.locked} />
         <NodeDeleteButton id={id} title={data.title} locked={data.locked} />
       </header>
+      <NodeTagBadges tags={data.tags} />
       <div className={`audio-node__hero${primaryAudio ? " has-result" : ""}`}>
         {primaryAudio ? (
+          heroFailed ? (
+            <div className="audio-node__hero-fallback">
+              <MediaFallback
+                label="音频加载失败，产物地址可能已过期"
+                onRetry={() => { setHeroFailed(false); setHeroAttempt((value) => value + 1); }}
+              />
+            </div>
+          ) : (
           <>
             <AudioWaveform src={primaryAudio.src} className="audio-node__hero-wave" />
             <button
@@ -160,15 +208,28 @@ export default function AudioGeneratorNode({ id, data, selected }) {
               <Volume2 size={12} />
               已生成语音
             </span>
+            <a
+              className="audio-node__hero-download nodrag"
+              href={primaryAudio.src}
+              download={primaryAudio.name || "audio-1.mp3"}
+              title="下载音频"
+              aria-label="下载主音频"
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <Download size={12} />
+            </a>
             <audio
+              key={heroAttempt}
               ref={primaryAudioRef}
               src={primaryAudio.src}
               preload="metadata"
               onPlay={() => setPlaying(true)}
               onPause={() => setPlaying(false)}
               onEnded={() => setPlaying(false)}
+              onError={() => { setHeroFailed(true); setPlaying(false); }}
             />
           </>
+          )
         ) : (
           <>
             <button
@@ -217,23 +278,10 @@ export default function AudioGeneratorNode({ id, data, selected }) {
           }}
         />
       </div>
-      {visualRefs.length > 0 && (
-        <div
-          className="audio-node__visuals nodrag nowheel"
-          aria-label="画面参考"
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          {visualRefs.map((reference) => (
-            <div className="audio-node__visual-chip" key={reference.edgeId} title={`画面参考：${reference.title}`}>
-              {reference.preview ? <img src={reference.preview} alt={reference.title} /> : <Film size={12} />}
-              <small>{reference.title}</small>
-              <button aria-label={`移除画面参考：${reference.title}`} onClick={() => removeReference?.(id, reference.sourceId)}>
-                <X size={9} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* 画面参考区已移除（需求 1.6）：音频节点只接受文本输入，图片/视频连线在预检阶段即被拒绝（AC-011）。
+          历史画布里既存的 visual 连线由后端 acceptRef(audio) 收紧后自动忽略，不会再进入提示词兜底链。
+          配音/音乐页签暂不做：当前启用的声音模型不支持音乐生成（需求 1.6 的 music 分支待模型就绪后再启用，
+          后端 planner 已预埋 musicStyle/lyrics/instrumental 字段，届时只需补前端入口）。 */}
       <div
         className="audio-node__studio nodrag nowheel"
         onPointerDown={(event) => event.stopPropagation()}
@@ -347,10 +395,12 @@ export default function AudioGeneratorNode({ id, data, selected }) {
             <>
               {audioOutputs.length > 1 && <small className="audio-node__result-hint">共 {audioOutputs.length} 个副本</small>}
               {audioOutputs.map((output, index) => (
-                <div className="audio-node__result-item" key={output.storageKey || output.src || index}>
-                  {audioOutputs.length > 1 && <b>{index + 1}</b>}
-                  <audio controls preload="metadata" src={output.src} />
-                </div>
+                <AudioOutputPlayer
+                  key={output.storageKey || output.src || index}
+                  output={output}
+                  index={index}
+                  showIndex={audioOutputs.length > 1}
+                />
               ))}
             </>
           )}

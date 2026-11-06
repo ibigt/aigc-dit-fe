@@ -31,7 +31,7 @@ export function cleanPersistedValue(value) {
 
 const KNOWN_KINDS = new Set([
   "ImageGenerator", "VideoGenerator", "AudioGenerator", "VideoEditing",
-  "ReferenceAsset", "ReferenceAudio", "MarkdownNote", "Prompt", "DataTable",
+  "ReferenceAsset", "ReferenceAudio", "ReferenceText", "MarkdownNote", "Prompt", "DataTable",
   "CheckpointLoaderSimple", "UNETLoader", "CLIPLoader", "CLIPTextEncode",
   "VAELoader", "VAEDecode", "LoadImage", "EmptyLatentImage", "EmptyHunyuanLatentVideo",
   "EmptyLTXVLatentVideo", "KSampler", "KSamplerAdvanced", "KSamplerSelect",
@@ -77,6 +77,12 @@ export function serializeWorkflow(nodes, edges, { viewport, title, description, 
     collectAsset(node);
     const width = Number(node.style?.width) || Number(node.measured?.width) || 320;
     const height = Number(node.measured?.height) || 0;
+    // 产物随文件走：runtime 被清洗口径剥离，生成结果（图/视频/成片）以 storageKey 形式
+    // 挂到节点级 outputs 字段。不带 url/posterUrl（含会过期的 token），导入端按
+    // storageKey 重建可访问地址。跨服务器导入时 storageKey 失效，预览回退占位图。
+    const runtimeOutputs = (node.data?.runtime?.outputs || [])
+      .map(({ url, posterUrl, ...rest }) => rest)
+      .filter((output) => output && (output.storageKey || output.url));
     return {
       id: node.id,
       type: node.data?.kind || "unknown",
@@ -90,6 +96,7 @@ export function serializeWorkflow(nodes, edges, { viewport, title, description, 
         ...normalizePorts(node.data?.outputs, "output"),
       ],
       data: cleanPersistedValue(node.data || {}),
+      ...(runtimeOutputs.length ? { outputs: cleanPersistedValue(runtimeOutputs) } : {}),
     };
   });
   const groups = (nodes || []).filter((node) => node.type === "groupFrame").map((node) => ({
@@ -235,6 +242,12 @@ export function deserializeWorkflow(json) {
   const nodes = doc.nodes.map((node) => {
     const data = { ...(node.data || {}) };
     if (node.type) data.kind = data.kind || node.type;
+    // 导出时随文件带出的产物（节点级 outputs）：导入即重建 runtime，让节点
+    // 显示/播放历史生成结果。仅当节点自身没有运行态时才回填（避免覆盖刚跑完的状态）。
+    const outputs = Array.isArray(node.outputs) ? node.outputs.filter((output) => output?.storageKey || output?.url) : [];
+    if (outputs.length && !data.runtime) {
+      data.runtime = { runId: null, status: "SUCCEEDED", progress: 100, outputs, reused: true };
+    }
     const inputNames = new Set((data.inputs || node.ports || []).filter((port) => port.kind !== "output").map((port) => port.name || port.id).filter(Boolean));
     const outputNames = new Set((data.outputs || node.ports || []).filter((port) => port.kind === "output").map((port) => port.name || port.id).filter(Boolean));
     const width = Number(node.size?.width) || 320;
@@ -342,7 +355,8 @@ export function isStandardWorkflowDocument(json) {
 }
 
 export function isComfyWorkflowDocument(json) {
-  return Boolean(json && typeof json === "object" && Array.isArray(json.nodes) && (Array.isArray(json.links) || json.nodes.some((node) => node.widgets_values || node.pos)));
+  return Boolean(json && typeof json === "object" && Array.isArray(json.nodes)
+    && (Array.isArray(json.links) || json.nodes.some((node) => node && typeof node === "object" && (node.widgets_values || node.pos))));
 }
 
 // 导入文件文本解析（需求 4.4.2）：先做 JSON 语法校验与格式识别，
@@ -373,6 +387,67 @@ export function parseImportedFileText(text) {
     json: null,
     errors: ["无法识别的文件格式：既不是高级工作台标准 JSON，也不是 ComfyUI 工作流"],
   };
+}
+
+// ComfyUI 导出格式没有 schemaVersion 等协议字段，归一化前先拦下会导致渲染异常或悬空连线的
+// 结构问题（需求 4.4.2.4）。不可修复的记入错误清单（导入失败、画布不改动），可降级的记入
+// 兼容警告并就地清洗；返回的 json 是清洗后的副本，不改原文件对象。
+export function validateComfyWorkflow(json) {
+  const errors = [];
+  const warnings = [];
+  if (!Array.isArray(json?.nodes) || !json.nodes.length) {
+    errors.push("ComfyUI 工作流没有任何节点（nodes 为空）");
+    return { errors, warnings, json };
+  }
+  const seen = new Set();
+  const nodes = json.nodes.map((node, index) => {
+    if (!node || typeof node !== "object" || Array.isArray(node)) {
+      errors.push(`nodes[${index}] 不是有效节点对象`);
+      return null;
+    }
+    const id = node.id;
+    if (id === undefined || id === null || id === "") {
+      errors.push(`nodes[${index}] 缺少 id`);
+      return null;
+    }
+    if (seen.has(String(id))) {
+      errors.push(`节点 id 重复：${id}`);
+      return null;
+    }
+    seen.add(String(id));
+    let clean = node;
+    if (node.pos !== undefined && (!Array.isArray(node.pos) || node.pos.length < 2
+      || !Number.isFinite(Number(node.pos[0])) || !Number.isFinite(Number(node.pos[1])))) {
+      warnings.push(`节点 ${id} 的 pos 坐标无效，已按 (0, 0) 处理`);
+      clean = { ...clean, pos: [0, 0] };
+    }
+    // 归一化会直接对 inputs / outputs / widgets_values 做数组操作，非数组会崩溃
+    ["inputs", "outputs", "widgets_values"].forEach((key) => {
+      if (clean[key] !== undefined && !Array.isArray(clean[key])) {
+        warnings.push(`节点 ${id} 的 ${key} 格式无效，已按空值导入`);
+        clean = { ...clean, [key]: [] };
+      }
+    });
+    return clean;
+  }).filter(Boolean);
+  let links = json.links;
+  if (links !== undefined && !Array.isArray(links)) {
+    errors.push("links 必须是数组");
+    links = [];
+  }
+  const cleanLinks = [];
+  (links || []).forEach((link, index) => {
+    if (!Array.isArray(link) || link.length < 4) {
+      warnings.push(`links[${index}] 格式无效，已跳过该连线`);
+      return;
+    }
+    if (!seen.has(String(link[1])) || !seen.has(String(link[3]))) {
+      warnings.push(`连线 ${link[0]} 引用了不存在的节点（${link[1]} → ${link[3]}），已跳过该连线`);
+      return;
+    }
+    cleanLinks.push(link);
+  });
+  return { errors, warnings, json: { ...json, nodes, links: cleanLinks } };
 }
 
 export function exportFileName(title) {

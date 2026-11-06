@@ -8,8 +8,10 @@ import {
   isStandardWorkflowDocument,
   isComfyWorkflowDocument,
   parseImportedFileText,
+  validateComfyWorkflow,
   exportFileName,
 } from "../src/components/workflow/serializer.js";
+import { normalizeViewport } from "../src/components/workflow/runtime.js";
 
 function generatorNode(id, x, y, kind = "ImageGenerator") {
   return {
@@ -353,15 +355,48 @@ test("serializeWorkflow 剥离运行时态、函数与 blob: 临时地址", () =
   assert.ok(!text.includes("blob:"));
 });
 
-test("带运行结果的画布导出再导入不携带运行时态", () => {
+test("带运行结果的画布导出再导入：产物随文件走且运行时态不落盘", () => {
   const node = generatorNode("a", 0, 0);
-  node.data.runtime = { status: "SUCCEEDED", outputs: [{ storageKey: "users/1/x.png" }] };
+  node.data.runtime = {
+    status: "SUCCEEDED",
+    progress: 100,
+    runId: 42,
+    outputs: [
+      { storageKey: "users/1/outputs/42/1.png", url: "https://token-expiring/x.png", posterUrl: "https://token-expiring/p.jpg" },
+    ],
+  };
 
-  const result = deserializeWorkflow(serializeWorkflow([node], [], {}));
+  const doc = serializeWorkflow([node], [], {});
+  // 导出文件：runtime 整体剥离（含易过期的 token URL），产物以 storageKey 挂到节点级 outputs
+  assert.equal(doc.nodes[0].data.runtime, undefined);
+  assert.equal(doc.nodes[0].outputs.length, 1);
+  assert.equal(doc.nodes[0].outputs[0].storageKey, "users/1/outputs/42/1.png");
+  assert.equal(doc.nodes[0].outputs[0].url, undefined, "不带易过期的 token URL");
+  assert.ok(!JSON.stringify(doc).includes("token-expiring"));
 
+  const result = deserializeWorkflow(doc);
+  // 导入：按节点级 outputs 重建 runtime，节点可显示/播放历史产物
+  assert.equal(result.ok, true);
+  const runtime = result.graph.nodes[0].data.runtime;
+  assert.equal(runtime.status, "SUCCEEDED");
+  assert.equal(runtime.outputs[0].storageKey, "users/1/outputs/42/1.png");
+  assert.equal(result.graph.nodes[0].data.fields.prompt, "prompt-a");
+});
+
+test("无产物的画布导出不写 outputs 字段，导入不造空 runtime", () => {
+  const doc = serializeWorkflow([generatorNode("a", 0, 0)], [], {});
+  assert.equal(doc.nodes[0].outputs, undefined);
+
+  const result = deserializeWorkflow(doc);
   assert.equal(result.ok, true);
   assert.equal(result.graph.nodes[0].data.runtime, undefined);
-  assert.equal(result.graph.nodes[0].data.fields.prompt, "prompt-a");
+});
+
+test("outputs 仅含无 storageKey 的项时按无产物处理", () => {
+  const node = generatorNode("a", 0, 0);
+  node.data.runtime = { status: "SUCCEEDED", outputs: [{ label: "空" }] };
+  const doc = serializeWorkflow([node], [], {});
+  assert.equal(doc.nodes[0].outputs, undefined);
 });
 
 test("低版本文件补齐可选字段并保留未知字段原值", () => {
@@ -388,4 +423,66 @@ test("标准版本文件导入不产生补齐噪音", () => {
   assert.equal(result.ok, true);
   assert.deepEqual(result.warnings, []);
   assert.deepEqual(result.extensions, {});
+});
+
+const comfyNode = (id, extra = {}) => ({ id, type: "KSampler", pos: [id * 100, 20], inputs: [], outputs: [], ...extra });
+
+test("validateComfyWorkflow 放行合法工作流且不改动原对象", () => {
+  const source = { nodes: [comfyNode(1), comfyNode(2)], links: [[7, 1, 0, 2, 0, "IMAGE"]] };
+  const snapshot = JSON.stringify(source);
+  const result = validateComfyWorkflow(source);
+
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.warnings, []);
+  assert.equal(result.json.nodes.length, 2);
+  assert.equal(result.json.links.length, 1);
+  assert.equal(JSON.stringify(source), snapshot, "不得修改传入的文件对象");
+});
+
+test("validateComfyWorkflow 拦截空节点、缺 id、重复 id 与非对象节点", () => {
+  assert.ok(validateComfyWorkflow({ nodes: [], links: [] }).errors.some((message) => message.includes("nodes 为空")));
+  const result = validateComfyWorkflow({ nodes: [comfyNode(1), { type: "KSampler" }, comfyNode(1), null], links: [] });
+  assert.ok(result.errors.some((message) => message.includes("缺少 id")));
+  assert.ok(result.errors.some((message) => message.includes("节点 id 重复")));
+  assert.ok(result.errors.some((message) => message.includes("不是有效节点对象")));
+});
+
+test("validateComfyWorkflow 清洗悬空连线与非法 links 类型", () => {
+  const badLinks = validateComfyWorkflow({ nodes: [comfyNode(1)], links: "oops" });
+  assert.ok(badLinks.errors.some((message) => message.includes("links 必须是数组")));
+
+  const result = validateComfyWorkflow({
+    nodes: [comfyNode(1), comfyNode(2)],
+    links: [[7, 1, 0, 2, 0, "IMAGE"], [8, 1, 0, 99, 0, "IMAGE"], "broken", [9, 1]],
+  });
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.json.links.length, 1, "仅保留引用有效节点且格式合法的连线");
+  assert.ok(result.warnings.some((message) => message.includes("引用了不存在的节点")));
+  assert.ok(result.warnings.some((message) => message.includes("格式无效")));
+});
+
+test("validateComfyWorkflow 降级非法坐标与非数组端口字段", () => {
+  const result = validateComfyWorkflow({
+    nodes: [comfyNode(1, { pos: "bad", inputs: {}, widgets_values: null })],
+    links: [],
+  });
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.json.nodes[0].pos, [0, 0]);
+  assert.deepEqual(result.json.nodes[0].inputs, []);
+  assert.deepEqual(result.json.nodes[0].widgets_values, []);
+  assert.equal(result.warnings.length, 3);
+});
+
+test("isComfyWorkflowDocument 遇到非对象节点不抛错", () => {
+  assert.doesNotThrow(() => isComfyWorkflowDocument({ nodes: [null, 3, undefined, comfyNode(1)], links: [] }));
+  assert.equal(isComfyWorkflowDocument({ nodes: [null, 3], links: [] }), true);
+});
+
+test("导出 JSON 的 canvas 视口与画布恢复同一口径", () => {
+  const document_ = serializeWorkflow([generatorNode("a", 100, 80)], [], { viewport: { x: -312, y: 145, zoom: 0.75 } });
+  assert.deepEqual(document_.canvas, { offsetX: -312, offsetY: 145, scale: 0.75 });
+  const parsed = deserializeWorkflow(JSON.parse(JSON.stringify(document_)));
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(normalizeViewport(parsed.viewport), { x: -312, y: 145, zoom: 0.75 });
+  assert.equal(normalizeViewport({ x: "oops", y: null, zoom: "abc" }), null);
 });

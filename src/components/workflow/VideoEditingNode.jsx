@@ -13,6 +13,7 @@ import {
   Loader,
   Pause,
   Play,
+  RefreshCw,
   Scissors,
   TriangleAlert,
 } from "lucide-react";
@@ -20,7 +21,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { mediaUrl } from "../../lib/media.js";
 import { useWorkflowNode } from "./WorkflowNodeContext.jsx";
-import { NodeCollapseButton, NodeDeleteButton, NodeLockButton, nodeCollapsedClass } from "./NodeCardParts.jsx";
+import { MediaFallback, NodeCollapseButton, NodeDeleteButton, NodeLockButton, NodeTagBadges, nodeCollapsedClass } from "./NodeCardParts.jsx";
 import { clipEnabled, enabledClips } from "./nodeInteractions.js";
 
 const isSameClip = (a, b) => a?.sourceNodeId === b?.sourceNodeId && Number(a?.outputIndex) === Number(b?.outputIndex);
@@ -78,7 +79,7 @@ function sourceReason(source) {
 }
 
 export default function VideoEditingNode({ id, data, selected }) {
-  const { getClips, updateClips, getEditingSources, execute } = useWorkflowNode();
+  const { getClips, updateClips, getEditingSources, execute, refreshRuntime, openEditingSuite } = useWorkflowNode();
   const filmRef = useRef(null);
   const [playing, setPlaying] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
@@ -86,6 +87,10 @@ export default function VideoEditingNode({ id, data, selected }) {
   const dragIndex = useRef(null);
   const [draggingIndex, setDraggingIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
+  // 成片播放失败（产物地址过期 / 文件被清）：给兜底 + 重新加载，需求 4.2.1.5、4.2.5.9
+  const [filmFailed, setFilmFailed] = useState(false);
+  const [filmAttempt, setFilmAttempt] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   // 完整片段列表（含禁用项，需求 4.2.5.3）：由画布沿连线实时聚合，连线变化/上游生成完成后自动刷新
   const clips = getClips?.(id) || [];
@@ -96,6 +101,20 @@ export default function VideoEditingNode({ id, data, selected }) {
   const runStatus = data.runtime?.status || "";
   const film = (data.runtime?.outputs || []).find((output) => output?.url || output?.storageKey);
   const filmSrc = film ? (film.storageKey ? mediaUrl(film.storageKey) : film.url) : "";
+
+  // 换了成片地址（重新合成 / 刷新产物）就复位失败态，否则兜底会一直挂在新的可用产物上
+  useEffect(() => { setFilmFailed(false); }, [filmSrc]);
+
+  // 刷新产物（需求 4.2.5.9）：上游失败 / 产物缺失 / 地址过期时重拉运行时快照，换最新地址
+  const refreshProduct = async () => {
+    if (refreshing || !refreshRuntime) return;
+    setRefreshing(true);
+    try {
+      await refreshRuntime();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // 上游视频源（需求 4.2.5.6）：区分未连线 / 等待生成 / 上游失败
   const sources = getEditingSources?.(id) || [];
@@ -232,14 +251,26 @@ export default function VideoEditingNode({ id, data, selected }) {
         <NodeLockButton id={id} locked={data.locked} />
         <NodeDeleteButton id={id} title="视频剪辑" locked={data.locked} />
       </header>
+      <NodeTagBadges tags={data.tags} />
       <div
         className="video-editing-node__player nodrag nowheel"
         onPointerDown={(event) => event.stopPropagation()}
       >
-        {film ? (
+        {film && filmFailed ? (
+          <div className="video-editing-node__fallback nodrag">
+            <MediaFallback
+              label="成片加载失败，产物地址可能已过期"
+              onRetry={() => { setFilmFailed(false); setFilmAttempt((value) => value + 1); }}
+            />
+            <button type="button" className="video-editing-node__fallback-refresh" onClick={refreshProduct} disabled={refreshing}>
+              {refreshing ? <Loader size={11} className="spin" /> : <RefreshCw size={11} />}
+              刷新产物
+            </button>
+          </div>
+        ) : film ? (
           <>
             <video
-              key={filmSrc}
+              key={`${filmSrc}-${filmAttempt}`}
               ref={filmRef}
               controls
               playsInline
@@ -247,6 +278,7 @@ export default function VideoEditingNode({ id, data, selected }) {
               poster={film.posterUrl ? mediaUrl(film.posterUrl) : undefined}
               onPlay={() => updatePlaying(true)}
               onPause={() => updatePlaying(false)}
+              onError={() => setFilmFailed(true)}
             >
               <source src={filmSrc} />
             </video>
@@ -268,15 +300,18 @@ export default function VideoEditingNode({ id, data, selected }) {
         )}
       </div>
       {missingSources.length > 0 && (
-        <ul className="video-editing-node__sources nodrag" aria-label="上游视频状态">
-          {missingSources.map((source) => (
-            <li key={source.id} data-severity={source.status === "FAILED" || source.enabled === false ? "error" : "pending"}>
-              {source.status === "FAILED" || source.enabled === false ? <TriangleAlert size={11} /> : <Loader size={11} className="spin" />}
-              <span title={`${source.title}：${sourceReason(source)}`}>{source.title}</span>
-              <em>{sourceReason(source)}</em>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="video-editing-node__sources nodrag" aria-label="上游视频状态">
+            {missingSources.map((source) => (
+              <li key={source.id} data-severity={source.status === "FAILED" || source.enabled === false ? "error" : "pending"}>
+                {source.status === "FAILED" || source.enabled === false ? <TriangleAlert size={11} /> : <Loader size={11} className="spin" />}
+                <span title={`${source.title}：${sourceReason(source)}`}>{source.title}</span>
+                <em>{sourceReason(source)}</em>
+              </li>
+            ))}
+          </ul>
+          <small className="video-editing-node__sources-hint">上游失败或产物地址过期时，点下方「刷新产物」重新拉取</small>
+        </>
       )}
       {clips.length > 0 && (
         <div className="video-editing-node__queue nodrag nowheel">
@@ -433,6 +468,16 @@ export default function VideoEditingNode({ id, data, selected }) {
       </div>
       <div className="video-editing-node__actions">
         <button
+          type="button"
+          className="video-editing-node__open-suite nodrag"
+          onClick={() => openEditingSuite?.(id)}
+          onPointerDown={(event) => event.stopPropagation()}
+          title="打开独立剪辑台：多轨时间线、剪切、拖拽、导出成片"
+        >
+          <Clapperboard size={12} />
+          打开剪辑台
+        </button>
+        <button
           className="video-editing-node__compose nodrag"
           onClick={composeFilm}
           disabled={composing || !playable.length}
@@ -449,6 +494,16 @@ export default function VideoEditingNode({ id, data, selected }) {
               {film ? "重新合成成片" : "合成成片"}
             </>
           )}
+        </button>
+        <button
+          type="button"
+          className="video-editing-node__refresh nodrag"
+          onClick={refreshProduct}
+          disabled={refreshing || composing}
+          title="重新拉取运行结果：上游失败后重跑过、或产物地址过期时用它换成最新地址"
+        >
+          {refreshing ? <Loader size={12} className="spin" /> : <RefreshCw size={12} />}
+          刷新产物
         </button>
       </div>
       <footer>
