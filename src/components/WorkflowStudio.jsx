@@ -2051,9 +2051,8 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     setSaved(false);
   }, [nodes, rememberGraph, setNodes, setSaved]);
 
-  // 保存为资产（需求 1.3）：把节点存为画布资产。
-  // 当前没有独立的「画布资产」存储，落到素材库接口会串味（素材库只认媒体文件），
-  // 因此先落成节点自身的可复用副本记录：写进节点 data.savedAsset 并提示。
+  // 保存为资产（需求 1.3）：占位实现——写 data.savedAsset 标记并提示。
+  // 真实落库与跨画布复用（canvas_asset 表 + 添加节点菜单入口）由后续提交补齐。
   const saveNodeAsAsset = useCallback((nodeId) => {
     const target = nodes.find((node) => node.id === nodeId);
     if (!target) return;
@@ -2285,13 +2284,16 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     setSaved(false);
   }, [rememberGraph, setNodes]);
 
-  // 独立剪辑台草稿双写：每次草稿提交写回 timeline v2 + 扁平 clips[]（节点卡队列 / runGraph / 后端 compose 零改动可用）。
+  // 独立剪辑台草稿双写：每次草稿提交写回 timeline v2 + 扁平 clips[] + audioClips[]。
+  // clips 供节点卡队列 / runGraph / 后端 compose（主视频轨拼接）；audioClips 供后端把音频轨混入成片（amix）。
   // 不进画布撤销栈：剪辑台内部有自己的 50 步栈，画布只需在「导出成片」时记一条。
-  const updateEditingDraft = useCallback((nodeId, { timeline, clips }) => {
+  const updateEditingDraft = useCallback((nodeId, { timeline, clips, audioClips, importedSources = [] }) => {
     setNodes((items) => items.map((node) => node.id === nodeId ? { ...node, data: {
       ...node.data,
       media: { ...node.data.media, clips, ratio: timeline.aspect, resolution: timeline.quality },
-      editing: { ...node.data.editing, clips, timeline, resolution: `${timeline.aspect}@${timeline.quality}` },
+      // importedSources 是剪辑台本地导入的素材清单，不在 graph.nodes 里，只能随草稿透传；
+      // 后端 Planner 只消费 clips / audioClips，多余字段原样忽略。
+      editing: { ...node.data.editing, clips, audioClips, importedSources, timeline, resolution: `${timeline.aspect}@${timeline.quality}` },
     } } : node));
     setSaved(false);
   }, [setNodes]);
@@ -2367,8 +2369,10 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
       showToast("生成任务已完成，结果已写入当前节点");
       return;
     }
-    return runGraph(nodeId);
-  }, [nodes, edges, selectedModel, record, running, setNodes, showToast]);
+    // 顶栏「运行方式」对单节点生成同样生效：选了「全部重新生成」时，
+    // 节点卡片点生成也要带 forceRegenerate，否则上游仍按指纹复用、只有本节点重跑。
+    return runGraph(nodeId, runMode);
+  }, [nodes, edges, selectedModel, record, running, setNodes, showToast, runMode]);
 
   const getReferences = useCallback((targetId) => {
     const edgeRefs = edges
@@ -2781,7 +2785,9 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     running,
     models,
     refreshRuntime,
-  }), [nodes, edges, updateNodeMedia, updatePrompt, updateClips, updateEditingDraft, commitEditingExport, selectOutput, generateNodeMedia, showToast, requestNodeDelete, uploadAudio, getClips, getEditingSources, toggleLock, toggleCollapse, getReferences, getPromptSupplements, removeReference, openReferencePicker, running, models, refreshRuntime]);
+    // 顶栏运行方式（reuse / regenerate）：节点卡片据此给出「生成 / 重新生成」文案与提示
+    runMode,
+  }), [nodes, edges, updateNodeMedia, updatePrompt, updateClips, updateEditingDraft, commitEditingExport, selectOutput, generateNodeMedia, showToast, requestNodeDelete, uploadAudio, getClips, getEditingSources, toggleLock, toggleCollapse, getReferences, getPromptSupplements, removeReference, openReferencePicker, running, models, refreshRuntime, runMode]);
 
   const canvasReferenceNodes = useMemo(() => nodes.filter((node) => node.id !== referencePickerNodeId && nodePreviewUrl(node) && node.data?.outputs?.some((port) => ["IMAGE", "VIDEO", "AUDIO"].includes(port.type))), [nodes, referencePickerNodeId]);  // 当前弹框目标节点已直接附加的参考素材 key（media.referenceAssets）
   const directReferenceKeys = useMemo(() => new Set((nodes.find((node) => node.id === referencePickerNodeId)?.data?.media?.referenceAssets || []).map((item) => item?.storageKey)), [nodes, referencePickerNodeId]);
@@ -3768,6 +3774,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
                 clips={getClips(editingSuiteNodeId)}
                 sources={getEditingSourceClips(editingSuiteNodeId)}
                 savedTimeline={target?.data?.editing?.timeline}
+                savedImportedSources={target?.data?.editing?.importedSources}
                 onClose={() => setEditingSuiteNodeId(null)}
                 onDraft={(draft) => updateEditingDraft(editingSuiteNodeId, draft)}
                 onExport={() => commitEditingExport(editingSuiteNodeId)}
