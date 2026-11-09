@@ -26,10 +26,7 @@ const navGroups = [
       { id: "create", to: "/console/create", label: "快速创作", Icon: SparkIcon },
       { id: "drama", to: "/console/drama", label: "短剧创作", Icon: FilmIcon },
       { id: "script", to: "/console/script", label: "剧本创作", Icon: ScriptIcon },
-      // 高级工作台菜单入口暂时隐藏（前端侧下线中）：路由 /console/studio 保留，
-      // 直达 URL 仍可进入。恢复入口只需把下面这行取消注释
-      // （Workflow 图标的 import 已保留，无需再改 import）。
-      // { id: "studio", to: "/console/studio", label: "高级工作台", Icon: Workflow },
+      { id: "studio", to: "/console/studio", label: "高级工作台", Icon: Workflow },
     ],
   },
   {
