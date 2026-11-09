@@ -486,3 +486,33 @@ test("导出 JSON 的 canvas 视口与画布恢复同一口径", () => {
   assert.deepEqual(normalizeViewport(parsed.viewport), { x: -312, y: 145, zoom: 0.75 });
   assert.equal(normalizeViewport({ x: "oops", y: null, zoom: "abc" }), null);
 });
+
+test("贴纸图层随导出文件往返（需求 1.8）", () => {
+  const stickers = [
+    { id: "s1", label: "星标", glyph: "⭐", tone: "#f5c33b", x: 90, y: 70 },
+    { id: "s2", label: "待办", glyph: "✅", tone: "#6fbf8b", x: 124, y: 100 },
+  ];
+  const document_ = serializeWorkflow([generatorNode("a", 100, 80)], [], { stickers });
+  assert.deepEqual(document_.extensions.stickers, stickers);
+  const parsed = deserializeWorkflow(JSON.parse(JSON.stringify(document_)));
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.stickers, stickers);
+});
+
+test("贴纸图层为空时不写 extensions 键", () => {
+  const document_ = serializeWorkflow([generatorNode("a", 100, 80)], [], { stickers: [] });
+  assert.deepEqual(document_.extensions, {});
+  const parsed = deserializeWorkflow(JSON.parse(JSON.stringify(document_)));
+  assert.deepEqual(parsed.stickers, []);
+});
+
+test("贴纸 extensions 格式非法时降级为空数组", () => {
+  const parsed = deserializeWorkflow({
+    schemaVersion: SCHEMA_VERSION,
+    nodes: [],
+    edges: [],
+    extensions: { stickers: "not-an-array" },
+  });
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.stickers, []);
+});

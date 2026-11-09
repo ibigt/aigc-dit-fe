@@ -8,9 +8,11 @@ import {
   Panel,
   Position,
   ReactFlow,
+  ViewportPortal,
   addEdge,
   useEdgesState,
   useNodesState,
+  useViewport,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
@@ -798,17 +800,17 @@ function normalizeWorkflow(json) {
 }
 
 // 导入分派：标准工作台 JSON 走协议校验，ComfyUI JSON 走既有归一化
-// 返回 { ok, kind, graph, viewport, errors, warnings }；失败时不返回任何画布数据
+// 返回 { ok, kind, graph, viewport, stickers, errors, warnings }；失败时不返回任何画布数据
 export function parseWorkflowDocument(json) {
   if (isStandardWorkflowDocument(json)) {
     const result = deserializeWorkflow(json);
     if (!result.ok) return { ok: false, kind: "standard", errors: result.errors, warnings: result.warnings };
-    return { ok: true, kind: "standard", graph: result.graph, viewport: result.viewport, errors: [], warnings: result.warnings };
+    return { ok: true, kind: "standard", graph: result.graph, viewport: result.viewport, stickers: result.stickers || [], errors: [], warnings: result.warnings };
   }
   if (isComfyWorkflowDocument(json)) {
     const checked = validateComfyWorkflow(json);
     if (checked.errors.length) return { ok: false, kind: "comfy", errors: checked.errors, warnings: checked.warnings };
-    return { ok: true, kind: "comfy", graph: normalizeWorkflow(checked.json), viewport: null, errors: [], warnings: checked.warnings };
+    return { ok: true, kind: "comfy", graph: normalizeWorkflow(checked.json), viewport: null, stickers: [], errors: [], warnings: checked.warnings };
   }
   return {
     ok: false,
@@ -1232,6 +1234,79 @@ const STICKER_PRESETS = [
   { id: "heart", label: "喜欢", glyph: "❤️", tone: "#e0658a" },
 ];
 
+// 水印平铺密度：画布可视区约 1200×800，一个水印块 240×140，按 6×6 铺满并留余量，
+// 超出部分靠 overflow:hidden 裁掉，保证任意窗口尺寸下都铺满不留白。
+const WATERMARK_TILE_COUNT = 36;
+
+// 贴纸图层落库 / 还原的清洗口径（需求 1.8）：只认预设里的字段，
+// 坐标钳为有限数，避免脏数据把贴纸甩到画布外或让拖动算出 NaN。
+function sanitizeStickers(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((item) => item && typeof item === "object")
+    .map((item, index) => ({
+      id: String(item.id || `sticker-restored-${index}`),
+      label: String(item.label || "贴纸"),
+      glyph: String(item.glyph || "⭐"),
+      tone: /^#[0-9a-f]{3,8}$/i.test(String(item.tone || "")) ? String(item.tone) : "#f5c33b",
+      x: Number.isFinite(Number(item.x)) ? Number(item.x) : 0,
+      y: Number.isFinite(Number(item.y)) ? Number(item.y) : 0,
+    }));
+}
+
+// 贴纸图层（需求 1.8）：渲染进 ViewportPortal，位置用画布（flow）坐标，
+// 因此画布平移/缩放时贴纸跟着动——和节点同一套坐标系，不再是"浮在屏幕上的绝对定位"。
+// 视觉尺寸保持屏幕恒定（scale(1/zoom) + transform-origin: top left），
+// 缩到 20% 时 X 按钮也还点得到；拖动时屏幕位移除以 zoom 换算回流坐标。
+function StickerLayer({ stickers, onMove, onRemove }) {
+  const viewport = useViewport();
+  const zoom = viewport.zoom || 1;
+  return (
+    <ViewportPortal>
+      {stickers.map((sticker) => (
+        <div
+          key={sticker.id}
+          className="canvas-sticker nodrag nopan"
+          style={{
+            left: sticker.x,
+            top: sticker.y,
+            background: sticker.tone,
+            transform: `scale(${1 / zoom})`,
+          }}
+          title={sticker.label}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            const startX = event.clientX;
+            const startY = event.clientY;
+            const originX = sticker.x;
+            const originY = sticker.y;
+            const onDrag = (moveEvent) => onMove(
+              sticker.id,
+              originX + (moveEvent.clientX - startX) / zoom,
+              originY + (moveEvent.clientY - startY) / zoom,
+            );
+            const onUp = () => {
+              window.removeEventListener("pointermove", onDrag);
+              window.removeEventListener("pointerup", onUp);
+            };
+            window.addEventListener("pointermove", onDrag);
+            window.addEventListener("pointerup", onUp);
+          }}
+        >
+          <span>{sticker.glyph}</span>
+          <button
+            aria-label={`移除贴纸：${sticker.label}`}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => { event.stopPropagation(); onRemove(sticker.id); }}
+          >
+            <X size={10} />
+          </button>
+        </div>
+      ))}
+    </ViewportPortal>
+  );
+}
+
 function GroupFrame({ data, selected }) {
   const frameStyle = data.color ? { borderColor: data.color, background: `${data.color}14` } : undefined;
   return <div className={`canvas-group-frame ${selected ? "is-selected" : ""}`} style={frameStyle}><span><Group size={13} />{data.label || "节点组合"}</span></div>;
@@ -1527,6 +1602,8 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
   const [flowInstance, setFlowInstance] = useState(null);
   // 打开 / 刷新时还原上次保存的画布视口（需求 4.1.1.6）；老数据没有视口就回退 fitView
   const initialViewport = useMemo(() => normalizeViewport(initialGraph?.viewport), [initialGraph?.viewport]);
+  // 贴纸图层随画布落库（需求 1.8）：打开 / 刷新时从 graph.stickers 还原
+  const [stickers, setStickers] = useState(() => sanitizeStickers(initialGraph?.stickers));
   const [toast, setToast] = useState("");
   const [addMenu, setAddMenu] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
@@ -1563,8 +1640,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
   const [watermarkOn, setWatermarkOn] = useState(false);
   const [minimapOn, setMinimapOn] = useState(false);
   const [edgesVisible, setEdgesVisible] = useState(true);
-  // 贴纸：独立可拖动的贴纸图层（不参与连线与运行）
-  const [stickers, setStickers] = useState([]);
+  // 贴纸：独立可拖动的贴纸图层（不参与连线与运行）；state 已在组件首部随 graph 初始化
   const [stickerMenuOpen, setStickerMenuOpen] = useState(false);
   const [importReport, setImportReport] = useState(null);
   // 标题行内重命名：草稿 + 编辑态，提交后回写 record 并按需落库
@@ -2048,6 +2124,8 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
       ? { ...node, data: { ...node.data, runtime: { ...node.data.runtime, outputs: hydrateImportedOutputs(node.data.runtime.outputs) } } }
       : node)));
     setEdges(parsed.graph.edges);
+    // 贴纸图层（需求 1.8）：导入文件里的 extensions.stickers 还原到画布图层
+    if (Array.isArray(parsed.stickers) && parsed.stickers.length) setStickers(sanitizeStickers(parsed.stickers));
     setSaved(false);
     window.setTimeout(() => {
       if (parsed.viewport) flowInstance?.setViewport(parsed.viewport, { duration: 320 });
@@ -2791,12 +2869,25 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     return () => { cancelled = true; };
   }, [referencePickerNodeId]);
 
-  // 贴纸（需求 1.8）：独立可拖动的贴纸图层，不进画布节点、不参与连线与运行
+  // 贴纸（需求 1.8）：独立可拖动的贴纸图层，不进画布节点、不参与连线与运行。
+  // 坐标是画布（flow）坐标，与节点同一坐标系——贴纸随画布平移/缩放一起动。
+  // 新贴纸落在当前视口中心附近，保证一加出来就看得见。
   const addSticker = useCallback((sticker) => {
     const id = `sticker-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    setStickers((items) => [...items, { ...sticker, id, x: 90 + (items.length % 6) * 34, y: 70 + (items.length % 5) * 30 }]);
+    const rect = stageRef.current?.getBoundingClientRect();
+    const center = rect
+      ? flowInstance?.screenToFlowPosition?.({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+      : null;
+    const baseX = Number.isFinite(center?.x) ? center.x : 0;
+    const baseY = Number.isFinite(center?.y) ? center.y : 0;
+    setStickers((items) => [...items, {
+      ...sticker,
+      id,
+      x: Math.round(baseX - 19 + (items.length % 6) * 34),
+      y: Math.round(baseY - 19 + (items.length % 5) * 30),
+    }]);
     showToast(`已添加贴纸「${sticker.label}」`);
-  }, [showToast]);
+  }, [flowInstance, showToast]);
 
   // 贴纸拖动：跟手移动，改动只落在贴纸图层，不写画布（不进撤销栈）
   const moveSticker = useCallback((id, x, y) => {
@@ -3034,6 +3125,8 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
         viewport: viewport ? { x: viewport.x, y: viewport.y, zoom: viewport.zoom } : undefined,
         title: record.title || "未命名工作流",
         description: record.description || "",
+        // 贴纸图层随文件导出（需求 1.8），导入端按同一字段还原
+        stickers: sanitizeStickers(stickers),
       });
       downloadWorkflowDocument(document_, exportFileName(record.title || "未命名工作流"));
       showToast("已导出工作流 JSON", 2200);
@@ -3082,11 +3175,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     // 视口随画布一起落库，下次打开 / 刷新还原（需求 4.1.1.6）
     const graph = graphWithViewport(persistableGraph(nodes, edges), flowInstance?.getViewport?.());
     // 贴纸图层随画布落库（需求 1.8）：只存展示字段，坐标钳为有限数
-    const savedStickers = stickers.map(({ id, label, glyph, tone, x, y }) => ({
-      id, label, glyph, tone,
-      x: Number.isFinite(x) ? x : 0,
-      y: Number.isFinite(y) ? y : 0,
-    }));
+    const savedStickers = sanitizeStickers(stickers);
     const body = {
       title: record.title || "未命名工作流",
       description: record.description || "",
@@ -3329,44 +3418,16 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
           <Controls position="bottom-right" showInteractive={false} />
           {/* 小地图（需求 1.8）：默认关闭，由工具栏开关 */}
           {minimapOn && <MiniMap className="canvas-minimap" pannable zoomable nodeColor="#8b939d" maskColor="rgba(255,255,255,.72)" />}
-          {/* 水印（需求 1.8）：预览水印，仅覆盖画布显示，不进入保存数据 */}
+          {/* 水印（需求 1.8）：预览水印，斜向平铺铺满整个画布，仅覆盖显示，不进入保存数据 */}
           {watermarkOn && (
             <div className="canvas-watermark" aria-hidden="true">
-              <span>预览水印 · 未导出</span>
+              {Array.from({ length: WATERMARK_TILE_COUNT }, (_, index) => (
+                <span key={index}>预览水印 · 未导出</span>
+              ))}
             </div>
           )}
-          {/* 贴纸图层（需求 1.8）：独立可拖动的展示层，不进画布节点 */}
-          {stickers.map((sticker) => (
-            <div
-              key={sticker.id}
-              className="canvas-sticker"
-              style={{ left: sticker.x, top: sticker.y, background: sticker.tone }}
-              title={sticker.label}
-              onPointerDown={(event) => {
-                event.stopPropagation();
-                const startX = event.clientX;
-                const startY = event.clientY;
-                const originX = sticker.x;
-                const originY = sticker.y;
-                const onMove = (moveEvent) => moveSticker(sticker.id, originX + (moveEvent.clientX - startX), originY + (moveEvent.clientY - startY));
-                const onUp = () => {
-                  window.removeEventListener("pointermove", onMove);
-                  window.removeEventListener("pointerup", onUp);
-                };
-                window.addEventListener("pointermove", onMove);
-                window.addEventListener("pointerup", onUp);
-              }}
-            >
-              <span>{sticker.glyph}</span>
-              <button
-                aria-label={`移除贴纸：${sticker.label}`}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => { event.stopPropagation(); removeSticker(sticker.id); }}
-              >
-                <X size={10} />
-              </button>
-            </div>
-          ))}
+          {/* 贴纸图层（需求 1.8）：独立可拖动的展示层，不进画布节点；走 ViewportPortal 跟随画布变换 */}
+          <StickerLayer stickers={stickers} onMove={moveSticker} onRemove={removeSticker} />
           <Panel position="top-left" className="flow-title">
             <button className="flow-back" onClick={requestBack}><ArrowLeft size={15} /> 返回</button>
             <div>
@@ -3825,7 +3886,7 @@ export function WorkflowStudio({ onOpenTemplates, templateLaunch, importRequest,
         const stored = detail?.graph || {};
         const nextGraph = Array.isArray(stored.nodes) && stored.nodes.length
           ? { ...stored, nodes: stored.nodes, edges: stored.edges || [] }
-          : { nodes: [], edges: [], viewport: stored.viewport };
+          : { nodes: [], edges: [], viewport: stored.viewport, stickers: stored.stickers || [] };
         if (card.modelId) setSelectedModel(String(card.modelId));
         setRecord(card);
         setGraph(nextGraph);
@@ -3866,7 +3927,7 @@ export function WorkflowStudio({ onOpenTemplates, templateLaunch, importRequest,
       origin: parsed.kind === "standard" ? "工作台 JSON 导入" : "ComfyUI 导入",
       builtin: false,
     });
-    setGraph({ ...parsed.graph, viewport: parsed.viewport });
+    setGraph({ ...parsed.graph, viewport: parsed.viewport, stickers: parsed.stickers || [] });
     setEditorKey((key) => key + 1);
     openEditor();
     if (parsed.warnings.length) setImportReport({ fileName: importRequest.fileName, errors: [], warnings: parsed.warnings });
@@ -3947,7 +4008,7 @@ export function WorkflowStudio({ onOpenTemplates, templateLaunch, importRequest,
       let nextGraph;
       // 展开 stored 保留 viewport（老数据没有该字段，editor 会回退 fitView）
       if (Array.isArray(stored.nodes) && stored.nodes.length) nextGraph = { ...stored, nodes: stored.nodes, edges: stored.edges || [] };
-      else nextGraph = { nodes: [], edges: [], viewport: stored.viewport };
+      else nextGraph = { nodes: [], edges: [], viewport: stored.viewport, stickers: stored.stickers || [] };
       if (card.modelId) setSelectedModel(String(card.modelId));
       setRecord(card);
       setGraph(nextGraph);
@@ -3996,7 +4057,7 @@ export function WorkflowStudio({ onOpenTemplates, templateLaunch, importRequest,
       origin: parsed.kind === "standard" ? "工作台 JSON 导入" : "ComfyUI 导入",
       builtin: false,
     });
-    setGraph({ ...parsed.graph, viewport: parsed.viewport });
+    setGraph({ ...parsed.graph, viewport: parsed.viewport, stickers: parsed.stickers || [] });
     setEditorKey((key) => key + 1);
     openEditor();
     if (parsed.warnings.length) setImportReport({ fileName: file.name, errors: [], warnings: parsed.warnings });
