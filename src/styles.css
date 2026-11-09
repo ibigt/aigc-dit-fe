@@ -10234,6 +10234,21 @@ a {
 .canvas-add-menu__items > button > em,
 .canvas-add-menu__comfy > em { padding: 3px 6px; color: #fff; border-radius: 5px; background: #262b31; font-size: 9px; font-style: normal; font-weight: 700; line-height: 1; }
 .canvas-add-menu__items > button > em.is-model { background: #645df1; }
+/* 画布资产（需求 1.3）：节点→资产→画布的复用入口，挂在添加节点菜单内，不复活 14.27 下线的 dock 面板 */
+.canvas-add-menu__assets { margin-top: 7px; padding-top: 6px; max-height: 216px; overflow-y: auto; border-top: 1px solid var(--canvas-menu-line); }
+.canvas-add-menu__assets > header { height: 25px; padding: 0 7px; display: flex; align-items: center; gap: 6px; color: var(--canvas-menu-muted); font-size: 11px; font-weight: 650; }
+.canvas-add-menu__assets > header > span { padding: 2px 6px; border-radius: 8px; background: #eef0f3; font-size: 10px; font-weight: 700; }
+.canvas-add-menu__assets-empty { padding: 6px 7px 10px; color: var(--canvas-menu-muted); font-size: 11px; line-height: 1.6; }
+.canvas-add-menu__assets-more { padding: 6px 7px 3px; color: var(--canvas-menu-muted); font-size: 10px; }
+.canvas-add-menu__asset { display: grid; grid-template-columns: minmax(0,1fr) 24px; align-items: center; gap: 2px; }
+.canvas-add-menu__asset > button:first-child { width: 100%; min-height: 34px; padding: 4px 7px; display: grid; grid-template-columns: 24px minmax(0,1fr) auto; align-items: center; gap: 7px; color: var(--canvas-menu-text); border: 0; border-radius: 8px; background: transparent; text-align: left; }
+.canvas-add-menu__asset > button:first-child:hover:not(:disabled) { background: var(--canvas-menu-hover); }
+.canvas-add-menu__asset > button:first-child > i { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 7px; background: #f0f2f4; font-style: normal; }
+.canvas-add-menu__asset > button:first-child > span { overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.canvas-add-menu__asset > button:first-child > em { color: var(--canvas-menu-muted); font-size: 10px; font-style: normal; }
+.canvas-add-menu__asset > button.is-remove { width: 24px; height: 26px; display: grid; place-items: center; color: var(--canvas-menu-muted); border: 0; border-radius: 6px; background: transparent; }
+.canvas-add-menu__asset > button.is-remove:hover:not(:disabled) { color: #b4232f; background: #fdecee; }
+.canvas-add-menu__asset > button:disabled { opacity: .5; cursor: not-allowed; }
 .canvas-add-menu__comfy { margin-top: 3px; border-top: 1px solid var(--canvas-menu-line); border-radius: 0 0 9px 9px; }
 .canvas-add-menu__comfy > svg { color: #78818c; }
 .canvas-add-submenu-shell { position: relative; }
@@ -10376,6 +10391,13 @@ a {
 .media-node__cost svg { color: #f0c64b; }
 .media-node__cost-tag { font-style: normal; font-size: 9px; line-height: 14px; padding: 0 4px; border-radius: 4px; color: #9dc0ff; background: rgba(93,138,255,.16); }
 .media-node__controls > .media-node__generate { grid-column: 3; color: #111820; border-color: var(--node-accent); background: var(--node-accent); font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 4px; }
+/* 「重新生成」4 字 + 图标在 68px 固定列里会溢出：只收紧 force 按钮内部，不改 grid 列宽（4.6.2 运行方式同步到节点卡片） */
+.media-node__controls > .media-node__generate,
+.audio-node__controls > .audio-node__generate { white-space: nowrap; }
+.media-node__controls > .media-node__generate.is-force,
+.audio-node__controls > .audio-node__generate.is-force { padding: 0 4px; gap: 2px; font-size: 10px; }
+.media-node__controls > .media-node__generate.is-force svg,
+.audio-node__controls > .audio-node__generate.is-force svg { width: 11px; height: 11px; }
 .media-node__settings { position: absolute; z-index: 30; left: calc(100% + 12px); top: 40px; width: 342px; padding: 11px; color: #e9edf2; border: 1px solid rgba(255,255,255,.12); border-radius: 10px; background: #20242c; box-shadow: 0 18px 44px rgba(0,0,0,.5); }
 .media-node__settings > header { min-height: 31px; margin: -3px -3px 7px; padding: 0 3px 7px; display: flex; align-items: center; justify-content: space-between; border: 0; border-bottom: 1px solid #414750; border-radius: 0; background: transparent; }
 .media-node__settings > header strong { font-size: 11px; }.media-node__settings > header button { width: 26px; height: 26px; display: grid; place-items: center; border: 0; border-radius: 6px; color: #aab2bd; background: transparent; }

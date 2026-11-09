@@ -76,6 +76,7 @@ import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useM
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { cancelWorkflowRun, createWorkflowRecord, getWorkflow, getWorkflowRun, listWorkflows, removeWorkflow, startWorkflowRun, updateWorkflowRecord } from "../api/workflows.js";
 import { fetchAssets, uploadAsset } from "../api/assets.js";
+import { deleteCanvasAsset, fetchCanvasAssets, getCanvasAsset, saveCanvasAsset } from "../api/canvasAssets.js";
 import { validateAssetFile } from "../lib/assetUpload.js";
 import { MEDIA_THUMB_WIDTH, mediaUrl, storageKeyOf } from "../lib/media.js";
 import { MediaCover } from "../lib/MediaCover.jsx";
@@ -99,6 +100,7 @@ import { findWorkflowModel, isSeedance20Official, normalizeWorkflowVideoMode, wo
 import { graphVariableScopes } from "./workflow/variables.js";
 import { estimatedNodeHeight, placeQuickNode } from "./workflow/layout.js";
 import { deserializeWorkflow, downloadWorkflowDocument, exportFileName, isComfyWorkflowDocument, isStandardWorkflowDocument, serializeWorkflow, validateComfyWorkflow } from "./workflow/serializer.js";
+import { assetNameFor, buildAssetGraph, cloneAssetGraph, dedupeAssetName, validateAssetGraph, withSavedAsset } from "./workflow/canvasAssets.js";
 import { ConfirmDialog } from "./ConfirmDialog.jsx";
 import { DemoSelect } from "./DemoSelect.jsx";
 import { WorksTypeIcon } from "./WorksTypeIcon.jsx";
@@ -1622,6 +1624,9 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
   const helpButtonRef = useRef(null);
   const [comfyMenuOpen, setComfyMenuOpen] = useState(false);
   const [selectedNodeIds, setSelectedNodeIds] = useState([]);
+  // 画布资产（需求 1.3）：跨画布复用的节点配置快照，落在服务端 canvas_asset 表。
+  const [canvasAssets, setCanvasAssets] = useState([]);
+  const [assetsBusy, setAssetsBusy] = useState(false);
   const [tidyMenuOpen, setTidyMenuOpen] = useState(false);
   const [includeConnected, setIncludeConnected] = useState(false);
   // TC-008 自动排版检测到环时的瞬态高亮（定时自动消退）
@@ -1773,6 +1778,11 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(""), duration);
   }, []);
+  // 列表只取元信息（节点图按 id 单独拉）。后端未部署 / 未登录时静默保持空态，不阻塞画布编辑。
+  const loadCanvasAssets = useCallback(() => fetchCanvasAssets()
+    .catch(() => [])
+    .then((items) => setCanvasAssets(Array.isArray(items) ? items : [])), []);
+  useEffect(() => { loadCanvasAssets(); }, [loadCanvasAssets]);
   // TC-008 环路高亮的渲染期派生：仅在渲染层叠加 className/样式，不触碰 nodes/edges 状态，
   // 因此不进入撤销栈，也不会随 persistableWorkflowGraph / 序列化导出污染画布数据
   const displayNodes = useMemo(() => {
@@ -2051,18 +2061,80 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     setSaved(false);
   }, [nodes, rememberGraph, setNodes, setSaved]);
 
-  // 保存为资产（需求 1.3）：占位实现——写 data.savedAsset 标记并提示。
-  // 真实落库与跨画布复用（canvas_asset 表 + 添加节点菜单入口）由后续提交补齐。
-  const saveNodeAsAsset = useCallback((nodeId) => {
-    const target = nodes.find((node) => node.id === nodeId);
-    if (!target) return;
-    rememberGraph();
-    setNodes((items) => items.map((node) => (node.id === nodeId
-      ? { ...node, data: { ...node.data, savedAsset: { savedAt: new Date().toISOString(), title: node.data?.title || node.id } } }
-      : node)));
-    setSaved(false);
-    showToast(`已将节点「${target.data?.title || nodeId}」保存为画布资产`, 2600);
-  }, [nodes, rememberGraph, setNodes, setSaved, showToast]);
+  // 保存为画布资产（需求 1.3）：节点配置快照落库，可在任意画布「添加节点 → 我的资产」复用。
+  // 只保存参数与内部连线；运行产物 / runtime / savedAsset 标记一律剥离（canvasAssets.js）。
+  // 成功才压一条撤销栈、才标未保存，批量保存也只压一条。
+  const saveSelectionAsAssets = useCallback(async (ids) => {
+    if (assetsBusy) return;
+    const idSet = new Set(ids);
+    const graph = buildAssetGraph(nodes, edges, idSet);
+    const check = validateAssetGraph(graph);
+    if (!check.ok) { showToast(check.error); return; }
+    const name = dedupeAssetName(assetNameFor(graph.nodes), canvasAssets);
+    setAssetsBusy(true);
+    try {
+      const asset = await saveCanvasAsset({ name, graph: check.graph });
+      rememberGraph();
+      setNodes((items) => items.map((node) => idSet.has(node.id) ? withSavedAsset(node, asset) : node));
+      setSaved(false);
+      setCanvasAssets((items) => [asset, ...items.filter((item) => item?.id !== asset?.id)]);
+      showToast(`已保存 ${graph.nodes.length} 个节点为画布资产「${asset?.name || name}」，可在「添加节点 → 我的资产」复用`, 3600);
+    } catch (error) {
+      showToast(`保存失败：${error?.message || "请重试"}`);
+    } finally {
+      setAssetsBusy(false);
+    }
+  }, [assetsBusy, nodes, edges, canvasAssets, rememberGraph, setNodes, setSaved, showToast]);
+
+  const saveNodeAsAsset = useCallback((nodeId) => saveSelectionAsAssets([nodeId]), [saveSelectionAsAssets]);
+
+  // 从资产库插回画布：重新映射节点/连线 id，落在当前视口中心，保留资产内的相对布局。
+  const insertCanvasAsset = useCallback(async (asset) => {
+    if (assetsBusy) return;
+    setAssetsBusy(true);
+    try {
+      const detail = await getCanvasAsset(asset.id);
+      const check = validateAssetGraph(detail?.graph);
+      if (!check.ok) { showToast(`资产「${asset.name}」已损坏：${check.error}`); return; }
+      const cloned = cloneAssetGraph(check.graph, () => `node-${Date.now()}-${Math.round(Math.random() * 100000)}`);
+      if (!cloned.nodes.length) { showToast("该资产没有可插入的节点"); return; }
+      const rect = stageRef.current?.getBoundingClientRect();
+      const base = flowInstance
+        ? flowInstance.screenToFlowPosition({ x: (rect?.left || 0) + (rect?.width || 900) / 2, y: (rect?.top || 0) + (rect?.height || 700) / 2 })
+        : { x: 320, y: 220 };
+      const minX = Math.min(...cloned.nodes.map((node) => node.position.x));
+      const minY = Math.min(...cloned.nodes.map((node) => node.position.y));
+      const placed = cloned.nodes.map((node) => ({ ...node, position: { x: base.x + node.position.x - minX, y: base.y + node.position.y - minY }, selected: true }));
+      rememberGraph();
+      setNodes((items) => [...items.map((node) => ({ ...node, selected: false })), ...placed]);
+      setEdges((items) => [...items, ...cloned.edges]);
+      setSelectedNodeIds(placed.map((node) => node.id));
+      setSaved(false);
+      setAddMenu(null);
+      setContextMenu(null);
+      showToast(`已插入画布资产「${asset.name}」（${placed.length} 个节点）`);
+    } catch (error) {
+      showToast(`插入失败：${error?.message || "请重试"}`);
+    } finally {
+      setAssetsBusy(false);
+    }
+  }, [assetsBusy, flowInstance, rememberGraph, setNodes, setEdges, setSelectedNodeIds, setSaved, showToast]);
+
+  // 删除资产只动服务端清单，不改画布上已插入的节点；节点上的 savedAsset 标记也保留，
+  // 菜单按资产清单实时判断是否仍「已保存」，避免删除操作牵连画布撤销栈。
+  const removeCanvasAsset = useCallback(async (asset) => {
+    if (assetsBusy) return;
+    setAssetsBusy(true);
+    try {
+      await deleteCanvasAsset(asset.id);
+      setCanvasAssets((items) => items.filter((item) => item.id !== asset.id));
+      showToast(`已删除画布资产「${asset.name}」`);
+    } catch (error) {
+      showToast(`删除失败：${error?.message || "请重试"}`);
+    } finally {
+      setAssetsBusy(false);
+    }
+  }, [assetsBusy, showToast]);
 
   const pasteNodes = useCallback(() => {
     const clip = nodeClipboardRef.current;
@@ -3601,7 +3673,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
             <button className={tidyMenuOpen ? "active" : ""} onClick={() => setTidyMenuOpen((value) => !value)}><LayoutGrid size={15} />整理<ChevronDown size={12} /></button>
             <button onClick={groupSelection}><Group size={15} />组合</button>
             <button onClick={duplicateSelectedNodes}><Copy size={15} />复制</button>
-            <button onClick={() => showToast(`已将 ${selectedNodeIds.length} 个节点保存为画布资产`)}><PackagePlus size={15} />保存为资产</button>
+            <button disabled={assetsBusy} onClick={() => saveSelectionAsAssets(selectedNodeIds)}><PackagePlus size={15} />{assetsBusy ? "保存中…" : "保存为资产"}</button>
           </div>
           {tidyMenuOpen && <div className="canvas-tidy-menu">
             <button onClick={autoArrangeCanvas}><WandSparkles size={15} /><span>自动规整（按连线）</span></button>
@@ -3633,6 +3705,21 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
         {addMenu && <div className={`canvas-add-menu ${addMenu.origin === "context" ? "is-contextual" : ""} ${addMenu.origin === "context" && addMenu.x > (stageRef.current?.clientWidth || 900) - 520 ? "submenu-left" : ""}`} style={addMenu.origin === "context" ? { left: addMenu.x, top: addMenu.y } : undefined} onMouseDown={(event) => event.stopPropagation()}>
           <header>添加节点</header>
           <div className="canvas-add-menu__items">{canvasQuickItems.map((item) => { const Icon = item.icon; return <button key={item.id} onClick={() => addQuickNode(item)}><i><Icon size={18} /></i><span>{item.name}</span>{item.badge && <em>{item.badge}</em>}</button>; })}</div>
+          {/* 画布资产（需求 1.3）：14.27 下线的「项目资产」是素材→画布的 dock 面板，
+              这里是节点→资产→画布的反向复用，入口直接挂在添加节点菜单里，不复活旧面板。 */}
+          <div className="canvas-add-menu__assets">
+            <header>我的资产 <span>{canvasAssets.length}</span></header>
+            {canvasAssets.length === 0 && <div className="canvas-add-menu__assets-empty">右键节点选「保存为资产」，即可在这里跨画布复用</div>}
+            {canvasAssets.slice(0, 8).map((asset) => (
+              <div className="canvas-add-menu__asset" key={asset.id}>
+                <button disabled={assetsBusy} title={`把「${asset.name}」插入当前画布`} onClick={() => insertCanvasAsset(asset)}>
+                  <i><PackagePlus size={15} /></i><span>{asset.name}</span><em>{asset.nodeCount || 1}</em>
+                </button>
+                <button className="is-remove" disabled={assetsBusy} aria-label={`删除资产 ${asset.name}`} title="删除该资产（不影响已插入的节点）" onClick={() => removeCanvasAsset(asset)}><Trash2 size={13} /></button>
+              </div>
+            ))}
+            {canvasAssets.length > 8 && <div className="canvas-add-menu__assets-more">仅显示最近 8 个，共 {canvasAssets.length} 个</div>}
+          </div>
           {/*<div className="canvas-add-submenu-shell" onMouseEnter={() => setComfyMenuOpen(true)} onMouseLeave={() => setComfyMenuOpen(false)}><button className="canvas-add-menu__comfy" onClick={() => setComfyMenuOpen((value) => !value)}><i><Layers3 size={18} /></i><span>ComfyUI</span><ChevronRight size={15} /></button>{comfyMenuOpen && <div className="canvas-add-submenu"><header><button type="button">探索更多</button></header></div>}</div>*/}
         </div>}
         {stickerMenuOpen && <div className="canvas-sticker-menu" onMouseDown={(event) => event.stopPropagation()}>
@@ -3708,7 +3795,9 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
                   ))}
                 </div>
               </div>
-              <button onClick={() => { saveNodeAsAsset(nodeMenu.id); closeNodeMenu(); }}><PackagePlus size={15} /><span>保存为资产</span></button>
+              <button disabled={assetsBusy} onClick={() => { saveNodeAsAsset(nodeMenu.id); closeNodeMenu(); }}>
+                <PackagePlus size={15} /><span>{canvasAssets.some((item) => item.id === menuNode.data?.savedAsset?.assetId) ? "已保存 · 更新画布资产" : "保存为资产"}</span>
+              </button>
               <hr />
               <button className="is-danger" onClick={() => {
                 const id = nodeMenu.id;
