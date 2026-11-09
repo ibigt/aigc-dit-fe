@@ -333,7 +333,7 @@ export default function RightPane({ store }) {
                 {adjustSlider("亮度", "brightness", -50, 50)}
                 {adjustSlider("对比度", "contrast", -50, 50)}
                 {adjustSlider("饱和度", "saturate", -50, 50)}
-                <div className="ce-hint">调节与特效实时作用于预览；成片渲染需后端合成链路支持（MVP 期导出仅拼接主视频轨）。</div>
+                <div className="ce-hint">调节与特效实时作用于预览，导出成片时也会一并渲染；文字与图形按时间线位置烧录到画面。</div>
               </>
             )}
           </>

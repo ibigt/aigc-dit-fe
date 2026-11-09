@@ -181,6 +181,8 @@ export function migrateClips(saved, options = {}) {
       : Number(item.output?.durationSec ?? item.output?.metadata?.durationSec) || 5;
     const clip = {
       id: uid("clip"),
+      // 稳定片段标识：同源同输出的多段靠它区分（后端按 clipId 去重，不能按 source+output）
+      clipId: item.clipId || uid("clip"),
       type: "video",
       start: cursor,
       duration,
@@ -211,6 +213,9 @@ export function exportFlatClips(timeline) {
     .filter((clip) => clip.enabled !== false && clip.storageKey)
     .sort((a, b) => a.start - b.start)
     .map((clip, order) => ({
+      // clipId 是片段唯一标识：同一上游节点的同一输出可能被拆成多段（不同裁剪区间），
+      // 后端按 (sourceNodeId, outputIndex) 去重会把它们合成一条，只剩选中的那一段。
+      clipId: clip.id,
       sourceNodeId: clip.sourceNodeId,
       outputIndex: Number(clip.outputIndex) || 0,
       order,
@@ -222,6 +227,129 @@ export function exportFlatClips(timeline) {
       // 本地导入素材没有对应的上游生成步骤，后端据此直接读 storageKey（并校验归属）
       ...(clip.imported && clip.localKey ? { localKey: clip.localKey } : {}),
     }));
+}
+
+// 导出用样式数组（排期 #7）：与 exportFlatClips **同序同长**，后端按下标对齐。
+// 每项 = 该片段的调节 + 特效 + 「与右邻之间」的转场。
+// 全为空时返回 null——后端不写该字段，step map 与旧版逐字节一致（运行指纹不漂移）。
+export function exportClipStyles(timeline) {
+  const main = mainVideoTrack(timeline);
+  if (!main) return null;
+  const clips = [...main.clips]
+    .filter((clip) => clip.enabled !== false && clip.storageKey)
+    .sort((a, b) => a.start - b.start);
+  if (!clips.length) return null;
+  const styles = clips.map((clip) => ({
+    brightness: clampPercent(clip.adjust?.brightness),
+    contrast: clampPercent(clip.adjust?.contrast),
+    saturate: clampPercent(clip.adjust?.saturate),
+    effect: effectIdOf(clip),
+    // 转场是「本片段与右邻之间」，后端 xfade 折叠时挂在**前一段**上：
+    // 第 i 段的 transitionOut 描述的是 i 与 i+1 的接缝，因此写在 styles[i]。
+    transitionId: clip.transitionOut?.id && clip.transitionOut.id !== "none" ? clip.transitionOut.id : null,
+    transitionSeconds: clip.transitionOut?.id && clip.transitionOut.id !== "none"
+      ? Math.max(0.1, Number(clip.transitionOut.duration) || 0.5)
+      : null,
+  }));
+  const any = styles.some((style) => style.brightness || style.contrast || style.saturate
+    || style.effect || style.transitionId);
+  return any ? styles : null;
+}
+
+function clampPercent(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num === 0) return 0;
+  return Math.max(-100, Math.min(100, Math.round(num)));
+}
+
+function effectIdOf(clip) {
+  const effects = Array.isArray(clip.effects) ? clip.effects : [];
+  const effect = effects.find((item) => item && item.id && item.id !== "none");
+  return effect ? effect.id : null;
+}
+
+// 导出用叠加层（排期 #7）：文字轨与图形轨的片段，start/end 为成片内绝对时间。
+// 视频导出是「空隙压缩的首尾拼接」，成片时间与时间线时间在 V1 无空隙时一致；
+// 有空隙时按「已导出视频片段累计时长」折算成片位置，保证叠加落在正确画面上。
+export function exportOverlays(timeline) {
+  const overlays = [];
+  const videoClips = exportedVideoClips(timeline);
+  const timelineToFilm = filmTimeMapper(videoClips);
+  for (const { clip } of allClips(timeline)) {
+    if (clip.type !== "text" && clip.type !== "graphic") continue;
+    if (clip.enabled === false) continue;
+    const start = Number(clip.start) || 0;
+    const end = start + clipDuration(clip);
+    if (end <= start) continue;
+    const filmStart = timelineToFilm(start);
+    const filmEnd = timelineToFilm(end);
+    if (filmEnd <= filmStart) continue;
+    if (clip.type === "text") {
+      const content = String(clip.text || "");
+      // 空白文字不导出：后端也会丢弃，避免「有叠加层但什么都没画」的无效烧录
+      if (!content.trim()) continue;
+      const style = clip.textStyle || {};
+      overlays.push({
+        kind: "text",
+        start: filmStart,
+        end: filmEnd,
+        text: content,
+        color: style.color || "#ffffff",
+        fontSize: Number(style.fontSize) || 16,
+        weight: Number(style.weight) || 400,
+        align: style.align || "center",
+      });
+    } else {
+      const graphic = clip.graphic || {};
+      overlays.push({
+        kind: "graphic",
+        start: filmStart,
+        end: filmEnd,
+        shape: graphic.shape || "rect",
+        color: graphic.color || "#6cb2ec",
+        x: Number(graphic.x) || 50,
+        y: Number(graphic.y) || 50,
+        scale: Number(graphic.scale) || 100,
+        opacity: Number(graphic.opacity) || 100,
+      });
+    }
+  }
+  return overlays.length ? overlays : null;
+}
+
+function exportedVideoClips(timeline) {
+  const main = mainVideoTrack(timeline);
+  if (!main) return [];
+  return [...main.clips]
+    .filter((clip) => clip.enabled !== false && clip.storageKey)
+    .sort((a, b) => a.start - b.start);
+}
+
+/**
+ * 时间线时间 → 成片时间。成片是「空隙压缩的首尾拼接」：第 i 段在成片里的起点
+ * = 前面所有已导出片段的时长之和。返回 null 表示该时间点落在未导出区间（如空隙），
+ * 调用方据此丢弃叠加层。
+ */
+function filmTimeMapper(videoClips) {
+  const segments = [];
+  let cursor = 0;
+  for (const clip of videoClips) {
+    const duration = clipDuration(clip);
+    segments.push({ from: Number(clip.start) || 0, to: (Number(clip.start) || 0) + duration, film: cursor });
+    cursor += duration;
+  }
+  return (time) => {
+    for (const segment of segments) {
+      if (time >= segment.from && time < segment.to) {
+        return segment.film + (time - segment.from);
+      }
+    }
+    // 末段末尾：贴到成片结尾（避免尾部叠加被误丢）
+    if (segments.length && time === segments[segments.length - 1].to) {
+      return segments[segments.length - 1].film + (segments[segments.length - 1].to - segments[segments.length - 1].from);
+    }
+    return null;
+  };
 }
 
 export function mainVideoTrack(timeline) {

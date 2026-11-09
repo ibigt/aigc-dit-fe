@@ -6,7 +6,7 @@ import {
   aspectSize, clipDuration, clipEnd, clipFilter, emptyTimeline, exportFlatClips, filmDuration,
   findSnap, mainVideoTrack, mediaKindOf, migrateClips, moveClipToTrack, playableAudioClips, removeClips,
   removeTrack, snapTargets, sourceClipFromQueue, splitAt, timelineDuration, updateClip, updateTrack, addTrack,
-  seedAudioSources, audioTracks, addClip, exportAudioClips,
+  seedAudioSources, audioTracks, addClip, exportAudioClips, exportClipStyles, exportOverlays,
   MIN_TRIM_DURATION, validateTrim, trimRangeOf,
   sourceKeyOf, inspectSourceDrift, syncTimelineSources,
   LOCAL_SOURCE_PREFIX, importedSourceFromAsset, normalizeImportedSources,
@@ -45,7 +45,7 @@ test("旧扁平 clips 迁移：铺到 V1 且 start 按有效时长累加，禁�
   assert.equal(timelineDuration(timeline), 8);
 });
 
-test("双写：导出扁平 clips 按 start 升序重排，只保留七字段且不含 start/output 大对象", () => {
+test("双写：导出扁平 clips 按 start 升序重排，只保留轻量字段且不含 start/output 大对象", () => {
   const timeline = migrateClips([flat(), flat({ order: 1, sourceNodeId: "v2" })]);
   updateClip(timeline, "x", {}); // 无副作用
   const exported = exportFlatClips(timeline);
@@ -54,9 +54,28 @@ test("双写：导出扁平 clips 按 start 升序重排，只保留七字段且
   assert.equal(exported[0].order, 0);
   assert.equal(exported[1].order, 1);
   assert.ok(!("start" in exported[0]) && !("output" in exported[0]));
+  // clipId 是片段唯一标识：同源同输出的多段靠它区分，后端不能只按 (sourceNodeId, outputIndex) 去重
   assert.deepEqual(Object.keys(exported[0]).sort(),
-    ["enabled", "muted", "order", "outputIndex", "sourceNodeId", "trimEnd", "trimStart", "volume"]);
+    ["clipId", "enabled", "muted", "order", "outputIndex", "sourceNodeId", "trimEnd", "trimStart", "volume"]);
   assert.equal(filmDuration(timeline), 10);
+});
+
+test("同源同输出的多段各自带独立 clipId（导出不能只剩选中的那一段）", () => {
+  const base = migrateClips([flat({ sourceNodeId: "v1", order: 0 })]);
+  const track = mainVideoTrack(base);
+  const firstId = track.clips[0].id;
+  // 同一上游节点的第二段（不同裁剪区间）
+  const withSecond = addClip(base, "V1", {
+    ...sourceClipFromQueue({ sourceNodeId: "v1", outputIndex: 0, mediaType: "video",
+      output: { type: "video", storageKey: "users/7/v1.mp4", durationSec: 10 }, storageKey: "users/7/v1.mp4" }),
+    id: "c2", start: 5, duration: 5, trimStart: 0, trimEnd: 5,
+  });
+  const exported = exportFlatClips(withSecond);
+  assert.equal(exported.length, 2);
+  assert.equal(exported[0].sourceNodeId, "v1");
+  assert.equal(exported[1].sourceNodeId, "v1");
+  assert.notEqual(exported[0].clipId, exported[1].clipId, "两段必须有不同 clipId");
+  assert.equal(exported[0].clipId, firstId, "首段沿用时间线片段 id");
 });
 
 test("吸附锚点优先级：同距离下播放头 > 片段端点 > 0 点", () => {
@@ -632,4 +651,126 @@ test("probeLocalDuration 在非浏览器环境安全降级为 null", async () =>
   const { probeLocalDuration } = await import("../src/components/workflow/editing-suite/localDuration.js");
   assert.equal(await probeLocalDuration({ name: "a.mp4" }, "video"), null);
   assert.equal(await probeLocalDuration({ name: "a.png" }, "image"), null);
+});
+
+// ---- 成片烧录：样式与叠加层导出（排期 #7）----
+const styledTimeline = () => {
+  const base = migrateClips([flatWithKey("v1", "users/7/v1.mp4"), flatWithKey("v2", "users/7/v2.mp4")]);
+  const track = mainVideoTrack(base);
+  const firstId = track.clips[0].id;
+  const secondId = track.clips[1].id;
+  let next = updateClip(base, firstId, {
+    adjust: { brightness: 18, contrast: 6, saturate: -8 },
+    effects: [{ id: "vintage", label: "复古", cssFilter: "sepia(.55)", params: {} }],
+    transitionOut: { id: "fade", label: "淡入淡出", duration: 0.6 },
+  });
+  next = updateClip(next, secondId, { adjust: { brightness: 0, contrast: 0, saturate: 0 } });
+  return next;
+};
+
+test("exportClipStyles 与 exportFlatClips 同序同长，逐条带出调节与特效", () => {
+  const timeline = styledTimeline();
+  const styles = exportClipStyles(timeline);
+  const clips = exportFlatClips(timeline);
+  assert.equal(styles.length, clips.length);
+  assert.equal(styles[0].brightness, 18);
+  assert.equal(styles[0].contrast, 6);
+  assert.equal(styles[0].saturate, -8);
+  assert.equal(styles[0].effect, "vintage");
+  assert.equal(styles[0].transitionId, "fade");
+  assert.equal(styles[0].transitionSeconds, 0.6);
+  assert.equal(styles[1].brightness, 0);
+  assert.equal(styles[1].effect, null);
+});
+
+test("exportClipStyles 无任何样式时返回 null（后端不写字段，指纹不漂移）", () => {
+  const base = migrateClips([flatWithKey("v1", "users/7/v1.mp4")]);
+  assert.equal(exportClipStyles(base), null);
+  assert.equal(exportClipStyles(emptyTimeline()), null);
+});
+
+test("exportClipStyles 忽略 none 特效与无转场预设", () => {
+  const base = migrateClips([flatWithKey("v1", "users/7/v1.mp4")]);
+  const id = mainVideoTrack(base).clips[0].id;
+  const next = updateClip(base, id, {
+    effects: [{ id: "none", label: "无特效", cssFilter: "none", params: {} }],
+    transitionOut: { id: "none", label: "无转场", duration: 0 },
+  });
+  assert.equal(exportClipStyles(next), null);
+});
+
+test("exportClipStyles 把调节值钳制到 ±100", () => {
+  const base = migrateClips([flatWithKey("v1", "users/7/v1.mp4")]);
+  const id = mainVideoTrack(base).clips[0].id;
+  const next = updateClip(base, id, { adjust: { brightness: 500, contrast: -900, saturate: 30 } });
+  const styles = exportClipStyles(next);
+  assert.equal(styles[0].brightness, 100);
+  assert.equal(styles[0].contrast, -100);
+  assert.equal(styles[0].saturate, 30);
+});
+
+test("exportOverlays 导出文字与图形叠加，start/end 为成片内绝对时间", () => {
+  const base = migrateClips([flatWithKey("v1", "users/7/v1.mp4")]);
+  const withText = addClip(base, "T1", {
+    type: "text", start: 1, duration: 2, text: "你好，世界",
+    textStyle: { id: "title", fontSize: 32, color: "#ffffff", weight: 700, align: "center" },
+  });
+  const withGraphic = addClip(withText, "G1", {
+    type: "graphic", start: 3, duration: 2, text: "矩形",
+    graphic: { shape: "rect", color: "#6cb2ec", x: 30, y: 40, scale: 100, opacity: 80 },
+  });
+  const overlays = exportOverlays(withGraphic);
+  assert.equal(overlays.length, 2);
+  const text = overlays.find((item) => item.kind === "text");
+  assert.equal(text.text, "你好，世界");
+  assert.equal(text.fontSize, 32);
+  assert.equal(text.weight, 700);
+  assert.equal(text.start, 1);
+  assert.equal(text.end, 3);
+  const graphic = overlays.find((item) => item.kind === "graphic");
+  assert.equal(graphic.shape, "rect");
+  assert.equal(graphic.color, "#6cb2ec");
+  assert.equal(graphic.x, 30);
+  assert.equal(graphic.opacity, 80);
+});
+
+test("exportOverlays 无叠加元素时返回 null", () => {
+  const base = migrateClips([flatWithKey("v1", "users/7/v1.mp4")]);
+  assert.equal(exportOverlays(base), null);
+  assert.equal(exportOverlays(emptyTimeline()), null);
+});
+
+test("exportOverlays 把时间线时间折算成片时间（空隙压缩后不偏移）", () => {
+  // V1 两段：0-5 与 10-15，成片里是 0-5 与 5-10（空隙被压缩）
+  const base = migrateClips([flatWithKey("v1", "users/7/v1.mp4")]);
+  const track = mainVideoTrack(base);
+  const firstId = track.clips[0].id;
+  const next = updateClip(base, firstId, { start: 0, duration: 5, trimStart: 0, trimEnd: 5 });
+  const withSecond = addClip(next, "V1", {
+    ...sourceClipFromQueue({ sourceNodeId: "v2", outputIndex: 0, mediaType: "video",
+      output: { type: "video", storageKey: "users/7/v2.mp4", durationSec: 5 }, storageKey: "users/7/v2.mp4" }),
+    id: "c2", start: 10, duration: 5, trimStart: 0, trimEnd: 5,
+  });
+  const withText = addClip(withSecond, "T1", {
+    type: "text", start: 11, duration: 1, text: "第二段", textStyle: { fontSize: 16, color: "#fff", weight: 400, align: "center" },
+  });
+  const overlays = exportOverlays(withText);
+  assert.equal(overlays.length, 1);
+  assert.equal(overlays[0].start, 6, "时间线 11s 处对应成片 6s（第一段 5s + 第二段内 1s）");
+  assert.equal(overlays[0].end, 7);
+});
+
+test("exportOverlays 丢弃落在未导出空隙里的叠加", () => {
+  const base = migrateClips([flatWithKey("v1", "users/7/v1.mp4")]);
+  const withText = addClip(base, "T1", {
+    type: "text", start: 8, duration: 1, text: "空隙内", textStyle: { fontSize: 16 },
+  });
+  assert.equal(exportOverlays(withText), null);
+});
+
+test("exportOverlays 忽略禁用片段与空文本", () => {
+  const base = migrateClips([flatWithKey("v1", "users/7/v1.mp4")]);
+  const disabled = addClip(base, "T1", { type: "text", start: 0, duration: 1, text: "隐藏", enabled: false });
+  const blank = addClip(disabled, "T1", { type: "text", start: 0, duration: 1, text: "   " });
+  assert.equal(exportOverlays(blank), null);
 });

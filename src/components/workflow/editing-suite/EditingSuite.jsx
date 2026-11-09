@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  ASPECTS, QUALITIES, exportAudioClips, exportFlatClips, filmDuration, formatTime,
+  ASPECTS, QUALITIES, exportAudioClips, exportClipStyles, exportFlatClips, exportOverlays,
+  filmDuration, formatTime,
   inspectSourceDrift, migrateClips, normalizeImportedSources, resolutionText,
   seedAudioSources, syncTimelineSources,
 } from "./model.js";
@@ -110,6 +111,8 @@ export default function EditingSuite({
       timeline,
       clips: exportFlatClips(timeline),
       audioClips: exportAudioClips(timeline),
+      clipStyles: exportClipStyles(timeline),
+      overlays: exportOverlays(timeline),
       importedSources,
     });
   }, [timeline, importedSources]);
@@ -278,7 +281,7 @@ export default function EditingSuite({
                   <div><small>分辨率</small><strong>{resolutionText(timeline.aspect, timeline.quality)}</strong></div>
                   <div><small>片段数</small><strong>{flat.length}</strong></div>
                 </div>
-                <div className="note">按主视频轨顺序拼接（空隙压缩为 0），时长 = 各片段裁剪时长之和；音频轨片段按其在时间线上的位置混入成片，本地导入的素材同样参与合成。文字 / 图形 / 特效 / 转场在 MVP 期导出暂不包含（剪辑台内预览可见）；导出后节点时长与分辨率会写回画布。</div>
+                <div className="note">按主视频轨顺序拼接（空隙压缩为 0），时长 = 各片段裁剪时长之和；音频轨片段按其在时间线上的位置混入成片，本地导入的素材同样参与合成。文字 / 图形会按时间线位置烧录到画面上，片段的调节、特效与转场也会一并渲染（烧录结果与预览为近似一致，非像素级相同）。导出后节点时长与分辨率会写回画布。</div>
                 <div className="actions">
                   <button className="btn2" onClick={() => store.setView({ dialog: null })}>取消</button>
                   <button className="btn1" onClick={confirmExport}>确认导出</button>

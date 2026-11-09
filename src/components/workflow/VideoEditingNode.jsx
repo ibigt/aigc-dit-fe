@@ -141,8 +141,11 @@ export default function VideoEditingNode({ id, data, selected }) {
   };
 
   // 只持久化轻量字段（与运行工作流时的写回形状一致），避免把 output 大对象塞进节点数据
+  // clipId 要带上：同一上游节点的同一输出可能被拆成多段，后端按它区分片段，
+  // 丢了会导致同源多段被去重成一条（导出只剩选中的那一段）。
   const persistClips = (nextClips) => {
     updateClips?.(id, nextClips.map((clip, order) => ({
+      clipId: clip.clipId,
       sourceNodeId: clip.sourceNodeId,
       outputIndex: clip.outputIndex,
       order,
