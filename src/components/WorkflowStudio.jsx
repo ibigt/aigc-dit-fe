@@ -2390,8 +2390,15 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
   // runGraph 每次渲染新建，用 ref 承接最新闭包；草稿已在上一步的渲染里落地，不存在状态竞态。
   const commitEditingExport = useCallback(async (nodeId) => {
     rememberGraph();
-    return runGraphRef.current?.(nodeId);
+    // 归一成 null：剪辑台据此区分「成功 / 失败 / 未启动」，undefined 不再被当成成功
+    return (await runGraphRef.current?.(nodeId)) ?? null;
   }, [rememberGraph]);
+
+  // 剪辑台「取消等待」：abort 掉该节点的运行控制器，轮询循环下一轮即退出。
+  // runGraph 里 runKey 就是 onlyNode，所以直接用 nodeId 取控制器。
+  const abortEditingExport = useCallback((nodeId) => {
+    runAbortMapRef.current.get(nodeId)?.abort();
+  }, []);
 
   const getClips = useCallback((nodeId) => {
     const editing = nodes.find((node) => node.id === nodeId);
@@ -3197,7 +3204,9 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
           setRunTotal(run.total || 1);
         },
       });
-      if (controller.signal.aborted || !latest) return;
+      // 把终态返回给调用方：剪辑台「导出成片」据此区分成功 / 失败 / 取消，
+      // 不能再像以前那样无论成败都弹「导出完成」。
+      if (controller.signal.aborted || !latest) return null;
       // 复用了多少个节点的历史产物：说清楚「为什么这次几乎没花积分」，避免用户以为点了没反应
       const reusedCount = (latest.steps || []).filter((step) => step.reused).length;
       if (latest.status === "CANCELLED") {
@@ -3206,8 +3215,10 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
         showToast(onlyNode ? "节点已生成" : reusedCount ? `工作流运行完成，复用了 ${reusedCount} 个节点的已有结果` : "工作流运行完成", 3200);
       } else if (latest.status === "PARTIAL_FAILED") showToast("部分节点失败，已保留成功结果", 3600);
       else showToast(latest.errorMessage || "工作流运行失败", 3600);
+      return latest;
     } catch (error) {
       if (!controller.signal.aborted) showToast(error.message || "工作流运行失败", 3600);
+      return null;
     } finally {
       // 只清理自己这一条：其它节点发起的运行可能仍在跑，不能一并抹掉
       if (runAbortMapRef.current.get(runKey) === controller) runAbortMapRef.current.delete(runKey);
@@ -3883,6 +3894,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
                 onClose={() => setEditingSuiteNodeId(null)}
                 onDraft={(draft) => updateEditingDraft(editingSuiteNodeId, draft)}
                 onExport={() => commitEditingExport(editingSuiteNodeId)}
+                onAbort={() => abortEditingExport(editingSuiteNodeId)}
                 onRefresh={refreshRuntime}
               />
             </Suspense>

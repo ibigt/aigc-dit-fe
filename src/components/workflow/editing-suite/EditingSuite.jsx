@@ -17,9 +17,13 @@ import "./editing-suite.css";
 
 const ASPECT_SHAPE = { "16:9": "r169", "9:16": "r916", "1:1": "r11", "4:3": "r43", "2.35:1": "r235" };
 
+// 导出等待软上限：后端 ffmpeg 合成超时默认 900s，这里给 10 分钟。
+// 超时只解除 UI 等待并中断轮询，**不取消已提交的运行**——成片仍可能稍后落到「我的创作」。
+const EXPORT_WAIT_TIMEOUT_MS = 10 * 60 * 1000;
+
 export default function EditingSuite({
   nodeId, title, clips, sources, savedTimeline, savedImportedSources,
-  onClose, onDraft, onExport, onRefresh,
+  onClose, onDraft, onExport, onAbort, onRefresh,
 }) {
   // 视频片段由 clips 自动聚合到 V1；音频素材只在 sources 里，需同样自动落到 A1。
   // 无草稿 / 已存草稿两条路径都同步，seedAudioSources 按上游产物 key 去重且不会把用户删掉的片段灌回来。
@@ -31,6 +35,8 @@ export default function EditingSuite({
     return seedAudioSources(base, sources);
   }, [nodeId]);
   const storeRef = useRef(null);
+  // 导出等待期间挂一个「立即解除」的 resolve，供顶栏「取消等待」按钮触发
+  const exportCancelRef = useRef(null);
   if (!storeRef.current) storeRef.current = createEditingStore(initial);
   const store = storeRef.current;
   const state = useEditingStore(store);
@@ -197,23 +203,51 @@ export default function EditingSuite({
     const flat = exportFlatClips(timeline);
     if (!flat.length) { store.toast("主视频轨暂无可导出片段", "error"); store.setView({ dialog: null }); return; }
     store.setView({ dialog: null, exporting: true, soloClipId: null, playing: false });
+    let timer = 0;
     try {
-      await onExport?.({
-        timeline,
-        clips: flat,
-        aspect: timeline.aspect,
-        quality: timeline.quality,
-        resolution: resolutionText(timeline.aspect, timeline.quality),
-        durationSec: filmDuration(timeline),
-      });
-      store.markClean();
-      store.toast("成片导出完成，节点时长与分辨率已更新", "ok");
-      onRefresh?.();
+      // runGraph 提交后每 1.5s 轮询，后端 run 卡在 RUNNING 时最长要等 25 分钟才放弃，
+      // 且「一直显示导出中」期间没有进度和取消入口。这里单独加一层软超时 + 手动取消，
+      // 保证 exporting 状态一定能解除；同时按 run 的真实终态判断成败，不再无条件报成功。
+      const outcome = await Promise.race([
+        Promise.resolve(onExport?.({
+          timeline,
+          clips: flat,
+          aspect: timeline.aspect,
+          quality: timeline.quality,
+          resolution: resolutionText(timeline.aspect, timeline.quality),
+          durationSec: filmDuration(timeline),
+        })).then((value) => ({ value })),
+        new Promise((resolve) => {
+          timer = window.setTimeout(() => resolve({ timedOut: true }), EXPORT_WAIT_TIMEOUT_MS);
+        }),
+        new Promise((resolve) => { exportCancelRef.current = () => resolve({ cancelled: true }); }),
+      ]);
+      if (outcome?.timedOut || outcome?.cancelled) {
+        onAbort?.();
+        store.toast(outcome.cancelled
+          ? "已取消等待导出；后端可能仍在合成，稍后可在「我的创作」查看成片"
+          : "导出等待超时：后端仍在合成，已停止等待。稍后可在「我的创作」查看成片，或重试", "error");
+        return;
+      }
+      if (outcome?.value?.status === "SUCCEEDED") {
+        store.markClean();
+        store.toast("成片导出完成，节点时长与分辨率已更新", "ok");
+        onRefresh?.();
+      } else {
+        // runGraph 内部已经 toast 过具体原因，这里只说明成片没落地，别再误报「导出完成」
+        store.toast("导出未完成，成片未生成；请按上方提示处理后重试", "error");
+      }
     } catch (error) {
       store.toast(`导出失败：${error?.message || "请重试"}（原状态已保留）`, "error");
     } finally {
+      window.clearTimeout(timer);
+      exportCancelRef.current = null;
       store.setView({ exporting: false });
     }
+  }
+
+  function cancelExportWait() {
+    exportCancelRef.current?.();
   }
 
   const flat = exportFlatClips(timeline);
@@ -252,6 +286,12 @@ export default function EditingSuite({
             onClick={() => store.setView({ dialog: { kind: "export" } })}>
             <Icon name="upload" size={14} /> {view.exporting ? "导出中…" : "导出成片"}
           </button>
+          {view.exporting && (
+            <button className="btn2" onClick={cancelExportWait}
+              title="只停止前端等待与轮询；已提交的运行仍会在后台继续">
+              取消等待
+            </button>
+          )}
         </div>
         {driftNotes.length > 0 && (
           <div className="ce-source-banner" data-tone={drift.missing.length ? "warn" : "info"}>
