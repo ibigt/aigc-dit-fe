@@ -131,6 +131,25 @@ export default function AudioGeneratorNode({ id, data, selected }) {
     if (patch) update(patch);
   }, [media.voiceId, media.format, media.speed, audioOptions]);
 
+  // 音色弹框：点外部或按 Esc 收起（与快速创作的参数弹框同一口径）。
+  // 弹框与触发器同在 .audio-node__voice-field 内，closest 一并放过，点弹框内部不会误关。
+  useEffect(() => {
+    if (!voiceOpen) return undefined;
+    const onPointerDownOutside = (event) => {
+      if (event.target?.closest?.(".audio-node__voice-field")) return;
+      setVoiceOpen(false);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setVoiceOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDownOutside);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDownOutside);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [voiceOpen]);
+
   // 生成结果（含多副本）：播放器 + 波形可视化（需求 4.2.4.5），失败时可重试
   const audioOutputs = (data.runtime?.outputs || [])
     .filter((output) => output?.url || output?.storageKey)
@@ -160,6 +179,8 @@ export default function AudioGeneratorNode({ id, data, selected }) {
       notify?.("请补充台词后再生成");
       return;
     }
+    // 点生成时收起音色配置弹框：弹框没有外部点击关闭，留在那里会挡住生成结果的回显
+    setVoiceOpen(false);
     setGenerating(true);
     window.setTimeout(() => {
       generateMedia?.(id);

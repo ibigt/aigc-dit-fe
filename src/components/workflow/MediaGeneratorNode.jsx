@@ -157,6 +157,25 @@ export default function MediaGeneratorNode({ id, data, selected }) {
     // 这是打开画布时的自动收敛而非用户编辑，走 silent 不把画布标成“有未保存更改”
     if (patchKey !== "{}") update(JSON.parse(patchKey), { silent: true });
   }, [patchKey]);
+
+  // 生成设置弹框：点外部或按 Esc 收起（与音频节点、快速创作的参数弹框同一口径）。
+  // 触发器 .media-node__summary 一并放过，否则 mousedown 先关、onClick 又开，等于点不动。
+  useEffect(() => {
+    if (!settingsOpen) return undefined;
+    const onPointerDownOutside = (event) => {
+      if (event.target?.closest?.(".media-node__settings, .media-node__summary")) return;
+      setSettingsOpen(false);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setSettingsOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDownOutside);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDownOutside);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [settingsOpen]);
   const effectiveMedia = { ...media, ...values };
 
   // 参考视频模式：上游视频整段透传给模型（保留动作/运镜），不抽尾帧；后端按 videoRefMode 分流
