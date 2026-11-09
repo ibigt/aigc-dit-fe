@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { clipDuration, updateClip } from "./model.js";
+import { EFFECT_PRESETS, TRANSITION_PRESETS, clipDuration, removeTrack, updateClip, updateTrack } from "./model.js";
 import { useEditingStore } from "./store.js";
 import Icon from "./Icons.jsx";
 
@@ -8,8 +8,10 @@ export default function RightPane({ store }) {
   const { timeline, selection } = state.doc;
   const view = state.view;
   const clip = timeline.tracks.flatMap((track) => track.clips).find((item) => selection.includes(item.id));
+  const track = view.activeTrackId ? timeline.tracks.find((item) => item.id === view.activeTrackId) : null;
   const [draft, setDraft] = useState({});
-  useEffect(() => { setDraft(clip || {}); }, [clip?.id, clip?.adjust?.brightness, clip?.adjust?.contrast, clip?.adjust?.saturate, clip?.text]);
+  useEffect(() => { setDraft(clip || {}); },
+    [clip?.id, clip?.adjust?.brightness, clip?.adjust?.contrast, clip?.adjust?.saturate, clip?.text, clip?.graphic?.color, clip?.graphic?.scale]);
 
   function apply(patch) {
     if (!clip) return;
@@ -18,21 +20,28 @@ export default function RightPane({ store }) {
 
   const adjust = draft.adjust || clip?.adjust || {};
   // 规范 §9.1：4px 槽 + 12px 白拖柄，填充段用所属参数组的语义色
-  const slider = (label, key, min, max, fill = "var(--fx)") => {
-    const value = Number(adjust[key] || 0);
+  const slider = (label, key, min, max, fill = "var(--fx)", value, onChange, onCommit) => {
     const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
     return (
       <div className="ce-slid" key={key}>
         <div className="row"><span>{label}</span><b>{min < 0 && value > 0 ? `+${value}` : value}</b></div>
         <input className="ce-range" type="range" min={min} max={max} value={value}
           style={{ "--pct": `${pct}%`, "--range-fill": fill }}
-          onChange={(event) => setDraft((current) => ({ ...current, adjust: { ...adjust, [key]: Number(event.target.value) } }))}
-          onPointerUp={(event) => apply({ adjust: { ...adjust, [key]: Number(event.target.value) } })} />
+          onChange={(event) => onChange(Number(event.target.value))}
+          onPointerUp={(event) => onCommit(Number(event.target.value))} />
       </div>
     );
   };
 
+  const adjustSlider = (label, key, min, max) => slider(label, key, min, max, "var(--fx)",
+    Number(adjust[key] || 0),
+    (value) => setDraft((current) => ({ ...current, adjust: { ...adjust, [key]: value } })),
+    (value) => apply({ adjust: { ...adjust, [key]: value } }));
+
   const volume = Number(clip?.volume ?? 1);
+  const graphic = draft.graphic || clip?.graphic || {};
+  const textStyle = draft.textStyle || clip?.textStyle || {};
+  const effect = (clip?.effects || [])[0] || null;
 
   return (
     <div className="ce-right">
@@ -46,9 +55,45 @@ export default function RightPane({ store }) {
         {view.rightTab === "assistant" && (
           <div className="ce-empty"><Icon name="sparkle" />剪辑助手<br />P2 上线：对话式批量动作（自动配乐 / 一键字幕等），动作可撤销</div>
         )}
-        {view.rightTab === "props" && !clip && (
+
+        {view.rightTab === "props" && track && !clip && (
+          <>
+            <div className="ce-grp">轨道 · {track.name}</div>
+            <div className="ce-field-row">
+              <label className="ce-field-label">名称</label>
+              <input className="ce-input" value={draft.trackName ?? track.name}
+                onChange={(event) => setDraft((current) => ({ ...current, trackName: event.target.value }))}
+                onBlur={(event) => {
+                  if (event.target.value && event.target.value !== track.name) {
+                    store.commit("重命名轨道", (doc) => ({ ...doc, timeline: updateTrack(doc.timeline, track.id, { name: event.target.value }) }));
+                  }
+                }} />
+            </div>
+            <div className="ce-check"><input type="checkbox" checked={Boolean(track.locked)}
+              onChange={(event) => store.commit("锁定轨道", (doc) => ({ ...doc, timeline: updateTrack(doc.timeline, track.id, { locked: event.target.checked }) }))} /> 锁定轨道（禁止拖动片段）</div>
+            <div className="ce-check"><input type="checkbox" checked={track.visible !== false}
+              onChange={(event) => store.commit("切换轨道可见", (doc) => ({ ...doc, timeline: updateTrack(doc.timeline, track.id, { visible: event.target.checked }) }))} /> 显示轨道</div>
+            <div className="ce-check"><input type="checkbox" checked={!track.muted}
+              onChange={(event) => store.commit("切换轨道静音", (doc) => ({ ...doc, timeline: updateTrack(doc.timeline, track.id, { muted: !event.target.checked }) }))} /> 取消静音</div>
+            <div className="ce-sep"></div>
+            <div className="ce-grp">轨道信息</div>
+            <div className="ce-slid"><div className="row"><span>片段数</span><b>{track.clips.length}</b></div></div>
+            <div className="ce-slid"><div className="row"><span>类型</span><b>{track.type}</b></div></div>
+            <button className="btn2 ce-danger" style={{ width: "100%", justifyContent: "center", marginTop: 8 }}
+              onClick={() => {
+                store.commit("删除轨道", (doc) => ({ ...doc, timeline: removeTrack(doc.timeline, track.id), selection: [] }));
+                store.setView({ activeTrackId: null });
+              }}>
+              <Icon name="trash" size={13} /> 删除轨道
+            </button>
+            <div className="ce-hint">主视频轨不可删除（成片依赖它）。</div>
+          </>
+        )}
+
+        {view.rightTab === "props" && !clip && !track && (
           <div className="ce-empty"><Icon name="mousePointer" />选中时间线片段以编辑属性</div>
         )}
+
         {view.rightTab === "props" && clip && (
           <>
             <div className="ce-grp">选中片段 · {clip.sourceTitle || clip.type}</div>
@@ -67,8 +112,10 @@ export default function RightPane({ store }) {
             <div className="ce-slid">
               <div className="row"><span>时间</span><b>{(Number(clip.start) || 0).toFixed(1)}s → {(Number(clip.start) + clipDuration(clip)).toFixed(1)}s</b></div>
             </div>
+
             {(clip.type === "video" || clip.type === "audio") && (
               <>
+                <div className="ce-grp">音频</div>
                 <div className="ce-slid">
                   <div className="row"><span>音量</span><b>{Math.round(volume * 100)}</b></div>
                   <input className="ce-range" type="range" min="0" max="2" step="0.05" value={volume}
@@ -80,20 +127,115 @@ export default function RightPane({ store }) {
                 <label className="ce-check"><input type="checkbox" checked={clip.enabled !== false} onChange={(event) => apply({ enabled: event.target.checked })} /> 启用片段</label>
               </>
             )}
-            {(clip.type === "text" || clip.type === "graphic") && (
-              <div className="ce-slid">
-                <div className="row"><span>内容</span></div>
-                <textarea className="ce-field" value={draft.text ?? clip.text ?? ""}
-                  onChange={(event) => setDraft((current) => ({ ...current, text: event.target.value }))}
-                  onBlur={(event) => { if (event.target.value !== clip.text) apply({ text: event.target.value }); }} />
-              </div>
+
+            {clip.type === "video" && (
+              <>
+                <div className="ce-sep"></div>
+                <div className="ce-grp">画面</div>
+                <div className="ce-slid">
+                  <div className="row"><span>不透明度</span><b>{Math.round(Number(clip.opacity ?? 100))}</b></div>
+                  <input className="ce-range" type="range" min="0" max="100" value={Number(clip.opacity ?? 100)}
+                    style={{ "--pct": `${Number(clip.opacity ?? 100)}%`, "--range-fill": "var(--v)" }}
+                    onChange={(event) => setDraft((current) => ({ ...current, opacity: Number(event.target.value) }))}
+                    onPointerUp={(event) => apply({ opacity: Number(event.target.value) })} />
+                </div>
+              </>
             )}
-            <div className="ce-sep"></div>
-            <div className="ce-grp">调节（预览）</div>
-            {slider("亮度", "brightness", -50, 50)}
-            {slider("对比度", "contrast", -50, 50)}
-            {slider("饱和度", "saturate", -50, 50)}
-            <div style={{ fontSize: 10, color: "var(--t3)", lineHeight: 1.7 }}>调节仅作用于预览；特效 / 转场 / 图形在 MVP 期导出暂不包含。</div>
+
+            {(clip.type === "text" || clip.type === "graphic") && (
+              <>
+                <div className="ce-grp">{clip.type === "text" ? "内容" : "图形"}</div>
+                {clip.type === "text" && (
+                  <textarea className="ce-field" value={draft.text ?? clip.text ?? ""}
+                    onChange={(event) => setDraft((current) => ({ ...current, text: event.target.value }))}
+                    onBlur={(event) => { if (event.target.value !== clip.text) apply({ text: event.target.value }); }} />
+                )}
+                {clip.type === "text" && (
+                  <>
+                    <div className="ce-field-row">
+                      <label className="ce-field-label">字号</label>
+                      <input className="ce-input" type="number" min="8" max="120" value={Number(textStyle.fontSize ?? 16)}
+                        onChange={(event) => setDraft((current) => ({ ...current, textStyle: { ...textStyle, fontSize: Number(event.target.value) } }))}
+                        onBlur={(event) => apply({ textStyle: { ...textStyle, fontSize: Number(event.target.value) } })} />
+                    </div>
+                    <div className="ce-field-row">
+                      <label className="ce-field-label">颜色</label>
+                      <input className="ce-color" type="color" value={textStyle.color || "#ffffff"}
+                        onChange={(event) => setDraft((current) => ({ ...current, textStyle: { ...textStyle, color: event.target.value } }))}
+                        onBlur={(event) => apply({ textStyle: { ...textStyle, color: event.target.value } })} />
+                      <div className="ce-align">
+                        {["left", "center", "right"].map((align) => (
+                          <button key={align} className={`ce-align-btn ${textStyle.align === align ? "on" : ""}`}
+                            onClick={() => apply({ textStyle: { ...textStyle, align } })}>
+                            {align === "left" ? "左" : align === "center" ? "中" : "右"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+                {clip.type === "graphic" && (
+                  <>
+                    <div className="ce-field-row">
+                      <label className="ce-field-label">颜色</label>
+                      <input className="ce-color" type="color" value={graphic.color || "#6cb2ec"}
+                        onChange={(event) => setDraft((current) => ({ ...current, graphic: { ...graphic, color: event.target.value } }))}
+                        onBlur={(event) => apply({ graphic: { ...graphic, color: event.target.value } })} />
+                    </div>
+                    <div className="ce-field-row">
+                      <label className="ce-field-label">横向</label>
+                      <input className="ce-range" type="range" min="0" max="100" value={Number(graphic.x ?? 50)}
+                        style={{ "--pct": `${Number(graphic.x ?? 50)}%`, "--range-fill": "var(--g)" }}
+                        onChange={(event) => setDraft((current) => ({ ...current, graphic: { ...graphic, x: Number(event.target.value) } }))}
+                        onPointerUp={(event) => apply({ graphic: { ...graphic, x: Number(event.target.value) } })} />
+                    </div>
+                    <div className="ce-field-row">
+                      <label className="ce-field-label">纵向</label>
+                      <input className="ce-range" type="range" min="0" max="100" value={Number(graphic.y ?? 50)}
+                        style={{ "--pct": `${Number(graphic.y ?? 50)}%`, "--range-fill": "var(--g)" }}
+                        onChange={(event) => setDraft((current) => ({ ...current, graphic: { ...graphic, y: Number(event.target.value) } }))}
+                        onPointerUp={(event) => apply({ graphic: { ...graphic, y: Number(event.target.value) } })} />
+                    </div>
+                    {slider("缩放", "scale", 10, 200, "var(--g)", Number(graphic.scale ?? 100),
+                      (value) => setDraft((current) => ({ ...current, graphic: { ...graphic, scale: value } })),
+                      (value) => apply({ graphic: { ...graphic, scale: value } }))}
+                    {slider("不透明度", "opacity", 0, 100, "var(--g)", Number(graphic.opacity ?? 100),
+                      (value) => setDraft((current) => ({ ...current, graphic: { ...graphic, opacity: value } })),
+                      (value) => apply({ graphic: { ...graphic, opacity: value } }))}
+                  </>
+                )}
+              </>
+            )}
+
+            {(clip.type === "video" || clip.type === "audio") && (
+              <>
+                <div className="ce-sep"></div>
+                <div className="ce-grp">特效</div>
+                {effect ? (
+                  <div className="ce-effect-row">
+                    <span className="ce-effect-name">{effect.label}</span>
+                    <button className="ce-linkbtn" onClick={() => apply({ effects: [] })}>清除</button>
+                  </div>
+                ) : (
+                  <div className="ce-hint">未施加特效。在左侧「特效」面板点选预设即可施加。</div>
+                )}
+                {clip.transitionOut ? (
+                  <>
+                    <div className="ce-grp" style={{ marginTop: 12 }}>转场（右邻接缝）</div>
+                    <div className="ce-effect-row">
+                      <span className="ce-effect-name">{clip.transitionOut.label} · {clip.transitionOut.duration}s</span>
+                      <button className="ce-linkbtn" onClick={() => apply({ transitionOut: null })}>清除</button>
+                    </div>
+                  </>
+                ) : null}
+                <div className="ce-sep"></div>
+                <div className="ce-grp">调节（预览）</div>
+                {adjustSlider("亮度", "brightness", -50, 50)}
+                {adjustSlider("对比度", "contrast", -50, 50)}
+                {adjustSlider("饱和度", "saturate", -50, 50)}
+                <div className="ce-hint">调节与特效实时作用于预览；成片渲染需后端合成链路支持（MVP 期导出仅拼接主视频轨）。</div>
+              </>
+            )}
           </>
         )}
       </div>

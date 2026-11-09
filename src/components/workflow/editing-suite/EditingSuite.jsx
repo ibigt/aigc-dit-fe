@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { ASPECTS, QUALITIES, exportFlatClips, filmDuration, formatTime, migrateClips, resolutionText } from "./model.js";
+import { ASPECTS, QUALITIES, exportFlatClips, filmDuration, formatTime, migrateClips, resolutionText, seedAudioSources } from "./model.js";
 import { downloadSrt, toSrt } from "./srt.js";
 import { createEditingStore, useEditingStore } from "./store.js";
 import Timeline, { timelineActionsRef } from "./Timeline.jsx";
@@ -13,9 +13,15 @@ import "./editing-suite.css";
 const ASPECT_SHAPE = { "16:9": "r169", "9:16": "r916", "1:1": "r11", "4:3": "r43", "2.35:1": "r235" };
 
 export default function EditingSuite({ nodeId, title, clips, sources, savedTimeline, onClose, onDraft, onExport, onRefresh }) {
-  const initial = useMemo(() => savedTimeline?.version === 2
-    ? savedTimeline
-    : migrateClips(clips.filter((item) => item.enabled !== false)), [nodeId]);
+  // 视频片段由 clips 自动聚合到 V1；音频素材只在 sources 里，需同样自动落到 A1。
+  // 无草稿 / 已存草稿两条路径都同步，seedAudioSources 按上游产物 key 去重且不会把用户删掉的片段灌回来。
+  // 只构造初值、不走 store.commit，故「只打开不编辑」仍不会把画布标成未保存。
+  const initial = useMemo(() => {
+    const base = savedTimeline?.version === 2
+      ? savedTimeline
+      : migrateClips(clips.filter((item) => item.enabled !== false));
+    return seedAudioSources(base, sources);
+  }, [nodeId]);
   const storeRef = useRef(null);
   if (!storeRef.current) storeRef.current = createEditingStore(initial);
   const store = storeRef.current;
@@ -159,7 +165,7 @@ export default function EditingSuite({ nodeId, title, clips, sources, savedTimel
         <Timeline store={store} sources={clipSources()} />
       </div>
       {dialog && createPortal(
-        <div className="ce-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) store.setView({ dialog: null }); }}>
+        <div className="ce-portal ce-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) store.setView({ dialog: null }); }}>
           <div className="ce-dialog" role="dialog" aria-modal="true">
             {dialog.kind === "export" ? (
               <>
@@ -169,7 +175,7 @@ export default function EditingSuite({ nodeId, title, clips, sources, savedTimel
                   <div><small>分辨率</small><strong>{resolutionText(timeline.aspect, timeline.quality)}</strong></div>
                   <div><small>片段数</small><strong>{flat.length}</strong></div>
                 </div>
-                <div className="note">按主视频轨顺序拼接（空隙压缩为 0），时长 = 各片段裁剪时长之和。文字 / 图形 / 特效 / 转场在 MVP 期导出暂不包含；导出后节点时长与分辨率会写回画布。</div>
+                <div className="note">按主视频轨顺序拼接（空隙压缩为 0），时长 = 各片段裁剪时长之和。文字 / 图形 / 特效 / 转场 / 音频轨在 MVP 期导出暂不包含（剪辑台内预览可见、可听）；导出后节点时长与分辨率会写回画布。</div>
                 <div className="actions">
                   <button className="btn2" onClick={() => store.setView({ dialog: null })}>取消</button>
                   <button className="btn1" onClick={confirmExport}>确认导出</button>
@@ -191,6 +197,6 @@ export default function EditingSuite({ nodeId, title, clips, sources, savedTimel
     document.body,
   );
 
-  // 素材面板只接受可播放的上游视频产物（含禁用项，交给剪辑台内部决定是否添加）
+  // 素材面板 / 拖拽落点用的上游清单（视频 + 音频）；与时间线初值分开，避免把音频混进 migrateClips 的 V1
   function clipSources() { return sources || clips || []; }
 }

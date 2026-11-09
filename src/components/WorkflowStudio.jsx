@@ -2328,6 +2328,13 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
       .map((node) => ({ id: node.id, title: node.data?.title || node.id, status: node.data?.runtime?.status || "", enabled: node.data?.enabled !== false }));
   }, [nodes, edges]);
 
+  // 剪辑台素材清单：上游「视频生成 + 音频生成」两类节点的可播放产物，带 mediaType 交给剪辑台分轨。
+  // 与 getClips 分开：getClips 是视频剪辑节点的成片片段队列（只收视频），这里只用于素材面板拖拽。
+  const getEditingSourceClips = useCallback((nodeId) => {
+    const candidates = nodes.filter((node) => node.data?.kind === "VideoGenerator" || node.data?.kind === "AudioGenerator");
+    return buildClipQueue(candidates, edges, [], nodeId, nodes, { kinds: ["VideoGenerator", "AudioGenerator"] });
+  }, [nodes, edges]);
+
   // 节点锁定（需求 4.1.2.5）：锁定后画布层 draggable/deletable=false，仅保留选中与连线
   const toggleLock = useCallback((nodeId) => {
     rememberGraph();
@@ -3759,7 +3766,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
                 nodeId={editingSuiteNodeId}
                 title={record.title || "视频剪辑"}
                 clips={getClips(editingSuiteNodeId)}
-                sources={getClips(editingSuiteNodeId)}
+                sources={getEditingSourceClips(editingSuiteNodeId)}
                 savedTimeline={target?.data?.editing?.timeline}
                 onClose={() => setEditingSuiteNodeId(null)}
                 onDraft={(draft) => updateEditingDraft(editingSuiteNodeId, draft)}

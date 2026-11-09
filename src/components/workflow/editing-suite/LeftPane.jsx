@@ -1,9 +1,13 @@
 import { useMemo, useRef } from "react";
-import { mediaUrl } from "../../../lib/media.js";
-import { addClip, clipEnd, mainVideoTrack, sourceClipFromQueue } from "./model.js";
+import {
+  ADJUST_PRESETS, EFFECT_PRESETS, GRAPHIC_PRESETS, TEXT_STYLES, TRANSITION_PRESETS,
+  addClip, addTrack, applyAdjustPreset, applyEffect, applyGraphic, applyTextStyle, applyTransition,
+  audioTracks, clipEnd, mainVideoTrack, mediaKindOf, sourceClipFromQueue,
+} from "./model.js";
 import { parseSrt } from "./srt.js";
 import { useEditingStore } from "./store.js";
 import Icon from "./Icons.jsx";
+import MediaThumb, { resolveThumbUrls } from "./MediaThumb.jsx";
 
 const PANELS = [
   { id: "media", label: "素材", icon: "media" },
@@ -29,17 +33,13 @@ const THUMB_SHADES = [
 
 export default function LeftPane({ store, sources }) {
   const state = useEditingStore(store);
-  const { timeline } = state.doc;
+  const { timeline, selection } = state.doc;
   const view = state.view;
   const fileRef = useRef(null);
   const filter = view.mediaFilter || "all";
-  const visibleSources = useMemo(() => sources.filter((item) => {
-    if (filter === "all") return true;
-    const kind = (item.output?.type || item.type || (item.mimeType || "").split("/")[0] || "").toLowerCase();
-    if (filter === "image") return kind.includes("image");
-    if (filter === "audio") return kind.includes("audio") || /\.(mp3|wav|m4a|aac)$/i.test(item.output?.storageKey || item.storageKey || "");
-    return kind.includes("video") || /\.mp4$/i.test(item.output?.storageKey || item.storageKey || "") || !kind.includes("image");
-  }), [sources, filter]);
+  const selectedClip = timeline.tracks.flatMap((track) => track.clips).find((item) => selection.includes(item.id)) || null;
+
+  const visibleSources = useMemo(() => sources.filter((item) => filter === "all" || mediaKindOf(item) === filter), [sources, filter]);
   const groups = useMemo(() => {
     const map = new Map();
     for (const item of visibleSources) {
@@ -50,12 +50,27 @@ export default function LeftPane({ store, sources }) {
     return [...map.entries()];
   }, [visibleSources]);
 
+  // 素材落轨规则：视频 → 主视频轨，音频 → 第一条音频轨（没有就自动补一条）。
+  // 起始位置取该轨现有片段的末尾，沿用「首尾相接」的直觉；音频轨可再自由拖动对齐。
   function appendSource(item) {
     if (!item?.output?.storageKey && !item?.storageKey) { store.toast("该素材暂无可播放产物", "error"); return; }
-    const main = mainVideoTrack(timeline);
-    if (!main) return;
-    const start = main.clips.reduce((max, clip) => Math.max(max, clipEnd(clip)), 0);
-    store.commit("添加素材", (doc) => ({ ...doc, timeline: addClip(doc.timeline, main.id, { ...sourceClipFromQueue(item), start }), selection: [] }));
+    const kind = mediaKindOf(item) === "audio" ? "audio" : "video";
+    let target = "";
+    store.commit(kind === "audio" ? "添加音频素材" : "添加素材", (doc) => {
+      let next = doc.timeline;
+      let track = kind === "audio" ? audioTracks(next)[0] : mainVideoTrack(next);
+      if (!track) {
+        if (kind === "video") return doc;
+        next = addTrack(next, "audio");
+        track = audioTracks(next)[0];
+      }
+      if (!track) return doc;
+      target = track.name;
+      const start = track.clips.reduce((max, clip) => Math.max(max, clipEnd(clip)), 0);
+      return { ...doc, timeline: addClip(next, track.id, { ...sourceClipFromQueue(item), start }), selection: [] };
+    });
+    // 明确告诉用户落在哪条轨道：音频不会跑到视频轨，也不用猜
+    if (target) store.toast(`${kind === "audio" ? "音频" : "视频"}素材已加入「${target}」`, "ok");
   }
 
   async function importSrt(event) {
@@ -98,6 +113,61 @@ export default function LeftPane({ store, sources }) {
     store.setView({ editClipId: id, rightTab: "props", rightCollapsed: false });
   }
 
+  // 施加类操作统一入口：需要选中片段时给引导提示，否则执行
+  function withSelection(label, action) {
+    if (!selectedClip) {
+      store.toast(`请先在时间线选中一个片段，再施加${label}`, "error");
+      return;
+    }
+    action(selectedClip);
+  }
+
+  function applyEffectPreset(preset) {
+    withSelection("特效", (clip) => {
+      store.commit(preset.id === "none" ? "清除特效" : "施加特效", (doc) => ({
+        ...doc, timeline: applyEffect(doc.timeline, clip.id, preset),
+      }));
+      store.toast(preset.id === "none" ? "已清除特效" : `已施加「${preset.label}」到 ${clip.sourceTitle || clip.type}`, "ok");
+    });
+  }
+
+  function applyTransitionPreset(preset) {
+    withSelection("转场", (clip) => {
+      store.commit(preset.id === "none" ? "清除转场" : "施加转场", (doc) => ({
+        ...doc, timeline: applyTransition(doc.timeline, clip.id, preset),
+      }));
+      store.toast(preset.id === "none" ? "已清除转场" : `已施加「${preset.label}」到 ${clip.sourceTitle || clip.type} 的右邻接缝`, "ok");
+    });
+  }
+
+  function applyAdjustPresetItem(preset) {
+    withSelection("调节", (clip) => {
+      store.commit("施加调节", (doc) => ({ ...doc, timeline: applyAdjustPreset(doc.timeline, clip.id, preset) }));
+      store.toast(`已施加「${preset.label}」到 ${clip.sourceTitle || clip.type}`, "ok");
+    });
+  }
+
+  function applyTextStylePreset(preset) {
+    withSelection("文字样式", (clip) => {
+      store.commit("文字样式", (doc) => ({ ...doc, timeline: applyTextStyle(doc.timeline, clip.id, preset) }));
+      store.toast(`已应用文字样式「${preset.label}」`, "ok");
+    });
+  }
+
+  function addGraphic(preset) {
+    const track = timeline.tracks.find((item) => item.type === "graphic");
+    if (!track) { store.toast("图形轨不存在，请先添加图形轨", "error"); return; }
+    const start = store.getTime();
+    store.commit("添加图形", (doc) => ({ ...doc, timeline: applyGraphic(doc.timeline, track.id, preset, start) }));
+    store.toast(`已在 ${formatStart(start)} 添加「${preset.label}」`, "ok");
+  }
+
+  function formatStart(value) {
+    const m = String(Math.floor(value / 60)).padStart(2, "0");
+    const s = String(Math.floor(value % 60)).padStart(2, "0");
+    return `${m}:${s}`;
+  }
+
   return (
     <>
       <div className="ce-rail">
@@ -122,50 +192,156 @@ export default function LeftPane({ store, sources }) {
                       onClick={() => store.setView({ mediaFilter: item.id })}>{item.label}</button>
                   ))}
                 </div>
-                {groups.length === 0 && <div className="ce-p2"><Icon name="film" size={24} style={{ margin: "0 auto 8px", opacity: .5 }} />暂无上游视频素材<br />先在画布生成视频并连到剪辑节点</div>}
+                {groups.length === 0 && <div className="ce-p2"><Icon name="film" size={24} style={{ margin: "0 auto 8px", opacity: .5 }} />暂无上游素材<br />在画布生成视频或音频并连到剪辑节点</div>}
                 {groups.map(([key, items]) => (
                   <div key={key}>
-                    <div className="ce-group">节点 {String(key).slice(-6)}</div>
+                    <div className="ce-group">{items[0]?.sourceTitle || `节点 ${String(key).slice(-6)}`}</div>
                     <div className="ce-grid2">
                       {items.map((item, index) => {
                         const sourceIndex = sources.indexOf(item);
-                        const thumb = item.output?.posterUrl ? mediaUrl(item.output.posterUrl, { w: 160 }) : "";
+                        const kind = mediaKindOf(item);
+                        // 视频产物大多只有 storageKey（mp4）没有海报图，交给 MediaThumb 用 <video> 取首帧
+                        const { poster, video } = kind === "audio"
+                          ? { poster: "", video: "" }
+                          : resolveThumbUrls({ output: item.output, storageKey: item.storageKey }, 160);
                         const shade = THUMB_SHADES[index % THUMB_SHADES.length];
                         return (
                           <div key={`${key}-${index}`} className="ce-mcard" draggable
-                            title="拖入时间线，或双击追加"
-                            onDragStart={(event) => event.dataTransfer.setData("application/x-editing-source", String(sourceIndex))}
+                            title={`${kind === "audio" ? "音频" : "视频"}素材：拖入时间线，或双击追加`}
+                            onDragStart={(event) => {
+                              event.dataTransfer.setData("application/x-editing-source", String(sourceIndex));
+                              event.dataTransfer.effectAllowed = "copy";
+                            }}
                             onDoubleClick={() => appendSource(item)}>
-                            <div className="thumb" style={thumb ? { background: `url(${thumb}) center/cover` } : { background: shade }}>
+                            <div className={`thumb ${kind === "audio" ? "audio" : ""}`}
+                              style={kind === "audio" ? undefined : { background: shade }}>
+                              {kind !== "audio" && <MediaThumb poster={poster} video={video} />}
+                              {kind === "audio" && (
+                                <span className="wv">{Array.from({ length: 14 }, (_, i) => (
+                                  <i key={i} style={{ height: 6 + (Math.sin(i * 1.9) + 1) * 9 }} />
+                                ))}</span>
+                              )}
                               <button className="ce-add" title="添加到时间线" onClick={(event) => { event.stopPropagation(); appendSource(item); }}><Icon name="plus" size={12} /></button>
                             </div>
-                            <div className="lab"><b>{item.sourceTitle || item.sourceNodeId}</b><em>{(clipEndSource(item)).toFixed(1)}s</em></div>
+                            <div className="lab">
+                              <b>{item.sourceTitle || item.sourceNodeId}</b>
+                              <em>{clipEndSource(item).toFixed(1)}s</em>
+                            </div>
                           </div>
                         );
                       })}
                     </div>
                   </div>
                 ))}
+                <div className="ce-hint">音频素材自动落到音频轨 A1，视频素材落到主视频轨 V1。</div>
                 <div className="ce-upload" onClick={() => store.toast("本地导入将在 P2 上线，当前请使用画布上游素材", "info")}><Icon name="upload" size={14} /> 导入素材（P2）</div>
               </>
             )}
+
             {view.panel === "text" && (
               <>
                 <button className="btn2" style={{ width: "100%", justifyContent: "center" }} onClick={addText}><Icon name="plus" size={14} /> 添加文字</button>
                 <div className="ce-upload" onClick={() => fileRef.current?.click()}><Icon name="download" size={14} /> 导入字幕（SRT）</div>
                 <input ref={fileRef} type="file" accept=".srt" hidden onChange={importSrt} />
-                <div className="ce-p2">文字样式预设 / 花字<br />P2 上线</div>
+                <div className="ce-group">文字样式</div>
+                <div className="ce-preset-list">
+                  {TEXT_STYLES.map((preset) => (
+                    <button key={preset.id} className="ce-preset" disabled={!selectedClip}
+                      onClick={() => applyTextStylePreset(preset)}>
+                      <span className="sw" style={{ fontSize: Math.min(18, preset.fontSize), fontWeight: preset.weight, color: preset.color }}>Aa</span>
+                      <em>{preset.label}</em>
+                    </button>
+                  ))}
+                </div>
+                <div className="ce-hint">先选中时间线上的文字片段，再点样式即可应用。</div>
               </>
             )}
-            {["graphic", "effect", "transition", "adjust"].includes(view.panel) && (
-              <div className="ce-p2"><Icon name={PANELS.find((item) => item.id === view.panel)?.icon} size={24} style={{ margin: "0 auto 8px", opacity: .5 }} />
-                {PANELS.find((item) => item.id === view.panel)?.label}能力<br />MVP 期先占位，P2 上线<br /><small>调节类参数可在右侧属性面板对选中片段设置</small></div>
+
+            {view.panel === "graphic" && (
+              <>
+                <div className="ce-group">图形预设 · 点击添加到播放头处</div>
+                <div className="ce-preset-list">
+                  {GRAPHIC_PRESETS.map((preset) => (
+                    <button key={preset.id} className="ce-preset" onClick={() => addGraphic(preset)}>
+                      <span className="sw"><ShapeSwatch shape={preset.shape} color={preset.color} /></span>
+                      <em>{preset.label}</em>
+                    </button>
+                  ))}
+                </div>
+                <div className="ce-hint">图形落在图形轨 G1，位置与大小可在右侧属性面板调整。</div>
+              </>
+            )}
+
+            {view.panel === "effect" && (
+              <>
+                <div className="ce-group">特效 · 施加到选中片段</div>
+                <div className="ce-preset-list">
+                  {EFFECT_PRESETS.map((preset) => (
+                    <button key={preset.id} className="ce-preset" disabled={!selectedClip}
+                      onClick={() => applyEffectPreset(preset)}>
+                      <span className="sw" style={{ filter: preset.cssFilter === "none" ? "none" : preset.cssFilter }}><i className="sw-img" /></span>
+                      <em>{preset.label}</em>
+                    </button>
+                  ))}
+                </div>
+                <div className="ce-hint">{selectedClip ? `将施加到：${selectedClip.sourceTitle || selectedClip.type}` : "请先在时间线选中一个片段。"}</div>
+              </>
+            )}
+
+            {view.panel === "transition" && (
+              <>
+                <div className="ce-group">转场 · 施加在选中片段与右邻之间</div>
+                <div className="ce-preset-list">
+                  {TRANSITION_PRESETS.map((preset) => (
+                    <button key={preset.id} className="ce-preset" disabled={!selectedClip}
+                      onClick={() => applyTransitionPreset(preset)}>
+                      <span className="sw"><Icon name={preset.id === "none" ? "x" : "arrowLR"} size={14} /></span>
+                      <em>{preset.label}{preset.duration ? ` ${preset.duration}s` : ""}</em>
+                    </button>
+                  ))}
+                </div>
+                <div className="ce-hint">转场骑缝显示在片段右边界；最后一个片段无右邻，转场不生效。</div>
+              </>
+            )}
+
+            {view.panel === "adjust" && (
+              <>
+                <div className="ce-group">调节预设 · 施加到选中片段</div>
+                <div className="ce-preset-list">
+                  {ADJUST_PRESETS.map((preset) => (
+                    <button key={preset.id} className="ce-preset" disabled={!selectedClip}
+                      onClick={() => applyAdjustPresetItem(preset)}>
+                      <span className="sw" style={{ filter: filterOfAdjust(preset.adjust) }}><i className="sw-img" /></span>
+                      <em>{preset.label}</em>
+                    </button>
+                  ))}
+                </div>
+                <div className="ce-hint">预设之后可在右侧属性面板逐项微调亮度 / 对比度 / 饱和度。</div>
+              </>
             )}
           </div>
         </div>
       )}
     </>
   );
+}
+
+function filterOfAdjust(adjust = {}) {
+  const parts = [];
+  if (Number(adjust.brightness)) parts.push(`brightness(${1 + Number(adjust.brightness) / 100})`);
+  if (Number(adjust.contrast)) parts.push(`contrast(${1 + Number(adjust.contrast) / 100})`);
+  if (Number(adjust.saturate)) parts.push(`saturate(${1 + Number(adjust.saturate) / 100})`);
+  return parts.join(" ") || "none";
+}
+
+// 图形形状小色板（预览用，真实渲染在播放器监视器内）
+function ShapeSwatch({ shape, color }) {
+  if (shape === "circle") return <i className="shape shape-circle" style={{ background: color }} />;
+  if (shape === "triangle") return <i className="shape shape-triangle" style={{ borderBottomColor: color }} />;
+  if (shape === "arrow") return <i className="shape shape-arrow" style={{ borderLeftColor: color }} />;
+  if (shape === "star") return <i className="shape shape-star" style={{ background: color }} />;
+  if (shape === "line") return <i className="shape shape-line" style={{ background: color }} />;
+  return <i className="shape shape-rect" style={{ background: color }} />;
 }
 
 function clipEndSource(item) {

@@ -9,6 +9,32 @@ function hasPlayableOutput(output) {
   return typeof output?.storageKey === "string" && output.storageKey.trim() !== "";
 }
 
+// 节点种类 → 剪辑台素材类型。剪辑节点只吃这两类上游产物。
+const KIND_MEDIA_TYPE = { VideoGenerator: "video", AudioGenerator: "audio" };
+
+export function mediaTypeOfNode(node) {
+  return KIND_MEDIA_TYPE[node?.data?.kind] || "";
+}
+
+// 音频节点的可播放产物：上传音频（media.uploadedAudio）与生成音频（runtime.outputs）都要收录，
+// 去重后返回；与 nodeViewModel 的 selectedAudioSource 选择无关，素材面板由用户自己挑。
+export function audioOutputsFor(node) {
+  const media = node.data?.media || {};
+  const list = [];
+  const uploaded = media.uploadedAudio;
+  if (uploaded?.storageKey) list.push({ type: "audio", ...uploaded });
+  for (const output of outputsFor(node)) {
+    if (!hasPlayableOutput(output)) continue;
+    if (list.some((item) => item.storageKey === output.storageKey)) continue;
+    list.push({ type: "audio", ...output });
+  }
+  return list;
+}
+
+function outputsOf(node) {
+  return node.data?.kind === "AudioGenerator" ? audioOutputsFor(node) : outputsFor(node);
+}
+
 function clamp(value, min, max) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : min;
@@ -26,6 +52,8 @@ function createClip(node, output, outputIndex, persisted, order) {
     sourceNodeId: node.id,
     // 来源节点标题：视频剪辑节点的片段列表展示用
     sourceTitle: node.data?.title || node.id,
+    // 素材类型：剪辑台据此决定落哪条轨道（视频轨 / 音频轨）与卡片形态
+    mediaType: mediaTypeOfNode(node) || "video",
     outputIndex,
     output,
     storageKey: output.storageKey,
@@ -41,7 +69,12 @@ function createClip(node, output, outputIndex, persisted, order) {
 
 export function buildClipQueue(videoNodes = [], edges = [], persistedClips = [], editingNodeId, graphNodes = videoNodes, options = {}) {
   const disabledIds = new Set(graphNodes.filter((node) => node.data?.enabled === false).map((node) => node.id));
-  const byId = new Map(videoNodes.filter((node) => !disabledIds.has(node.id)).map((node) => [node.id, node]));
+  // kinds 缺省 = 不按节点种类过滤（调用方已自行筛好，如 getClips 只传视频节点）；
+  // 剪辑台素材面板显式传 kinds:["VideoGenerator","AudioGenerator"] 时再把音频节点纳入。
+  const allowedKinds = options.kinds ? new Set(options.kinds) : null;
+  const byId = new Map(videoNodes
+    .filter((node) => !disabledIds.has(node.id) && (!allowedKinds || allowedKinds.has(node.data?.kind)))
+    .map((node) => [node.id, node]));
   const candidateEdges = edges.filter((edge) => byId.has(edge.source) && edge.target != null);
   const targetIds = new Set(candidateEdges.map((edge) => edge.target));
   const targetId = editingNodeId ?? (targetIds.size === 1 ? candidateEdges[0]?.target : undefined);
@@ -77,7 +110,7 @@ export function buildClipQueue(videoNodes = [], edges = [], persistedClips = [],
       continue;
     }
     const outputIndex = Math.max(0, Number(saved.outputIndex) || 0);
-    const output = outputsFor(node)[outputIndex];
+    const output = outputsOf(node)[outputIndex];
     if (!hasPlayableOutput(output)) continue;
     queue.push(createClip(node, output, outputIndex, saved, queue.length));
   }
@@ -87,7 +120,7 @@ export function buildClipQueue(videoNodes = [], edges = [], persistedClips = [],
     if (queue.some((clip) => clip.sourceNodeId === nodeId)) continue;
     // 显式禁用的片段不再被自动补回，保证"禁用"在成片中真正生效
     if (disabledClipNodeIds.has(nodeId)) continue;
-    const outputs = outputsFor(node);
+    const outputs = outputsOf(node);
     const selected = Number(node.data?.media?.selectedOutputIndex ?? node.data?.media?.outputIndex ?? 0);
     const outputIndex = Number.isInteger(selected) && selected >= 0 && selected < outputs.length ? selected : 0;
     const output = outputs[outputIndex];
