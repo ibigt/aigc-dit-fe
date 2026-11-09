@@ -1,6 +1,10 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ASPECTS, QUALITIES, exportFlatClips, filmDuration, formatTime, migrateClips, resolutionText, seedAudioSources } from "./model.js";
+import {
+  ASPECTS, QUALITIES, exportAudioClips, exportFlatClips, filmDuration, formatTime,
+  inspectSourceDrift, migrateClips, normalizeImportedSources, resolutionText,
+  seedAudioSources, syncTimelineSources,
+} from "./model.js";
 import { downloadSrt, toSrt } from "./srt.js";
 import { createEditingStore, useEditingStore } from "./store.js";
 import Timeline, { timelineActionsRef } from "./Timeline.jsx";
@@ -12,7 +16,10 @@ import "./editing-suite.css";
 
 const ASPECT_SHAPE = { "16:9": "r169", "9:16": "r916", "1:1": "r11", "4:3": "r43", "2.35:1": "r235" };
 
-export default function EditingSuite({ nodeId, title, clips, sources, savedTimeline, onClose, onDraft, onExport, onRefresh }) {
+export default function EditingSuite({
+  nodeId, title, clips, sources, savedTimeline, savedImportedSources,
+  onClose, onDraft, onExport, onRefresh,
+}) {
   // 视频片段由 clips 自动聚合到 V1；音频素材只在 sources 里，需同样自动落到 A1。
   // 无草稿 / 已存草稿两条路径都同步，seedAudioSources 按上游产物 key 去重且不会把用户删掉的片段灌回来。
   // 只构造初值、不走 store.commit，故「只打开不编辑」仍不会把画布标成未保存。
@@ -29,13 +36,95 @@ export default function EditingSuite({ nodeId, title, clips, sources, savedTimel
   const { timeline } = state.doc;
   const view = state.view;
 
-  // 双写：每次草稿变更同步回画布（timeline v2 + 扁平 clips[]），保证节点卡队列与后端 compose 零改动可用。
+  // 本地导入素材不存在于画布 graph，只随剪辑台草稿持久化（data.editing.importedSources）。
+  // 与上游产物分两条链：漂移检测 / 自动铺 A1 只认 upstreamSources，避免导入项被误判成
+  // 「上游产物已不存在」或每次刷新被灌回时间线。
+  const [importedSources, setImportedSources] = useState(() => normalizeImportedSources(savedImportedSources));
+  const upstreamSources = clipSources();
+  const panelSources = useMemo(() => [...upstreamSources, ...importedSources], [upstreamSources, importedSources]);
+  // props 每次渲染都是新数组，用「内容指纹」做触发条件：只有上游产物
+  // （storageKey / 海报 / 标题）真的变了才回写时间线，避免每次渲染都跑同步。
+  const upstreamFingerprint = useMemo(() => (upstreamSources || [])
+    .map((item) => [
+      item.sourceNodeId, Number(item.outputIndex) || 0,
+      item.output?.storageKey || item.storageKey || "",
+      item.output?.posterUrl || item.output?.posterKey || "",
+      item.sourceTitle || "",
+    ].join(":"))
+    .sort()
+    .join("|"), [upstreamSources]);
+  const drift = useMemo(() => inspectSourceDrift(timeline, upstreamSources), [timeline, upstreamFingerprint]);
+  const driftNotes = [
+    drift.missing.length ? `${drift.missing.length} 个片段引用的上游产物已不可用（节点被删 / 连线断开 / 输出变更）` : "",
+    drift.added.length ? `${drift.added.length} 个新产物已在素材面板，可拖入时间线` : "",
+    drift.outdated.length ? `${drift.outdated.length} 个片段的上游产物待同步` : "",
+  ].filter(Boolean);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
+  const firstSyncRef = useRef(true);
+
+  // 上游产物变化 → 回写媒体引用。initial 已按挂载时的 sources 构造，故跳过首帧。
+  // 走 store.syncTimeline 而非 commit：刷新是跟随外部状态，不进撤销栈、不标 dirty。
+  // effect 只由上游指纹 / 刷新计数触发，undo 改 timeline 不会重新触发，
+  // 不会出现「撤销又被拉回」的循环；用户点刷新时用 refreshTick 在最新 props 下强制再同步一次。
+  useEffect(() => {
+    if (firstSyncRef.current) { firstSyncRef.current = false; return; }
+    const current = store.getState().doc.timeline;
+    const result = syncTimelineSources(current, upstreamSources);
+    if (result.timeline === current) return;
+    store.syncTimeline(result.timeline);
+    const parts = [];
+    if (result.updated) parts.push(`更新 ${result.updated} 个片段的媒体引用`);
+    if (result.addedAudio) parts.push(`补入 ${result.addedAudio} 段音频到 A1`);
+    store.toast(`已同步最新产物：${parts.join("、") || "时间线已更新"}`, "ok");
+  }, [upstreamFingerprint, refreshTick]);
+
+  async function refreshSources() {
+    if (refreshing || !onRefresh) return;
+    setRefreshing(true);
+    try {
+      const ok = await onRefresh();
+      if (ok === false) {
+        store.toast("刷新失败：画布可能还没有运行记录，或网络异常，请稍后重试", "error");
+        return;
+      }
+      // onRefresh 内部 setNodes 可能与本次渲染合并；计数触发的这次渲染必定带上
+      // 最新 sources，effect 里的同步因此拿到的不会是过期闭包。
+      setRefreshTick((value) => value + 1);
+      store.toast("已重新拉取运行产物", "ok");
+    } catch (error) {
+      store.toast(`刷新失败：${error?.message || "请重试"}`, "error");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  // 双写：每次草稿变更同步回画布（timeline v2 + 扁平 clips[] + audioClips[] + 导入清单）。
+  // audioClips 是音频轨的扁平导出，后端 compose 据此把 A1 混入成片（amix）。
+  // importedSources 独立持久化，否则关闭剪辑台后本地素材就只剩时间线里的片段、素材面板空了。
   // 跳过挂载首帧：只打开不编辑不应把画布标成「未保存」。
   const firstDraftRef = useRef(true);
   useEffect(() => {
     if (firstDraftRef.current) { firstDraftRef.current = false; return; }
-    onDraft?.({ timeline, clips: exportFlatClips(timeline) });
-  }, [timeline]);
+    onDraft?.({
+      timeline,
+      clips: exportFlatClips(timeline),
+      audioClips: exportAudioClips(timeline),
+      importedSources,
+    });
+  }, [timeline, importedSources]);
+
+  // 导入清单变更是用户操作：去重后追加，标脏交给上面的草稿双写统一完成。
+  function addImportedSources(items) {
+    if (!Array.isArray(items) || !items.length) return;
+    setImportedSources((current) => normalizeImportedSources([...current, ...items]));
+    store.setView({ panel: "media", leftCollapsed: false });
+  }
+
+  function removeImportedSource(sourceNodeId) {
+    setImportedSources((current) => current.filter((item) => item.sourceNodeId !== sourceNodeId));
+    store.toast("已从剪辑台素材清单移除；已落轨的片段不受影响", "ok");
+  }
 
   // 键盘域：capture 阶段吃掉全部按键，杜绝与画布撤销栈/删除快捷键串台
   useEffect(() => {
@@ -151,18 +240,32 @@ export default function EditingSuite({ nodeId, title, clips, sources, savedTimel
           <span className="ce-spacer"></span>
           <button className="iconbtn" disabled={!store.canUndo()} onClick={() => store.undo()} title="撤销 (Ctrl+Z) · 仅剪辑台内有效"><Icon name="undo" /></button>
           <button className="iconbtn" disabled={!store.canRedo()} onClick={() => store.redo()} title="重做 (Ctrl+Shift+Z) · 仅剪辑台内有效"><Icon name="redo" /></button>
+          <button className="btn2" disabled={refreshing || !onRefresh} onClick={refreshSources}
+            title="重新拉取运行结果：上游重新生成过或产物地址过期时，用最新产物同步时间线（不改动已编排的裁剪 / 位置 / 参数）">
+            <Icon name="refresh" size={13} /> {refreshing ? "刷新中…" : "刷新产物"}
+          </button>
           <button className="btn2" onClick={exportSubtitles}><Icon name="download" size={14} /> 导出字幕</button>
           <button className="btn1" disabled={view.exporting}
             onClick={() => store.setView({ dialog: { kind: "export" } })}>
             <Icon name="upload" size={14} /> {view.exporting ? "导出中…" : "导出成片"}
           </button>
         </div>
+        {driftNotes.length > 0 && (
+          <div className="ce-source-banner" data-tone={drift.missing.length ? "warn" : "info"}>
+            <Icon name="refresh" size={13} />
+            <span>{driftNotes.join("；")}。上游重新生成后点「刷新产物」拉取最新结果；已存在的片段不会被重排。</span>
+            <button className="btn2" disabled={refreshing || !onRefresh} onClick={refreshSources}>
+              {refreshing ? "刷新中…" : "刷新产物"}
+            </button>
+          </div>
+        )}
         <div className="ce-mid">
-          <LeftPane store={store} sources={clipSources()} />
+          <LeftPane store={store} sources={panelSources}
+            onImportSources={addImportedSources} onRemoveImported={removeImportedSource} />
           <PlayerStage store={store} />
           {!view.rightCollapsed && <RightPane store={store} />}
         </div>
-        <Timeline store={store} sources={clipSources()} />
+        <Timeline store={store} sources={panelSources} />
       </div>
       {dialog && createPortal(
         <div className="ce-portal ce-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) store.setView({ dialog: null }); }}>
@@ -175,7 +278,7 @@ export default function EditingSuite({ nodeId, title, clips, sources, savedTimel
                   <div><small>分辨率</small><strong>{resolutionText(timeline.aspect, timeline.quality)}</strong></div>
                   <div><small>片段数</small><strong>{flat.length}</strong></div>
                 </div>
-                <div className="note">按主视频轨顺序拼接（空隙压缩为 0），时长 = 各片段裁剪时长之和。文字 / 图形 / 特效 / 转场 / 音频轨在 MVP 期导出暂不包含（剪辑台内预览可见、可听）；导出后节点时长与分辨率会写回画布。</div>
+                <div className="note">按主视频轨顺序拼接（空隙压缩为 0），时长 = 各片段裁剪时长之和；音频轨片段按其在时间线上的位置混入成片，本地导入的素材同样参与合成。文字 / 图形 / 特效 / 转场在 MVP 期导出暂不包含（剪辑台内预览可见）；导出后节点时长与分辨率会写回画布。</div>
                 <div className="actions">
                   <button className="btn2" onClick={() => store.setView({ dialog: null })}>取消</button>
                   <button className="btn1" onClick={confirmExport}>确认导出</button>
@@ -197,6 +300,7 @@ export default function EditingSuite({ nodeId, title, clips, sources, savedTimel
     document.body,
   );
 
-  // 素材面板 / 拖拽落点用的上游清单（视频 + 音频）；与时间线初值分开，避免把音频混进 migrateClips 的 V1
+  // 画布上游清单（视频 + 音频）：时间线初值、漂移检测、自动铺 A1 都只认它。
+  // 本地导入素材走 panelSources，绝不混进来。与时间线初值分开也避免音频被塞进 migrateClips 的 V1。
   function clipSources() { return sources || clips || []; }
 }

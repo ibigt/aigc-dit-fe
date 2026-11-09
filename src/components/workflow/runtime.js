@@ -187,16 +187,31 @@ export function hydrateImportedOutputs(outputs) {
   });
 }
 
+/**
+ * 把运行时快照合回画布节点。
+ *
+ * 快照里「IDLE + 空 outputs」的步骤只说明「本工作流没有该节点的本地运行历史」，
+ * 并不代表产物作废。导入工程 / 模板实例化的产物是随 graph 走的（节点顶层 outputs，
+ * 由 hydrateStoredNode 水合进 data.runtime.outputs），而这些工作流往往只跑过一两个
+ * 新加的节点（比如配音）。后端 snapshotMine 只要发现任意运行历史，就会给图上每个
+ * 节点都发一条 IDLE 步骤；旧实现无条件清掉 covered 节点的 runtime，产物当场被抹，
+ * 下一次保存写回 DB 后「另存为模板 / 模板实例化」继承空图 —— 视频永久消失（#79~#83）。
+ *
+ * 因此：节点已有产物时，无产物的 IDLE 步骤没有信息量，直接忽略，保留水合出来的
+ * SUCCEEDED 状态与产物；其它步骤照常刷新（状态 / 进度 / 错误 / 新产物）。
+ * applyRunToNodes 本身带 outputs 回退（displayOutputs），不清 runtime 也能在
+ * 运行中的空产物步骤上保住上一次的持久产物。
+ */
 export function applyWorkflowSnapshotToNodes(nodes, snapshot) {
   const steps = snapshot.steps || [];
-  const covered = new Set(steps.map((step) => step.nodeId));
-  // 只清快照覆盖到的节点：刚生成完就保存时快照里还没有这次运行，
-  // 若一律清空会把刚出的图抹掉（工作流首次保存时 record.id 变化会触发运行态恢复）；
-  // 导入的工作流没有本地运行历史（不在 covered 里），水合回来的产物也不会被清。
-  const cleared = nodes.map((node) => (covered.has(node.id)
-    ? { ...node, data: { ...node.data, runtime: undefined } }
-    : node));
-  return applyRunToNodes(cleared, { steps });
+  const carried = new Set(nodes
+    .filter((node) => (node.data?.runtime?.outputs || []).length)
+    .map((node) => node.id));
+  const effective = steps.filter((step) => {
+    if ((step.outputs?.length || 0) > 0 || (step.status && step.status !== "IDLE")) return true;
+    return !carried.has(step.nodeId);
+  });
+  return applyRunToNodes(nodes, { steps: effective });
 }
 
 export async function restoreWorkflowSnapshot({ workflowId, snapshot, get, wait = waitForWorkflowPoll, onSnapshot, signal }) {

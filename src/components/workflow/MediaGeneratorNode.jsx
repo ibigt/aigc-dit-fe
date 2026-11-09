@@ -122,6 +122,7 @@ export default function MediaGeneratorNode({ id, data, selected }) {
     selectOutput,
     models,
     running,
+    runMode,
   } = useWorkflowNode();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -271,6 +272,9 @@ export default function MediaGeneratorNode({ id, data, selected }) {
   const isBusy = runtimeStatus
     ? ["PENDING", "QUEUED", "SUBMITTING", "RUNNING"].includes(runtimeStatus)
     : generating;
+  // 顶栏选「全部重新生成」时，单节点生成也会带 forceRegenerate（本节点 + 上游都不复用），
+  // 按钮文案与图标同步，避免用户以为这次仍是复用口径。
+  const forceRun = runMode === "regenerate";
 
   // 生成：真实跑该节点（后端按节点自己的提示词与模型执行），不再贴静态占位图
   const runGeneration = () => {
@@ -552,11 +556,22 @@ export default function MediaGeneratorNode({ id, data, selected }) {
           <Zap size={11} /> {creditCost}
           {reused && <em className="media-node__cost-tag">复用</em>}
         </span>
-        <button className="media-node__generate" onClick={runGeneration}>
+        <button
+          className={`media-node__generate${forceRun ? " is-force" : ""}`}
+          onClick={runGeneration}
+          title={forceRun
+            ? "全部重新生成：本节点及其上游都不复用历史产物，会重新扣积分"
+            : "复用已有结果：参数与上游未变的节点直接用上次产物"}
+        >
           {isBusy ? (
             <>
               <Sparkles size={13} className="spin" />
               {runtimeStatus === "QUEUED" ? "排队中" : "生成中"}
+            </>
+          ) : forceRun ? (
+            <>
+              <RotateCcw size={13} />
+              重新生成
             </>
           ) : (
             <>

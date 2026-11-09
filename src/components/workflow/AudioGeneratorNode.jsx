@@ -89,7 +89,7 @@ function AudioOutputPlayer({ output, index, showIndex }) {
 }
 
 export default function AudioGeneratorNode({ id, data, selected }) {
-  const { updateMedia, generateMedia, notify, models, getReferences, getPromptSupplements, removeReference, uploadAudio } = useWorkflowNode();
+  const { updateMedia, generateMedia, notify, models, getReferences, getPromptSupplements, removeReference, uploadAudio, runMode } = useWorkflowNode();
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -112,6 +112,8 @@ export default function AudioGeneratorNode({ id, data, selected }) {
     .map((model) => (typeof model === "string" ? model : model?.name))
     .filter(Boolean);
   const isBusy = generating || data.runtime?.status === "RUNNING";
+  // 与视频/图片节点一致：顶栏「全部重新生成」时单节点生成也带 forceRegenerate
+  const forceRun = runMode === "regenerate";
 
   // 语音参数与快速创作同源：同一份模型目录 audioOptions（音色/格式/语速范围完全一致）
   const audioOptions = useMemo(
@@ -385,11 +387,22 @@ export default function AudioGeneratorNode({ id, data, selected }) {
             <Zap size={11} />
             {creditCost}
           </span>
-          <button className="audio-node__generate" onClick={runGeneration}>
+          <button
+            className={`audio-node__generate${forceRun ? " is-force" : ""}`}
+            onClick={runGeneration}
+            title={forceRun
+              ? "全部重新生成：本节点及其上游都不复用历史产物，会重新扣积分"
+              : "复用已有结果：参数与上游未变的节点直接用上次产物"}
+          >
             {isBusy ? (
               <>
                 <Sparkles className="spin" size={13} />
                 生成中
+              </>
+            ) : forceRun ? (
+              <>
+                <RotateCcw size={13} />
+                重新生成
               </>
             ) : (
               <>

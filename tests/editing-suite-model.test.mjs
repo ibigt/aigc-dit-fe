@@ -6,7 +6,10 @@ import {
   aspectSize, clipDuration, clipEnd, clipFilter, emptyTimeline, exportFlatClips, filmDuration,
   findSnap, mainVideoTrack, mediaKindOf, migrateClips, moveClipToTrack, playableAudioClips, removeClips,
   removeTrack, snapTargets, sourceClipFromQueue, splitAt, timelineDuration, updateClip, updateTrack, addTrack,
-  seedAudioSources, audioTracks, addClip,
+  seedAudioSources, audioTracks, addClip, exportAudioClips,
+  MIN_TRIM_DURATION, validateTrim, trimRangeOf,
+  sourceKeyOf, inspectSourceDrift, syncTimelineSources,
+  LOCAL_SOURCE_PREFIX, importedSourceFromAsset, normalizeImportedSources,
 } from "../src/components/workflow/editing-suite/model.js";
 import { parseSrt, toSrt } from "../src/components/workflow/editing-suite/srt.js";
 
@@ -359,4 +362,274 @@ test("无可播放产物的音频源被忽略；无 sources 时原样返回", ()
   const base = migrateClips([]);
   assert.equal(seedAudioSources(base, [{ ...audioSource("a"), output: {}, storageKey: "" }]), base);
   assert.equal(seedAudioSources(base, []), base);
+});
+
+// ---- exportAudioClips（音频轨混入成片的扁平导出）----
+test("exportAudioClips 产出带 start 的音频片段，过滤口径与预览一致", () => {
+  const base = addClip(migrateClips([]), "A1", { ...sourceClipFromQueue(audioSource("a")), start: 2.5, volume: 0.8 });
+  const timeline = { ...base, tracks: base.tracks.map((track) => track.id === "A1"
+    ? { ...track, clips: [...track.clips, { ...sourceClipFromQueue(audioSource("b", 1)), start: 10 }] }
+    : track) };
+  const exported = exportAudioClips(timeline);
+  assert.equal(exported.length, 2);
+  assert.deepEqual(Object.keys(exported[0]).sort(),
+    ["muted", "outputIndex", "sourceNodeId", "start", "trimEnd", "trimStart", "volume"]);
+  assert.equal(exported[0].sourceNodeId, "a");
+  assert.equal(exported[0].start, 2.5);
+  assert.equal(exported[0].volume, 0.8);
+  assert.equal(exported[1].sourceNodeId, "b");
+});
+
+test("禁用片段与被静音的轨道不进导出", () => {
+  const withClips = seedAudioSources(migrateClips([]), [audioSource("a"), audioSource("b")]);
+  const disabled = { ...withClips, tracks: withClips.tracks.map((track) => track.id === "A1"
+    ? { ...track, clips: track.clips.map((clip, i) => i === 0 ? { ...clip, enabled: false } : clip) } : track) };
+  assert.deepEqual(exportAudioClips(disabled).map((clip) => clip.sourceNodeId), ["b"]);
+  const trackMuted = { ...withClips, tracks: withClips.tracks.map((track) => track.id === "A1" ? { ...track, muted: true } : track) };
+  assert.deepEqual(exportAudioClips(trackMuted), []);
+});
+
+test("空音频轨导出为空数组，视频片段不混入", () => {
+  const onlyVideo = migrateClips([videoSource("v")]);
+  assert.deepEqual(exportAudioClips(onlyVideo), []);
+});
+
+// ---- validateTrim / trimRangeOf（属性面板裁剪数值输入，需求排期 #2）----
+test("validateTrim 合法输入产出 patch，同步 duration 且消除浮点脏值", () => {
+  const result = validateTrim({ trimStart: "0.1", trimEnd: "4.300000000000001" });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.patch, { trimStart: 0.1, trimEnd: 4.3, duration: 4.2 });
+  assert.equal(result.duration, 4.2);
+});
+
+test("validateTrim 拒绝空值 / 非数字 / 无穷大，只给 error 不给 patch", () => {
+  for (const input of [
+    { trimStart: "", trimEnd: 5 },
+    { trimStart: 0, trimEnd: "" },
+    { trimStart: "abc", trimEnd: 5 },
+    { trimStart: 0, trimEnd: "1e309" },
+  ]) {
+    const result = validateTrim(input);
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "请输入有效的裁剪数值");
+    assert.equal(result.patch, undefined);
+  }
+});
+
+test("validateTrim 拒绝负入点 / 出点不大于入点 / 短于 0.1s 的片段", () => {
+  assert.equal(validateTrim({ trimStart: -1, trimEnd: 5 }).error, "入点不能小于 0s");
+  assert.equal(validateTrim({ trimStart: 2, trimEnd: 2 }).error, "出点必须大于入点");
+  assert.equal(validateTrim({ trimStart: 3, trimEnd: 2 }).error, "出点必须大于入点");
+  assert.equal(validateTrim({ trimStart: 0, trimEnd: 0.05 }).error, "裁剪时长不能短于 0.1s");
+  assert.equal(validateTrim({ trimStart: 0, trimEnd: 0.5, minDuration: 1 }).error, "裁剪时长不能短于 1s");
+  assert.equal(validateTrim({ trimStart: 0, trimEnd: MIN_TRIM_DURATION }).ok, true);
+});
+
+test("trimRangeOf 为缺 trimEnd 的旧草稿按 clipDuration 兜底", () => {
+  assert.deepEqual(trimRangeOf({ type: "video", trimStart: 1.5, trimEnd: 6 }), { trimStart: 1.5, trimEnd: 6 });
+  assert.deepEqual(trimRangeOf({ type: "video", trimStart: 1, duration: 4 }), { trimStart: 1, trimEnd: 5 });
+});
+
+test("裁剪 patch 落地后，时间线时长与视频扁平导出同步", () => {
+  const base = migrateClips([flat({ output: { storageKey: "users/7/long.mp4", durationSec: 10 } })]);
+  const clip = mainVideoTrack(base).clips[0];
+  const next = updateClip(base, clip.id, validateTrim({ trimStart: 2, trimEnd: 7.5 }).patch);
+  assert.equal(clipDuration(mainVideoTrack(next).clips[0]), 5.5);
+  assert.equal(timelineDuration(next), 5.5);
+  assert.equal(exportFlatClips(next)[0].trimStart, 2);
+  assert.equal(exportFlatClips(next)[0].trimEnd, 7.5);
+});
+
+test("音频片段裁剪 patch 同样进 exportAudioClips 的混音区间", () => {
+  const base = seedAudioSources(migrateClips([]), [audioSource("a")]);
+  const clip = audioClipsOf(base)[0];
+  const next = updateClip(base, clip.id, validateTrim({ trimStart: 1, trimEnd: 3 }).patch);
+  assert.equal(exportAudioClips(next)[0].trimStart, 1);
+  assert.equal(exportAudioClips(next)[0].trimEnd, 3);
+});
+
+// ---- 上游产物漂移 / 剪辑台内刷新（需求排期 #3）----
+const upstream = (id, key, overrides = {}) => ({
+  sourceNodeId: id, outputIndex: 0, mediaType: "video", sourceTitle: `${id} 标题`,
+  output: { storageKey: key, durationSec: 5 }, storageKey: key,
+  ...overrides,
+});
+const flatWithKey = (id, key) => flat({ sourceNodeId: id, output: { storageKey: key, durationSec: 5 } });
+
+test("sourceKeyOf 用节点 id + 输出序号对齐片段与素材面板", () => {
+  assert.equal(sourceKeyOf({ sourceNodeId: "v1", outputIndex: 2 }), "v1:2");
+  assert.equal(sourceKeyOf({ sourceNodeId: "v1" }), "v1:0");
+});
+
+test("inspectSourceDrift 识别产物更新 / 上游消失 / 新增素材", () => {
+  const base = migrateClips([flatWithKey("v1", "old/v1.mp4"), flatWithKey("v2", "old/v2.mp4")]);
+  const drift = inspectSourceDrift(base, [upstream("v1", "new/v1.mp4"), upstream("v3", "new/v3.mp4")]);
+  assert.deepEqual(drift.outdated.map((item) => item.key), ["v1:0"]);
+  assert.deepEqual(drift.missing.map((item) => item.key), ["v2:0"]);
+  assert.deepEqual(drift.added.map((item) => item.key), ["v3:0"]);
+});
+
+test("syncTimelineSources 只回写媒体引用，保留裁剪 / 位置 / 音量 / 特效", () => {
+  const base = migrateClips([flatWithKey("v1", "old/v1.mp4")]);
+  const clipId = mainVideoTrack(base).clips[0].id;
+  const edited = updateClip(base, clipId, {
+    trimStart: 1, trimEnd: 4, start: 2.5, volume: 0.4, effects: [{ id: "mono", label: "黑白" }],
+  });
+  const result = syncTimelineSources(edited, [upstream("v1", "new/v1.mp4", {
+    sourceTitle: "新标题",
+    output: { storageKey: "new/v1.mp4", posterUrl: "/api/media?key=poster.png" },
+  })]);
+  assert.equal(result.updated, 1);
+  const clip = mainVideoTrack(result.timeline).clips[0];
+  assert.equal(clip.storageKey, "new/v1.mp4");
+  assert.equal(clip.sourceTitle, "新标题");
+  assert.equal(clip.posterKey, "/api/media?key=poster.png");
+  assert.equal(clip.trimStart, 1);
+  assert.equal(clip.trimEnd, 4);
+  assert.equal(clip.start, 2.5);
+  assert.equal(clip.volume, 0.4);
+  assert.deepEqual(clip.effects, [{ id: "mono", label: "黑白" }]);
+  assert.equal(clipDuration(clip), 3);
+  assert.equal(exportFlatClips(result.timeline)[0].trimEnd, 4);
+});
+
+test("syncTimelineSources 幂等：无漂移时返回原 timeline 引用", () => {
+  const sources = [upstream("v1", "same/v1.mp4")];
+  const base = migrateClips([flatWithKey("v1", "same/v1.mp4")]);
+  const unchanged = syncTimelineSources(base, sources);
+  assert.equal(unchanged.updated, 0);
+  assert.equal(unchanged.timeline, base);
+  const changed = syncTimelineSources(base, [upstream("v1", "new/v1.mp4")]);
+  const again = syncTimelineSources(changed.timeline, [upstream("v1", "new/v1.mp4")]);
+  assert.equal(again.updated, 0);
+  assert.equal(again.timeline, changed.timeline);
+});
+
+test("刷新时新增音频自动落 A1，新增视频不自动塞进 V1", () => {
+  const base = seedAudioSources(migrateClips([]), [audioSource("a")]);
+  const sources = [audioSource("a"), audioSource("b"), upstream("v9", "new/v9.mp4")];
+  const result = syncTimelineSources(base, sources);
+  assert.equal(result.addedAudio, 1);
+  assert.equal(audioClipsOf(result.timeline).length, 2);
+  assert.equal(mainVideoTrack(result.timeline).clips.length, 0);
+  assert.deepEqual(inspectSourceDrift(result.timeline, sources).added.map((item) => item.key), ["v9:0"]);
+});
+
+test("上游已消失的片段保留在时间线上，只提示不清理", () => {
+  const base = migrateClips([flatWithKey("v1", "old/v1.mp4")]);
+  const result = syncTimelineSources(base, []);
+  assert.equal(result.timeline, base);
+  assert.equal(mainVideoTrack(result.timeline).clips.length, 1);
+  assert.equal(inspectSourceDrift(base, []).missing.length, 1);
+});
+
+test("同节点换输出序号不算新增素材，也不误删已有片段", () => {
+  const base = migrateClips([flat({ sourceNodeId: "v1", outputIndex: 1, output: { storageKey: "old/v1.mp4", durationSec: 5 } })]);
+  const drift = inspectSourceDrift(base, [upstream("v1", "old/v1.mp4")]);
+  assert.equal(drift.added.length, 0);
+  assert.deepEqual(drift.missing.map((item) => item.key), ["v1:1"]);
+  assert.equal(mainVideoTrack(base).clips.length, 1);
+});
+
+// ---- 本地导入素材（排期 #4）----
+test("importedSourceFromAsset 把上传响应转成素材面板 source，时长按 durationMs 换算", () => {
+  const source = importedSourceFromAsset({
+    id: 42, name: "片头.mp4", kind: "video", storageKey: "users/7/assets/a.mp4",
+    posterKey: "users/7/assets/a.jpg", durationMs: 3200, sizeBytes: 1024,
+  }, "片头.mp4");
+  assert.equal(source.sourceNodeId, `${LOCAL_SOURCE_PREFIX}42`);
+  assert.ok(source.sourceNodeId.startsWith(LOCAL_SOURCE_PREFIX));
+  assert.equal(source.sourceTitle, "片头.mp4");
+  assert.equal(source.mediaType, "video");
+  assert.equal(source.storageKey, "users/7/assets/a.mp4");
+  assert.equal(source.output.durationSec, 3.2);
+  assert.equal(source.output.posterKey, "users/7/assets/a.jpg");
+  assert.equal(source.imported, true);
+  assert.equal(source.assetId, 42);
+  assert.equal(mediaKindOf(source), "video");
+});
+
+test("importedSourceFromAsset 识别音频 / 图片，缺失时长回落 5s，无 key 返回 null", () => {
+  const audio = importedSourceFromAsset({ id: 1, kind: "audio", storageKey: "users/7/a.mp3" });
+  assert.equal(audio.mediaType, "audio");
+  assert.equal(audio.output.durationSec, 5);
+  assert.equal(mediaKindOf(audio), "audio");
+  const image = importedSourceFromAsset({ id: 2, type: "image", storageKey: "users/7/a.png" });
+  assert.equal(image.mediaType, "image");
+  assert.equal(importedSourceFromAsset({ id: 3, kind: "video" }), null);
+});
+
+test("normalizeImportedSources 只保留合法导入项并按 sourceNodeId 去重", () => {
+  const one = importedSourceFromAsset({ id: 1, kind: "video", storageKey: "users/7/a.mp4" });
+  const two = importedSourceFromAsset({ id: 2, kind: "audio", storageKey: "users/7/b.mp3" });
+  const result = normalizeImportedSources([
+    one, { ...two, sourceNodeId: "video-1" }, null, { ...one, storageKey: "" }, one,
+  ]);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].sourceNodeId, `${LOCAL_SOURCE_PREFIX}1`);
+  assert.equal(result[0].imported, true);
+  assert.deepEqual(normalizeImportedSources("bad"), []);
+});
+
+test("导入素材落轨带 imported / localKey，导出扁平 clips 把 localKey 交给后端", () => {
+  const source = importedSourceFromAsset({
+    id: 9, name: "本地.mp4", kind: "video", storageKey: "users/7/assets/local.mp4", durationMs: 6000,
+  });
+  const clip = sourceClipFromQueue(source);
+  assert.equal(clip.imported, true);
+  assert.equal(clip.localKey, "users/7/assets/local.mp4");
+  assert.equal(clip.sourceNodeId, `${LOCAL_SOURCE_PREFIX}9`);
+  assert.equal(clipDuration(clip), 6);
+
+  const timeline = addClip(emptyTimeline(), "V1", { ...clip, id: "c1", start: 0 });
+  const exported = exportFlatClips(timeline)[0];
+  assert.equal(exported.localKey, "users/7/assets/local.mp4");
+  assert.equal(exported.sourceNodeId, `${LOCAL_SOURCE_PREFIX}9`);
+  // 上游片段不带 localKey，step map 与旧版逐字节一致
+  assert.ok(!("localKey" in exportFlatClips(migrateClips([flat()]))[0]));
+});
+
+test("导入音频落 A1 后导出 audioClips 同样携带 localKey 与 start", () => {
+  const source = importedSourceFromAsset({
+    id: 10, name: "配音.mp3", kind: "audio", storageKey: "users/7/assets/voice.mp3", durationMs: 4000,
+  });
+  const track = audioTracks(emptyTimeline())[0];
+  const timeline = addClip(emptyTimeline(), track.id, {
+    ...sourceClipFromQueue(source), id: "a1", start: 2.5,
+  });
+  const exported = exportAudioClips(timeline);
+  assert.equal(exported.length, 1);
+  assert.equal(exported[0].localKey, "users/7/assets/voice.mp3");
+  assert.equal(exported[0].start, 2.5);
+});
+
+test("漂移检测跳过导入片段：不报缺失 / 过期，也不污染新增素材", () => {
+  const imported = importedSourceFromAsset({ id: 5, kind: "video", storageKey: "users/7/assets/i.mp4" });
+  const timeline = addClip(migrateClips([flatWithKey("v1", "old/v1.mp4")]), "V1", {
+    ...sourceClipFromQueue(imported), id: "ci", start: 10,
+  });
+  const drift = inspectSourceDrift(timeline, [upstream("v1", "new/v1.mp4")]);
+  assert.deepEqual(drift.outdated.map((item) => item.key), ["v1:0"]);
+  assert.deepEqual(drift.missing, []);
+  assert.deepEqual(drift.added, []);
+  const synced = syncTimelineSources(timeline, [upstream("v1", "new/v1.mp4")]);
+  const stillImported = mainVideoTrack(synced.timeline).clips.find((clip) => clip.id === "ci");
+  assert.equal(stillImported.storageKey, "users/7/assets/i.mp4");
+  assert.equal(stillImported.localKey, "users/7/assets/i.mp4");
+  assert.equal(synced.addedAudio, 0);
+});
+
+test("导入音频不参与「打开即铺 A1」，刷新也不会把它灌回时间线", () => {
+  const imported = importedSourceFromAsset({ id: 6, kind: "audio", storageKey: "users/7/assets/bgm.mp3" });
+  const base = seedAudioSources(emptyTimeline(), [imported]);
+  assert.equal(audioClipsOf(base).length, 0);
+  const synced = syncTimelineSources(base, [imported, audioSource("upstream-a")]);
+  assert.equal(synced.addedAudio, 1);
+  assert.equal(audioClipsOf(synced.timeline)[0].sourceNodeId, "upstream-a");
+});
+
+test("probeLocalDuration 在非浏览器环境安全降级为 null", async () => {
+  const { probeLocalDuration } = await import("../src/components/workflow/editing-suite/localDuration.js");
+  assert.equal(await probeLocalDuration({ name: "a.mp4" }, "video"), null);
+  assert.equal(await probeLocalDuration({ name: "a.png" }, "image"), null);
 });

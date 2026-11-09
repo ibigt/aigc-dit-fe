@@ -218,6 +218,7 @@ export default function Timeline({ store, sources }) {
     if (!drop) return;
     const { item, kind } = drop;
     if (!item.output?.storageKey && !item.storageKey) { store.toast("该素材暂无可播放产物", "error"); return; }
+    if (mediaKindOf(item) === "image") { store.toast("图片素材暂不支持加入时间线（静帧合成待上线）", "error"); return; }
     if (track.type !== kind) {
       store.toast(kind === "audio"
         ? `音频素材只能落在音频轨，「${track.name}」不接收`

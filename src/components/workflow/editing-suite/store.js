@@ -96,6 +96,17 @@ export function createEditingStore(initialTimeline) {
     notify();
   }
 
+  // 上游产物刷新：只替换媒体引用，属于「跟随外部状态」而非用户编辑，
+  // 故不进撤销栈、不标 dirty。清 future 避免 redo 把旧 storageKey 带回来。
+  // past 保留（用户此前的编辑仍可撤销），同步 effect 只由上游指纹触发，
+  // undo 不会重新触发同步，因此不会出现「撤销 → 又被拉回」的循环。
+  function syncTimeline(nextTimeline) {
+    if (!nextTimeline || nextTimeline === state.doc.timeline) return false;
+    state = { ...state, doc: { ...state.doc, timeline: nextTimeline }, future: [] };
+    notify();
+    return true;
+  }
+
   function toast(message, tone = "info") {
     window.clearTimeout(toastTimer);
     setView({ toast: { message, tone } });
@@ -117,7 +128,7 @@ export function createEditingStore(initialTimeline) {
   const getTime = () => time;
 
   return {
-    getState, subscribe, setView, commit, undo, redo, select, toast,
+    getState, subscribe, setView, commit, undo, redo, select, syncTimeline, toast,
     setTime, subscribeTime, getTime,
     canUndo: () => state.past.length > 0,
     canRedo: () => state.future.length > 0,

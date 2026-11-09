@@ -102,6 +102,54 @@ export function clipEnd(clip) {
   return (Number(clip?.start) || 0) + clipDuration(clip);
 }
 
+// 裁剪数值输入的最短片段时长，与时间线 trim 拖拽的 0.1s 下限保持一致。
+export const MIN_TRIM_DURATION = 0.1;
+
+const round3 = (value) => Math.round(value * 1000) / 1000;
+
+/**
+ * 校验属性面板的「入点 / 出点」输入，产出可直接交给 updateClip 的 patch。
+ * 入参允许字符串（保留「1.」这类输入中间态）；不合法时只返回 error，绝不写坏 timeline。
+ * patch 同步 duration：clipDuration 优先用 trimEnd-trimStart，但拖拽裁剪 / 旧草稿迁移
+ * 会读写 clip.duration，两处保持一致才不会让时间线宽度与导出时长分叉。
+ */
+export function validateTrim({ trimStart, trimEnd, minDuration = MIN_TRIM_DURATION } = {}) {
+  const toNumber = (raw) => {
+    if (typeof raw === "number") return raw;
+    const text = String(raw ?? "").trim();
+    return text ? Number(text) : Number.NaN;
+  };
+  const start = toNumber(trimStart);
+  const end = toNumber(trimEnd);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) {
+    return { ok: false, error: "请输入有效的裁剪数值" };
+  }
+  if (start < 0) {
+    return { ok: false, error: "入点不能小于 0s" };
+  }
+  if (end <= start) {
+    return { ok: false, error: "出点必须大于入点" };
+  }
+  const duration = round3(end - start);
+  if (duration < minDuration) {
+    return { ok: false, error: `裁剪时长不能短于 ${minDuration}s` };
+  }
+  return {
+    ok: true,
+    duration,
+    patch: { trimStart: round3(start), trimEnd: round3(end), duration },
+  };
+}
+
+/** 片段当前生效的裁剪区间（旧草稿可能没有 trimEnd，用 clipDuration 兜底）。 */
+export function trimRangeOf(clip) {
+  const trimStart = Number(clip?.trimStart) || 0;
+  const trimEnd = Number.isFinite(Number(clip?.trimEnd)) && Number(clip?.trimEnd) > 0
+    ? Number(clip.trimEnd)
+    : trimStart + clipDuration(clip);
+  return { trimStart, trimEnd };
+}
+
 const uid = (prefix) => `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 
 export function defaultTracks() {
@@ -171,12 +219,33 @@ export function exportFlatClips(timeline) {
       muted: Boolean(clip.muted),
       volume: Number.isFinite(Number(clip.volume)) ? Number(clip.volume) : 1,
       enabled: true,
+      // 本地导入素材没有对应的上游生成步骤，后端据此直接读 storageKey（并校验归属）
+      ...(clip.imported && clip.localKey ? { localKey: clip.localKey } : {}),
     }));
 }
 
 export function mainVideoTrack(timeline) {
   const videos = (timeline?.tracks || []).filter((track) => track.type === "video");
   return videos.find((track) => track.id === "V1") || videos.at(-1) || null;
+}
+
+// 导出用音频片段（混入成片）：与 playableAudioClips 同一过滤口径（轨不静音 /
+// 片段启用 / 未静音 / 有可播放产物），但比视频扁平 clips 多一个 start —— 它是
+// 时间线上的绝对位置，后端据此 adelay 对齐混入点。注意视频导出是「空隙压缩
+// 首尾拼接」，V1 无空隙时时间线时间与成片时间一致；V1 有空隙时按成片时间近似。
+export function exportAudioClips(timeline) {
+  return playableAudioClips(timeline)
+    .filter((clip) => clip.enabled !== false && clip.muted !== true && clip.storageKey)
+    .map((clip) => ({
+      sourceNodeId: clip.sourceNodeId,
+      outputIndex: Number(clip.outputIndex) || 0,
+      start: Math.max(0, Number(clip.start) || 0),
+      trimStart: Number(clip.trimStart) || 0,
+      trimEnd: Number(clip.trimEnd) || (Number(clip.trimStart) || 0) + clipDuration(clip),
+      muted: Boolean(clip.muted),
+      volume: Number.isFinite(Number(clip.volume)) ? Number(clip.volume) : 1,
+      ...(clip.imported && clip.localKey ? { localKey: clip.localKey } : {}),
+    }));
 }
 
 export function allClips(timeline) {
@@ -188,7 +257,7 @@ export function audioTracks(timeline) {
 }
 
 // 预览用音频片段：音频轨（未被静音）上启用的片段，按开始时间升序。
-// 轨道静音 = 整轨不参与预览；片段 muted = 只静该段。导出成片暂不混入音频轨（后端合成链路见批次②）。
+// 轨道静音 = 整轨不参与预览；片段 muted = 只静该段。导出成片经 exportAudioClips 混入（同口径过滤）。
 export function playableAudioClips(timeline) {
   return audioTracks(timeline)
     .flatMap((track) => (track.muted ? [] : track.clips
@@ -439,6 +508,53 @@ export function clipFilter(clip) {
   return parts.length ? parts.join(" ") : "none";
 }
 
+// 本地导入素材的 sourceNodeId 前缀。它不在画布 graph 里，后端合成时按 localKey
+// 直读对象存储，不会去 steps 里找「上游生成步骤」。
+export const LOCAL_SOURCE_PREFIX = "local:";
+
+/**
+ * 把 /api/assets 上传响应转成剪辑台素材面板的 source。纯函数，便于单测。
+ * kind 沿用后端 AssetKind（image/video/audio）；durationMs 缺失时回落 5s，
+ * 用户可在右侧属性面板改裁剪区间。posterKey 是裸 storageKey，resolveThumbUrls 可反解。
+ */
+export function importedSourceFromAsset(asset = {}, fallbackName = "") {
+  const storageKey = String(asset.storageKey || "");
+  if (!storageKey) return null;
+  const kind = String(asset.kind || asset.type || "").toLowerCase();
+  const mediaType = kind === "audio" || kind === "image" ? kind : "video";
+  const id = asset.id != null ? String(asset.id) : Math.random().toString(36).slice(2, 10);
+  const durationSec = Number(asset.durationMs) > 0 ? Number(asset.durationMs) / 1000 : 5;
+  return {
+    sourceNodeId: `${LOCAL_SOURCE_PREFIX}${id}`,
+    sourceTitle: asset.name || asset.title || fallbackName || `本地素材 ${id}`,
+    mediaType,
+    storageKey,
+    outputIndex: 0,
+    output: {
+      storageKey,
+      posterKey: asset.posterKey || "",
+      type: mediaType,
+      durationSec,
+    },
+    imported: true,
+    assetId: asset.id ?? null,
+    sizeBytes: Number(asset.sizeBytes) || 0,
+  };
+}
+
+/** 草稿里的导入清单做防御式清洗：只保留有 key、带 local: 前缀的合法项。 */
+export function normalizeImportedSources(list) {
+  if (!Array.isArray(list)) return [];
+  const seen = new Set();
+  return list.flatMap((item) => {
+    const key = String(item?.output?.storageKey || item?.storageKey || "");
+    const sourceNodeId = String(item?.sourceNodeId || "");
+    if (!key || !sourceNodeId.startsWith(LOCAL_SOURCE_PREFIX) || seen.has(sourceNodeId)) return [];
+    seen.add(sourceNodeId);
+    return [{ ...item, imported: true, storageKey: key, sourceNodeId }];
+  });
+}
+
 export function sourceClipFromQueue(item) {
   const trimStart = Number(item.trimStart) || 0;
   const trimEnd = Number(item.trimEnd);
@@ -455,9 +571,11 @@ export function sourceClipFromQueue(item) {
     outputIndex: Number(item.outputIndex) || 0,
     sourceTitle: item.sourceTitle || item.sourceNodeId,
     storageKey: item.output?.storageKey || item.storageKey || "",
-    posterKey: item.output?.posterUrl || "",
+    posterKey: item.output?.posterUrl || item.output?.posterKey || "",
     muted: Boolean(item.muted),
     volume: Number.isFinite(Number(item.volume)) ? Number(item.volume) : 1,
+    // 导入素材带标记：漂移检测跳过它，导出成片时把 localKey 交给后端直读
+    ...(item.imported ? { imported: true, localKey: item.output?.storageKey || item.storageKey || "" } : {}),
   };
 }
 
@@ -475,21 +593,27 @@ export function mediaKindOf(item) {
   return "video";
 }
 
+// 上游产物标识：节点 id + 输出序号。剪辑台片段、素材面板、漂移检测共用同一口径。
+export function sourceKeyOf(item) {
+  return `${item?.sourceNodeId || ""}:${Number(item?.outputIndex) || 0}`;
+}
+
 // 上游音频素材自动落到 A1，与「视频 clips → migrateClips → V1」对齐。
 // seededAudioKeys 记录已同步过的上游产物，保证：① 每次打开只补新增的音频节点，不重复添加；
 // ② 用户手动删掉的片段不会被重新灌回来。无草稿与已存草稿两条初始化路径都会经过这里。
 function audioSourceKey(item) {
-  return `${item?.sourceNodeId || ""}:${Number(item?.outputIndex) || 0}`;
+  return sourceKeyOf(item);
 }
 
 function clipSourceKey(clip) {
-  return `${clip?.sourceNodeId || ""}:${Number(clip?.outputIndex) || 0}`;
+  return sourceKeyOf(clip);
 }
 
 export function seedAudioSources(timeline, sources = []) {
   if (!timeline?.tracks) return timeline;
+  // 导入音频必须手动落轨，不参与「打开即铺 A1」：否则用户导入一次、每次刷新都会被灌回时间线
   const incoming = (Array.isArray(sources) ? sources : []).filter(
-    (item) => mediaKindOf(item) === "audio" && (item?.output?.storageKey || item?.storageKey),
+    (item) => !item?.imported && mediaKindOf(item) === "audio" && (item?.output?.storageKey || item?.storageKey),
   );
   const seen = new Set(timeline.seededAudioKeys || []);
   const keys = [...new Set(incoming.map(audioSourceKey))];
@@ -515,6 +639,87 @@ export function seedAudioSources(timeline, sources = []) {
   }
   if (!freshKeys.length) return next;
   return { ...next, seededAudioKeys: [...seen, ...freshKeys] };
+}
+
+// ── 上游产物漂移（剪辑台内刷新产物，需求排期 #3）──────────────────────────
+// 上游节点重新生成后 storageKey 会变，而 timeline 是打开剪辑台那一刻的快照；
+// 不回写的话，播放 / 缩略图 / 导出都会一直指向旧文件。刷新只动媒体引用，
+// 绝不碰用户编排（trim / start / 音量 / 特效 / 文字 / 轨道位置）。
+function indexUpstreamSources(sources = []) {
+  const map = new Map();
+  for (const item of (Array.isArray(sources) ? sources : [])) {
+    if (item?.imported) continue; // 导入素材不是上游产物，不参与漂移比对
+    const storageKey = item?.output?.storageKey || item?.storageKey || "";
+    if (!item?.sourceNodeId || !storageKey) continue;
+    map.set(sourceKeyOf(item), { ...item, storageKey });
+  }
+  return map;
+}
+
+/**
+ * 对比时间线片段与当前上游产物：
+ * - outdated：key 相同但 storageKey 变了（上游重新生成过），需回写媒体引用
+ * - missing ：片段引用的上游产物已不存在（上游节点被删 / 连线断开 / 产物被清）
+ * - added   ：上游有产物但时间线里没有对应片段（新节点 / 新产物，等用户手动落轨）
+ */
+export function inspectSourceDrift(timeline, sources = []) {
+  const upstream = indexUpstreamSources(sources);
+  const timelineKeys = new Set();
+  const timelineNodeIds = new Set();
+  const outdated = [];
+  const missing = [];
+  for (const { clip } of allClips(timeline)) {
+    if (clip.type !== "video" && clip.type !== "audio") continue;
+    // 本地导入片段不依赖画布上游节点，既不算缺失也不算过期
+    if (clip.imported) continue;
+    const key = sourceKeyOf(clip);
+    timelineKeys.add(key);
+    timelineNodeIds.add(clip.sourceNodeId);
+    const latest = upstream.get(key);
+    if (!latest) { missing.push({ clipId: clip.id, key, clip }); continue; }
+    if ((clip.storageKey || "") !== latest.storageKey) {
+      outdated.push({ clipId: clip.id, key, clip, latest });
+    }
+  }
+  // 同一节点换了输出序号（如节点卡改选第 2 个产物）不算「新增素材」，
+  // 否则会给用户常驻一条「有 N 个新产物可拖入」的假提示。
+  const added = [...upstream.entries()]
+    .filter(([key, item]) => !timelineKeys.has(key) && !timelineNodeIds.has(item.sourceNodeId))
+    .map(([key, item]) => ({ key, source: item }));
+  return { outdated, missing, added };
+}
+
+/**
+ * 同步最新上游产物到时间线。新增音频沿用 seedAudioSources 的「打开即落 A1」口径；
+ * 新增视频**不自动入 V1**（避免打乱用户已编排的主视频轨），只在素材面板列示。
+ * 无变化时返回原 timeline 引用，调用方据此跳过写回，保证幂等、不误标脏。
+ */
+export function syncTimelineSources(timeline, sources = []) {
+  if (!timeline?.tracks) return { timeline, updated: 0, addedAudio: 0 };
+  const { outdated } = inspectSourceDrift(timeline, sources);
+  const patches = new Map();
+  for (const entry of outdated) {
+    const { latest, clip } = entry;
+    patches.set(entry.clipId, {
+      storageKey: latest.storageKey,
+      posterKey: latest.output?.posterUrl || latest.output?.posterKey || "",
+      sourceTitle: latest.sourceTitle || clip.sourceTitle || entry.key,
+    });
+  }
+  let next = timeline;
+  if (patches.size) {
+    next = {
+      ...next,
+      tracks: next.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) => (patches.has(clip.id) ? { ...clip, ...patches.get(clip.id) } : clip)),
+      })),
+    };
+  }
+  const audioCount = (doc) => audioTracks(doc).reduce((sum, track) => sum + track.clips.length, 0);
+  const before = audioCount(next);
+  next = seedAudioSources(next, sources);
+  return { timeline: next, updated: patches.size, addedAudio: audioCount(next) - before };
 }
 
 export function formatTime(seconds, withFrames = false) {

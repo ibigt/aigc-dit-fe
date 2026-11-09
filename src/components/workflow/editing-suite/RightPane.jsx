@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
-import { EFFECT_PRESETS, TRANSITION_PRESETS, clipDuration, removeTrack, updateClip, updateTrack } from "./model.js";
+import {
+  EFFECT_PRESETS, TRANSITION_PRESETS, clipDuration, removeTrack,
+  trimRangeOf, updateClip, updateTrack, validateTrim,
+} from "./model.js";
 import { useEditingStore } from "./store.js";
+import { downloadMediaFile, mediaDownloadName } from "../../../lib/media.js";
 import Icon from "./Icons.jsx";
+
+const trimText = (value) => String(Math.round((Number(value) || 0) * 1000) / 1000);
 
 export default function RightPane({ store }) {
   const state = useEditingStore(store);
@@ -10,12 +16,61 @@ export default function RightPane({ store }) {
   const clip = timeline.tracks.flatMap((track) => track.clips).find((item) => selection.includes(item.id));
   const track = view.activeTrackId ? timeline.tracks.find((item) => item.id === view.activeTrackId) : null;
   const [draft, setDraft] = useState({});
+  // 初值直接取首个 clip 的真实裁剪区间，避免首帧闪一下「出点必须大于入点」。
+  const [trimDraft, setTrimDraft] = useState(() => {
+    const range = trimRangeOf(clip);
+    return { trimStart: trimText(range.trimStart), trimEnd: trimText(range.trimEnd) };
+  });
+  const [downloading, setDownloading] = useState(false);
   useEffect(() => { setDraft(clip || {}); },
     [clip?.id, clip?.adjust?.brightness, clip?.adjust?.contrast, clip?.adjust?.saturate, clip?.text, clip?.graphic?.color, clip?.graphic?.scale]);
+
+  const isMediaClip = clip?.type === "video" || clip?.type === "audio";
+  // 切换片段 / 裁剪被时间线拖拽改动时，输入框回填真实值；输入过程中不回填，避免打断「1.」这类中间态。
+  useEffect(() => {
+    if (!isMediaClip) return;
+    const range = trimRangeOf(clip);
+    setTrimDraft({ trimStart: trimText(range.trimStart), trimEnd: trimText(range.trimEnd) });
+  }, [clip?.id, clip?.trimStart, clip?.trimEnd, clip?.duration, isMediaClip]);
+
+  const trimResult = isMediaClip ? validateTrim(trimDraft) : null;
 
   function apply(patch) {
     if (!clip) return;
     store.commit("调整参数", (doc) => ({ ...doc, timeline: updateClip(doc.timeline, clip.id, patch) }));
+  }
+
+  // 失焦 / 回车提交：非法输入保留输入态并标错提示，不写 timeline；值未变不压撤销栈。
+  function commitTrim() {
+    if (!clip || !isMediaClip) return;
+    const result = validateTrim(trimDraft);
+    if (!result.ok) {
+      store.toast(result.error, "error");
+      return;
+    }
+    const current = validateTrim(trimRangeOf(clip));
+    if (current.ok && current.patch.trimStart === result.patch.trimStart
+      && current.patch.trimEnd === result.patch.trimEnd) return;
+    apply(result.patch);
+  }
+
+  async function downloadClip() {
+    if (!clip?.storageKey || downloading) return;
+    setDownloading(true);
+    try {
+      const filename = mediaDownloadName({
+        title: clip.sourceTitle || "片段",
+        fallback: clip.type === "audio" ? "音频素材" : "视频素材",
+        type: clip.type,
+        storageKey: clip.storageKey,
+      });
+      await downloadMediaFile(clip.storageKey, filename);
+      store.toast("原始素材已开始下载", "ok");
+    } catch {
+      store.toast("下载失败，请检查素材是否仍有效", "error");
+    } finally {
+      setDownloading(false);
+    }
   }
 
   const adjust = draft.adjust || clip?.adjust || {};
@@ -97,21 +152,66 @@ export default function RightPane({ store }) {
         {view.rightTab === "props" && clip && (
           <>
             <div className="ce-grp">选中片段 · {clip.sourceTitle || clip.type}</div>
-            {(clip.type === "video" || clip.type === "audio") && (
-              <button className={`btn2 ce-solo-btn ${view.soloClipId === clip.id ? "on" : ""}`}
-                disabled={!clip.storageKey}
-                onClick={() => {
-                  if (view.soloClipId === clip.id) { store.setView({ soloClipId: null, playing: false }); return; }
-                  if (!clip.storageKey) { store.toast("该片段暂无可播放产物", "error"); return; }
-                  store.setView({ soloClipId: clip.id, playing: true });
-                }}>
-                <Icon name={view.soloClipId === clip.id ? "x" : "play"} size={13} />
-                {view.soloClipId === clip.id ? "退出单独预览" : "单独播放此片段（P）"}
-              </button>
+            {isMediaClip && (
+              <div className="ce-clip-actions">
+                <button className={`btn2 ce-solo-btn ${view.soloClipId === clip.id ? "on" : ""}`}
+                  disabled={!clip.storageKey}
+                  title="单独播放此片段（快捷键 P）"
+                  onClick={() => {
+                    if (view.soloClipId === clip.id) { store.setView({ soloClipId: null, playing: false }); return; }
+                    if (!clip.storageKey) { store.toast("该片段暂无可播放产物", "error"); return; }
+                    store.setView({ soloClipId: clip.id, playing: true });
+                  }}>
+                  <Icon name={view.soloClipId === clip.id ? "x" : "play"} size={13} />
+                  {view.soloClipId === clip.id ? "退出预览" : "单独播放"}
+                </button>
+                <button className="btn2 ce-download-btn" disabled={!clip.storageKey || downloading}
+                  title="下载该片段的上游原始素材文件（不含裁剪 / 音量 / 特效）"
+                  onClick={downloadClip}>
+                  <Icon name="download" size={13} />
+                  {downloading ? "下载中…" : "下载素材"}
+                </button>
+              </div>
+            )}
+            {isMediaClip && !clip.storageKey && (
+              <div className="ce-hint" style={{ marginTop: -4 }}>该片段暂无上游产物，播放与下载暂不可用。</div>
             )}
             <div className="ce-slid">
               <div className="row"><span>时间</span><b>{(Number(clip.start) || 0).toFixed(1)}s → {(Number(clip.start) + clipDuration(clip)).toFixed(1)}s</b></div>
             </div>
+
+            {isMediaClip && (
+              <>
+                <div className="ce-sep"></div>
+                <div className="ce-grp">裁剪（源素材时间 · 秒）</div>
+                <div className="ce-trim-grid">
+                  <div className="ce-trim-cell">
+                    <label htmlFor={`trim-start-${clip.id}`}>入点</label>
+                    <input id={`trim-start-${clip.id}`}
+                      className={`ce-input ${trimResult?.ok ? "" : "err"}`}
+                      type="number" min="0" step="0.1" value={trimDraft.trimStart}
+                      onChange={(event) => setTrimDraft((current) => ({ ...current, trimStart: event.target.value }))}
+                      onBlur={commitTrim}
+                      onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
+                  </div>
+                  <div className="ce-trim-cell">
+                    <label htmlFor={`trim-end-${clip.id}`}>出点</label>
+                    <input id={`trim-end-${clip.id}`}
+                      className={`ce-input ${trimResult?.ok ? "" : "err"}`}
+                      type="number" min="0" step="0.1" value={trimDraft.trimEnd}
+                      onChange={(event) => setTrimDraft((current) => ({ ...current, trimEnd: event.target.value }))}
+                      onBlur={commitTrim}
+                      onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
+                  </div>
+                </div>
+                {trimResult?.ok ? (
+                  <div className="ce-hint">裁后时长 {trimResult.duration.toFixed(1)}s；数值同步作用于预览与成片导出。片段在时间线上的位置不变，后续片段如需顺延请自行拖动。</div>
+                ) : (
+                  <div className="ce-field-error">{trimResult?.error}</div>
+                )}
+                <div className="ce-hint">下载的是上游原始素材文件，不含裁剪、音量与特效；裁剪后的画面请用「导出成片」。</div>
+              </>
+            )}
 
             {(clip.type === "video" || clip.type === "audio") && (
               <>

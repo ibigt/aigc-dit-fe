@@ -78,6 +78,12 @@
   transition:color 80ms var(--ease),border-color 80ms var(--ease)}
 .ce-quality:hover{color:var(--t1);border-color:var(--line2)}
 .ce-quality option{background:var(--bg-raised);color:var(--t1)}
+/* 上游产物漂移提示条（剪辑台内刷新产物，排期 #3） */
+.ce-source-banner{display:flex;align-items:center;gap:8px;min-height:30px;padding:4px 16px;flex-shrink:0;
+  background:rgba(245,196,81,.08);border-bottom:1px solid rgba(245,196,81,.22);color:var(--warn);font-size:11px;line-height:1.5}
+.ce-source-banner[data-tone=info]{background:var(--accs);border-bottom-color:var(--accr);color:var(--acc)}
+.ce-source-banner span{flex:1;min-width:0}
+.ce-source-banner .btn2{height:22px;padding:0 8px;font-size:10px;flex-shrink:0;color:inherit;border-color:currentColor}
 /* 中部 */
 .ce-mid{flex:1;display:flex;min-height:0}
 .ce-rail{width:56px;background:var(--bg-panel);border-right:1px solid var(--line1);display:flex;flex-direction:column;align-items:center;padding:8px 0;flex-shrink:0}
@@ -117,9 +123,18 @@
   font-size:11px;display:flex;align-items:center;justify-content:center;line-height:1;opacity:0;transform:scale(.8);padding:0}
 .ce-mcard:hover .ce-add{opacity:1;transform:none}
 .ce-add:hover{background:var(--acc)}
+/* 本地导入素材：虚线边框区分于上游产物；移除按钮只从剪辑台清单剔除，不删素材库文件 */
+.ce-mcard.imported{border-style:dashed}
+.ce-mcard-remove{position:absolute;z-index:3;top:4px;left:4px;width:17px;height:17px;padding:0;border:none;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;background:rgba(20,23,28,.78);color:var(--t2);opacity:0;line-height:1;
+  transition:opacity 80ms var(--ease),color 80ms var(--ease)}
+.ce-mcard:hover .ce-mcard-remove{opacity:1}
+.ce-mcard-remove:hover{color:#f08a8a}
 .ce-upload{margin-top:12px;height:40px;border:1px dashed var(--line2);border-radius:6px;display:flex;align-items:center;justify-content:center;
   gap:6px;color:var(--t3);font-size:11px;cursor:pointer;transition:color 80ms var(--ease),border-color 80ms var(--ease),background-color 80ms var(--ease)}
 .ce-upload:hover{color:var(--t1);border-color:var(--acc);background:rgba(108,178,236,.06)}
+.ce-upload.busy{opacity:.6;cursor:progress}
+.ce-upload.busy:hover{color:var(--t3);border-color:var(--line2);background:transparent}
 .ce-p2{padding:24px 8px;text-align:center;color:var(--t3);font-size:11px;line-height:1.8}
 .ce-p2 small{font-size:10px;opacity:.8}
 /* 播放器 */
@@ -311,6 +326,11 @@
 .ce-solo-chip button:hover{background:var(--bg-hover);color:var(--t1)}
 .ce-solo-btn{width:100%;justify-content:center;margin-bottom:12px}
 .ce-solo-btn.on,.ce-solo-btn.on:hover{color:var(--acc);border-color:var(--accr);background:var(--accs)}
+/* 片段操作：单独播放 / 下载原始素材并排 */
+.ce-clip-actions{display:flex;gap:6px;margin-bottom:12px}
+.ce-clip-actions .btn2{flex:1;min-width:0;justify-content:center;padding:0 6px;white-space:nowrap}
+.ce-clip-actions .ce-solo-btn{width:auto;margin-bottom:0}
+.ce-clip-actions .ce-download-btn:hover:not(:disabled){color:var(--acc);border-color:var(--accr);background:var(--accs)}
 /* ── 左栏预设面板（文字样式 / 图形 / 特效 / 转场 / 调节）── */
 .ce-preset-list{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .ce-preset{display:flex;align-items:center;gap:7px;height:34px;padding:0 8px;border-radius:6px;text-align:left;
@@ -337,6 +357,13 @@
   border:1px solid var(--line1);color:var(--t1);font-size:11px;line-height:16px;outline:none}
 .ce-input:hover{border-color:var(--line2)}
 .ce-input:focus{outline:none;border-color:var(--acc)}
+/* 裁剪数值输入：非法值实时标红，失焦前不提交 */
+.ce-trim-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.ce-trim-cell{display:flex;align-items:center;gap:6px;min-width:0}
+.ce-trim-cell label{font-size:10px;color:var(--t2);white-space:nowrap}
+.ce-trim-cell .ce-input{width:100%;flex:1}
+.ce-input.err,.ce-input.err:hover,.ce-input.err:focus{border-color:var(--dan)}
+.ce-field-error{margin:-2px 0 8px;font-size:10px;line-height:1.6;color:var(--dan)}
 .ce-color{width:26px;height:26px;padding:0;border:1px solid var(--line1);border-radius:6px;background:var(--bg-input);
   cursor:pointer;flex-shrink:0}
 .ce-color::-webkit-color-swatch-wrapper{padding:2px}

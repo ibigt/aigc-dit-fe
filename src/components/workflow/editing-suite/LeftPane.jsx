@@ -1,13 +1,19 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ADJUST_PRESETS, EFFECT_PRESETS, GRAPHIC_PRESETS, TEXT_STYLES, TRANSITION_PRESETS,
   addClip, addTrack, applyAdjustPreset, applyEffect, applyGraphic, applyTextStyle, applyTransition,
-  audioTracks, clipEnd, mainVideoTrack, mediaKindOf, sourceClipFromQueue,
+  audioTracks, clipEnd, importedSourceFromAsset, mainVideoTrack, mediaKindOf, sourceClipFromQueue,
 } from "./model.js";
+import { uploadAsset } from "../../../api/assets.js";
+import { probeLocalDuration } from "./localDuration.js";
 import { parseSrt } from "./srt.js";
 import { useEditingStore } from "./store.js";
 import Icon from "./Icons.jsx";
 import MediaThumb, { resolveThumbUrls } from "./MediaThumb.jsx";
+
+// 与后端 AssetUploadPolicy 保持一致；图片可上传列示，但落轨需等静帧合成（排期 #7）
+const ACCEPTED = ".mp4,.webm,.mov,.mp3,.wav,.m4a,.aac,.flac,.ogg,.jpg,.jpeg,.png,.webp,.gif";
+const MAX_IMPORT_BYTES = { video: 200 * 1024 * 1024, audio: 100 * 1024 * 1024, image: 20 * 1024 * 1024 };
 
 const PANELS = [
   { id: "media", label: "素材", icon: "media" },
@@ -31,11 +37,13 @@ const THUMB_SHADES = [
   "linear-gradient(110deg,#4a3a30 0%,#63503a 45%,#3a3026)",
 ];
 
-export default function LeftPane({ store, sources }) {
+export default function LeftPane({ store, sources, onImportSources, onRemoveImported }) {
   const state = useEditingStore(store);
   const { timeline, selection } = state.doc;
   const view = state.view;
   const fileRef = useRef(null);
+  const importRef = useRef(null);
+  const [importing, setImporting] = useState(false);
   const filter = view.mediaFilter || "all";
   const selectedClip = timeline.tracks.flatMap((track) => track.clips).find((item) => selection.includes(item.id)) || null;
 
@@ -54,6 +62,7 @@ export default function LeftPane({ store, sources }) {
   // 起始位置取该轨现有片段的末尾，沿用「首尾相接」的直觉；音频轨可再自由拖动对齐。
   function appendSource(item) {
     if (!item?.output?.storageKey && !item?.storageKey) { store.toast("该素材暂无可播放产物", "error"); return; }
+    if (mediaKindOf(item) === "image") { store.toast("图片素材暂不支持加入时间线（静帧合成待上线）", "error"); return; }
     const kind = mediaKindOf(item) === "audio" ? "audio" : "video";
     let target = "";
     store.commit(kind === "audio" ? "添加音频素材" : "添加素材", (doc) => {
@@ -71,6 +80,46 @@ export default function LeftPane({ store, sources }) {
     });
     // 明确告诉用户落在哪条轨道：音频不会跑到视频轨，也不用猜
     if (target) store.toast(`${kind === "audio" ? "音频" : "视频"}素材已加入「${target}」`, "ok");
+  }
+
+  // 本地文件 → 素材库上传 → source 清单。素材只列在剪辑台草稿里，不往画布 graph 塞节点；
+  // 落轨仍由用户双击 / 拖拽决定，与「上游产物自动铺 V1/A1」的口径区分开。
+  async function importFiles(event) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (!files.length || importing) return;
+    setImporting(true);
+    const imported = [];
+    const failures = [];
+    try {
+      for (const file of files) {
+        const kind = fileKindOf(file.name);
+        if (!kind) { failures.push(`${file.name}：格式不支持`); continue; }
+        if (file.size > MAX_IMPORT_BYTES[kind]) { failures.push(`${file.name}：超过大小上限`); continue; }
+        try {
+          const asset = await uploadAsset(file, { name: file.name });
+          // 后端 ffprobe 可能没解析出时长；本地再读一次 metadata，避免按默认 5s 落轨后
+          // 导出时 ffmpeg 报「裁剪范围超过源视频时长」
+          if (!(Number(asset?.durationMs) > 0) && kind !== "image") {
+            const seconds = await probeLocalDuration(file, kind);
+            if (seconds && asset) asset.durationMs = Math.round(seconds * 1000);
+          }
+          const source = importedSourceFromAsset(asset, file.name);
+          if (source) imported.push(source);
+          else failures.push(`${file.name}：上传未返回文件路径`);
+        } catch (error) {
+          failures.push(`${file.name}：${error?.message || "上传失败"}`);
+        }
+      }
+      if (imported.length) onImportSources?.(imported);
+      const parts = [];
+      if (imported.length) parts.push(`已导入 ${imported.length} 个素材到素材面板，双击或拖入时间线`);
+      if (imported.some((item) => item.mediaType === "image")) parts.push("图片暂不支持加入时间线");
+      if (failures.length) parts.push(`${failures.length} 个失败：${failures[0]}`);
+      store.toast(parts.join("；") || "未导入任何素材", failures.length && !imported.length ? "error" : (failures.length ? "info" : "ok"));
+    } finally {
+      setImporting(false);
+    }
   }
 
   async function importSrt(event) {
@@ -192,7 +241,7 @@ export default function LeftPane({ store, sources }) {
                       onClick={() => store.setView({ mediaFilter: item.id })}>{item.label}</button>
                   ))}
                 </div>
-                {groups.length === 0 && <div className="ce-p2"><Icon name="film" size={24} style={{ margin: "0 auto 8px", opacity: .5 }} />暂无上游素材<br />在画布生成视频或音频并连到剪辑节点</div>}
+                {groups.length === 0 && <div className="ce-p2"><Icon name="film" size={24} style={{ margin: "0 auto 8px", opacity: .5 }} />暂无素材<br />在画布生成视频或音频并连到剪辑节点，或导入本地文件</div>}
                 {groups.map(([key, items]) => (
                   <div key={key}>
                     <div className="ce-group">{items[0]?.sourceTitle || `节点 ${String(key).slice(-6)}`}</div>
@@ -206,13 +255,19 @@ export default function LeftPane({ store, sources }) {
                           : resolveThumbUrls({ output: item.output, storageKey: item.storageKey }, 160);
                         const shade = THUMB_SHADES[index % THUMB_SHADES.length];
                         return (
-                          <div key={`${key}-${index}`} className="ce-mcard" draggable
-                            title={`${kind === "audio" ? "音频" : "视频"}素材：拖入时间线，或双击追加`}
+                          <div key={`${key}-${index}`} className={`ce-mcard ${item.imported ? "imported" : ""}`} draggable
+                            title={kind === "image" ? "图片素材：暂不支持加入时间线" : `${kind === "audio" ? "音频" : "视频"}素材：拖入时间线，或双击追加`}
                             onDragStart={(event) => {
                               event.dataTransfer.setData("application/x-editing-source", String(sourceIndex));
                               event.dataTransfer.effectAllowed = "copy";
                             }}
                             onDoubleClick={() => appendSource(item)}>
+                            {item.imported && (
+                              <button className="ce-mcard-remove" title="从剪辑台素材清单移除（不删除素材库文件）"
+                                onClick={(event) => { event.stopPropagation(); onRemoveImported?.(item.sourceNodeId); }}>
+                                <Icon name="x" size={10} />
+                              </button>
+                            )}
                             <div className={`thumb ${kind === "audio" ? "audio" : ""}`}
                               style={kind === "audio" ? undefined : { background: shade }}>
                               {kind !== "audio" && <MediaThumb poster={poster} video={video} />}
@@ -221,11 +276,13 @@ export default function LeftPane({ store, sources }) {
                                   <i key={i} style={{ height: 6 + (Math.sin(i * 1.9) + 1) * 9 }} />
                                 ))}</span>
                               )}
-                              <button className="ce-add" title="添加到时间线" onClick={(event) => { event.stopPropagation(); appendSource(item); }}><Icon name="plus" size={12} /></button>
+                              {kind !== "image" && (
+                                <button className="ce-add" title="添加到时间线" onClick={(event) => { event.stopPropagation(); appendSource(item); }}><Icon name="plus" size={12} /></button>
+                              )}
                             </div>
                             <div className="lab">
                               <b>{item.sourceTitle || item.sourceNodeId}</b>
-                              <em>{clipEndSource(item).toFixed(1)}s</em>
+                              <em>{kind === "image" ? "图片" : `${clipEndSource(item).toFixed(1)}s`}</em>
                             </div>
                           </div>
                         );
@@ -233,8 +290,11 @@ export default function LeftPane({ store, sources }) {
                     </div>
                   </div>
                 ))}
-                <div className="ce-hint">音频素材自动落到音频轨 A1，视频素材落到主视频轨 V1。</div>
-                <div className="ce-upload" onClick={() => store.toast("本地导入将在 P2 上线，当前请使用画布上游素材", "info")}><Icon name="upload" size={14} /> 导入素材（P2）</div>
+                <div className="ce-hint">音频素材自动落到音频轨 A1，视频素材落到主视频轨 V1；本地导入的素材需手动加入时间线。图片暂仅列示。</div>
+                <input ref={importRef} type="file" accept={ACCEPTED} multiple hidden onChange={importFiles} />
+                <div className={`ce-upload ${importing ? "busy" : ""}`} onClick={() => !importing && importRef.current?.click()}>
+                  <Icon name="upload" size={14} /> {importing ? "上传中…" : "导入本地素材"}
+                </div>
               </>
             )}
 
@@ -348,4 +408,13 @@ function clipEndSource(item) {
   const start = Number(item.trimStart) || 0;
   const end = Number(item.trimEnd);
   return Number.isFinite(end) && end > start ? end - start : Number(item.output?.durationSec ?? item.output?.metadata?.durationSec) || 5;
+}
+
+// 与后端 AssetUploadPolicy 的扩展名白名单一致，前端先拦一道给出可读提示
+function fileKindOf(name) {
+  const ext = String(name || "").split(".").pop().toLowerCase();
+  if (["mp4", "webm", "mov"].includes(ext)) return "video";
+  if (["mp3", "wav", "m4a", "aac", "flac", "ogg"].includes(ext)) return "audio";
+  if (["jpg", "jpeg", "png", "webp", "gif"].includes(ext)) return "image";
+  return "";
 }
