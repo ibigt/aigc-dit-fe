@@ -5646,26 +5646,33 @@
 .youxi-shot-frame__prev:disabled { color: #776bd1; cursor: not-allowed; }
 
 .youxi-creative-workspace.youxi-workspace:has(> .drama-step.youxi-film-layout) {
-  height: auto;
-  max-height: none;
-  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - var(--topbar-height));
+  max-height: calc(100dvh - var(--topbar-height));
+  min-height: 0;
+  overflow: hidden;
 }
 .youxi-creative-workspace.youxi-workspace > .drama-step.youxi-film-layout {
+  flex: 1 1 0;
+  align-self: stretch;
   height: auto !important;
   min-height: 0 !important;
   max-height: none;
-  overflow: hidden;
+  /* hidden still creates a scroll container; focusing a lower shot then scrolls the player away. */
+  overflow: clip;
 }
 .drama-workspace .youxi-film-layout:has(.youxi-chapters) {
-  height: auto;
+  height: 100%;
   min-height: 0;
   display: grid;
   grid-template-columns: 286px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   align-items: stretch;
   gap: 0;
   margin: 0;
   padding: 0;
-  overflow: hidden;
+  overflow: clip;
   border: 1px solid var(--border-default);
   border-radius: 16px;
   background: #151517;
@@ -5680,13 +5687,16 @@
   background: transparent;
 }
 .drama-workspace .youxi-film-layout > .youxi-film-side {
-  height: 0;
-  min-height: 100%;
+  height: auto;
+  min-height: 0;
   overflow: hidden;
+  align-self: stretch;
 }
 .drama-workspace .youxi-film-layout > .youxi-film-main {
   height: auto;
-  overflow: visible;
+  min-height: 0;
+  overflow: hidden;
+  align-self: stretch;
 }
 .drama-workspace .youxi-film-side {
   display: flex;
@@ -5844,8 +5854,10 @@
 .drama-workspace .youxi-film-main {
   display: flex;
   flex-direction: column;
+  height: 100%;
   min-height: 0;
   padding: 0 30px 28px;
+  overflow: hidden;
   background: radial-gradient(circle at 50% 40%, rgba(118, 104, 255, .055), transparent 36%), #141416;
 }
 .drama-workspace .youxi-film-banners {
@@ -5871,31 +5883,52 @@
 .drama-workspace .youxi-film-banner { color: #aaa2ed; }
 .drama-workspace .youxi-film-banner--warn { color: #e7bd7b; }
 .drama-workspace .youxi-film-layout .youxi-final-player {
-  flex: 0 0 auto;
+  flex: 1 1 0;
   width: 100%;
+  min-width: 0;
   min-height: 0;
   height: auto;
-  overflow: visible;
+  overflow: hidden;
   padding: 8px 0 18px;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
+  container-type: size;
 }
 .drama-workspace .youxi-film-stage {
-  width: min(100%, 920px);
-  min-height: 348px;
+  --film-w: 16;
+  --film-h: 9;
+  position: relative;
+  flex: 0 0 auto;
+  width: min(100cqw, calc(100cqh * var(--film-w) / var(--film-h)), 1100px);
+  height: auto;
+  max-width: none;
+  max-height: none;
+  aspect-ratio: var(--film-w) / var(--film-h);
+  min-width: 0;
+  min-height: 0;
   display: grid;
   place-items: center;
   overflow: hidden;
-  aspect-ratio: 16 / 9;
   border: 1px solid rgba(255, 255, 255, .08);
   border-radius: 15px;
   background: #0c0c0e;
   box-shadow: 0 22px 56px rgba(0, 0, 0, .28);
 }
+.drama-workspace .youxi-film-stage[data-ratio="9:16"] { --film-w: 9; --film-h: 16; }
+.drama-workspace .youxi-film-stage[data-ratio="3:4"] { --film-w: 3; --film-h: 4; }
+.drama-workspace .youxi-film-stage[data-ratio="4:3"] { --film-w: 4; --film-h: 3; }
+.drama-workspace .youxi-film-stage[data-ratio="1:1"] { --film-w: 1; --film-h: 1; }
+.drama-workspace .youxi-film-stage[data-ratio="21:9"] { --film-w: 21; --film-h: 9; }
+.drama-workspace .youxi-film-stage[data-ratio="16:9"] { --film-w: 16; --film-h: 9; }
 .drama-workspace .youxi-film-stage video {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   max-width: none;
   max-height: none;
   aspect-ratio: auto;
