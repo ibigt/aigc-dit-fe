@@ -295,6 +295,8 @@ export function exportOverlays(timeline) {
         end: filmEnd,
         text: content,
         color: style.color || "#ffffff",
+        // 字号是预览器（.ce-monitor，宽 ≤560px）上的 CSS px，不是成片像素。
+        // 后端 OverlayRenderer 会按「成片宽 / 560」等比放大，别在这里提前换算。
         fontSize: Number(style.fontSize) || 16,
         weight: Number(style.weight) || 400,
         align: style.align || "center",
