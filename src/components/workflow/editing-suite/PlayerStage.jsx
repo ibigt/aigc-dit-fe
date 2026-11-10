@@ -6,6 +6,7 @@ import {
 import { useEditingStore } from "./store.js";
 import { timelineActionsRef } from "./Timeline.jsx";
 import Icon from "./Icons.jsx";
+import { EDITING_ASSISTANT_ENABLED } from "./flags.js";
 
 export default function PlayerStage({ store }) {
   const state = useEditingStore(store);
@@ -235,10 +236,12 @@ export default function PlayerStage({ store }) {
         <audio ref={audioEl} preload="auto" />
         {!clips.length && !audioClips.length && <div className="empty"><Icon name="film" /> 时间线为空，先添加素材</div>}
         <div className="ce-overlay" ref={overlayRef}></div>
-        <button className="ce-aipill" title="打开剪辑助手（P2 上线对话能力）"
-          onClick={() => store.setView({ rightTab: "assistant", rightCollapsed: false })}>
-          <Icon name="sparkle" size={14} /> 剪辑助手
-        </button>
+        {EDITING_ASSISTANT_ENABLED && (
+          <button className="ce-aipill" title="打开剪辑助手（下个版本上线）"
+            onClick={() => store.setView({ rightTab: "assistant", rightCollapsed: false })}>
+            <Icon name="sparkle" size={14} /> 剪辑助手
+          </button>
+        )}
       </div>
       <div className="ce-transport">
         <button className="iconbtn" title="上一段" onClick={() => jump(-1)}><Icon name="skipBack" /></button>

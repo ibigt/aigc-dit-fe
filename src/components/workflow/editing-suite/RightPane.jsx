@@ -6,6 +6,7 @@ import {
 import { useEditingStore } from "./store.js";
 import { downloadMediaFile, mediaDownloadName } from "../../../lib/media.js";
 import Icon from "./Icons.jsx";
+import { EDITING_ASSISTANT_ENABLED } from "./flags.js";
 
 const trimText = (value) => String(Math.round((Number(value) || 0) * 1000) / 1000);
 
@@ -26,6 +27,9 @@ export default function RightPane({ store }) {
     [clip?.id, clip?.adjust?.brightness, clip?.adjust?.contrast, clip?.adjust?.saturate, clip?.text, clip?.graphic?.color, clip?.graphic?.scale]);
 
   const isMediaClip = clip?.type === "video" || clip?.type === "audio";
+  // 剪辑助手入口隐藏期间，rightTab 不允许停在 "assistant"（否则右栏既没有 Tab 也没有内容，一片空白）。
+  // store 每次挂载新建、默认 rightTab="props"，这里只是兜住开发期开关从 true 翻成 false 的热更新场景。
+  const activeTab = EDITING_ASSISTANT_ENABLED ? view.rightTab : "props";
   // 切换片段 / 裁剪被时间线拖拽改动时，输入框回填真实值；输入过程中不回填，避免打断「1.」这类中间态。
   useEffect(() => {
     if (!isMediaClip) return;
@@ -101,17 +105,19 @@ export default function RightPane({ store }) {
   return (
     <div className="ce-right">
       <div className="ce-tabs">
-        <button className={view.rightTab === "props" ? "on" : ""} onClick={() => store.setView({ rightTab: "props" })}>属性</button>
-        <button className={`ai ${view.rightTab === "assistant" ? "on" : ""}`} onClick={() => store.setView({ rightTab: "assistant" })}>
-          <Icon name="sparkle" size={13} /> 助手
-        </button>
+        <button className={activeTab === "props" ? "on" : ""} onClick={() => store.setView({ rightTab: "props" })}>属性</button>
+        {EDITING_ASSISTANT_ENABLED && (
+          <button className={`ai ${activeTab === "assistant" ? "on" : ""}`} onClick={() => store.setView({ rightTab: "assistant" })}>
+            <Icon name="sparkle" size={13} /> 助手
+          </button>
+        )}
       </div>
       <div className="ce-rbody">
-        {view.rightTab === "assistant" && (
-          <div className="ce-empty"><Icon name="sparkle" />剪辑助手<br />P2 上线：对话式批量动作（自动配乐 / 一键字幕等），动作可撤销</div>
+        {EDITING_ASSISTANT_ENABLED && activeTab === "assistant" && (
+          <div className="ce-empty"><Icon name="sparkle" />剪辑助手<br />下个版本上线：对话式批量动作，动作可撤销</div>
         )}
 
-        {view.rightTab === "props" && track && !clip && (
+        {activeTab === "props" && track && !clip && (
           <>
             <div className="ce-grp">轨道 · {track.name}</div>
             <div className="ce-field-row">
@@ -145,11 +151,11 @@ export default function RightPane({ store }) {
           </>
         )}
 
-        {view.rightTab === "props" && !clip && !track && (
+        {activeTab === "props" && !clip && !track && (
           <div className="ce-empty"><Icon name="mousePointer" />选中时间线片段以编辑属性</div>
         )}
 
-        {view.rightTab === "props" && clip && (
+        {activeTab === "props" && clip && (
           <>
             <div className="ce-grp">选中片段 · {clip.sourceTitle || clip.type}</div>
             {isMediaClip && (
