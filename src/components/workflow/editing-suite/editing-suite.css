@@ -84,15 +84,6 @@
 .ce-source-banner[data-tone=info]{background:var(--accs);border-bottom-color:var(--accr);color:var(--acc)}
 .ce-source-banner span{flex:1;min-width:0}
 .ce-source-banner .btn2{height:22px;padding:0 8px;font-size:10px;flex-shrink:0;color:inherit;border-color:currentColor}
-/* 成片结果条：导出成功后直接给出成片本体（预览 + 下载），剪辑台是全屏浮层，
-   成片只落在剪辑节点上，没有这条就是「导出成功却找不到文件」。 */
-.ce-film-result{display:flex;align-items:center;gap:12px;padding:8px 16px;flex-shrink:0;
-  background:var(--accs);border-bottom:1px solid var(--accr);color:var(--acc);font-size:11px;line-height:1.5}
-.ce-film-result__label{display:flex;align-items:center;gap:6px;flex-shrink:0}
-.ce-film-result__video{width:180px;max-height:68px;border-radius:6px;background:#000;object-fit:contain;flex-shrink:0}
-.ce-film-result__actions{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
-.ce-film-result__meta{color:var(--t2);font-size:11px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ce-film-result .btn2{height:24px;padding:0 10px;font-size:11px;flex-shrink:0;color:inherit;border-color:currentColor}
 /* 中部 */
 .ce-mid{flex:1;display:flex;min-height:0}
 .ce-rail{width:56px;background:var(--bg-panel);border-right:1px solid var(--line1);display:flex;flex-direction:column;align-items:center;padding:8px 0;flex-shrink:0}
