@@ -33,11 +33,77 @@ test("snapshot polling advances every active run and preserves completed sibling
   assert.equal(nodes[0].data.media.prompt, "edited during restore");
 });
 
-test("snapshot invalidation clears stale output and abort suppresses a late aggregate response", async () => {
-  const nodes = [{ id: "a", data: { runtime: { outputs: [{ storageKey: "users/7/old.mp4" }] } } }];
+test("IDLE 快照不再抹掉节点已有的持久产物（导入/模板视频丢失回归）", () => {
+  const carried = { storageKey: "users/1/outputs/2452/1.mp4", url: "/api/media?key=2452" };
+  const nodes = [{ id: "a", data: { runtime: { status: "SUCCEEDED", reused: true, outputs: [carried] } } }];
+  const restored = runtime.applyWorkflowSnapshotToNodes(nodes, {
+    workflowId: 9, activeRuns: [], steps: [{ nodeId: "a", status: "IDLE", outputs: [] }],
+  });
+  // 快照没有带来任何新信息，水合出来的 SUCCEEDED 状态与产物必须原样保住
+  assert.deepEqual(restored[0].data.runtime.outputs, [carried]);
+  assert.equal(restored[0].data.runtime.status, "SUCCEEDED");
+  assert.equal(restored[0].data.runtime.reused, true);
+  assert.deepEqual(nodes[0].data.runtime.outputs, [carried], "不改原节点");
+});
+
+test("清空产物只发生在节点本来就没有产物时", () => {
+  const nodes = [{ id: "a", data: { runtime: { status: "RUNNING", progress: 40 } } }];
+  const restored = runtime.applyWorkflowSnapshotToNodes(nodes, {
+    workflowId: 9, activeRuns: [], steps: [{ nodeId: "a", status: "IDLE", outputs: [] }],
+  });
+  assert.equal(restored[0].data.runtime.status, "IDLE");
+  assert.deepEqual(restored[0].data.runtime.outputs, []);
+});
+
+test("导入工作流只跑过配音：其它节点的视频/图片产物不被 IDLE 步骤抹掉", () => {
+  const video = { storageKey: "users/1/outputs/2452/1.mp4" };
+  const image = { storageKey: "users/1/outputs/2449/1.png" };
+  const nodes = [
+    { id: "image", data: { kind: "ImageGenerator", runtime: { status: "SUCCEEDED", outputs: [image] } } },
+    { id: "video", data: { kind: "VideoGenerator", runtime: { status: "SUCCEEDED", outputs: [video] } } },
+    { id: "audio", data: { kind: "AudioGenerator" } },
+    { id: "edit", data: { kind: "VideoEditing" } },
+  ];
+  // 后端 snapshotMine：只要有任何运行历史，就给全图节点发 IDLE；只有配音有历史产物
+  const snapshot = { workflowId: 81, activeRuns: [], steps: [
+    { nodeId: "image", status: "IDLE", outputs: [] },
+    { nodeId: "video", status: "IDLE", outputs: [] },
+    { nodeId: "audio", runId: 128, status: "SUCCEEDED", outputs: [{ type: "audio", storageKey: "users/1/outputs/2559/1.mp3" }] },
+    { nodeId: "edit", status: "IDLE", outputs: [] },
+  ] };
+  const restored = runtime.applyWorkflowSnapshotToNodes(nodes, snapshot);
+  assert.deepEqual(restored[0].data.runtime.outputs, [image]);
+  assert.deepEqual(restored[1].data.runtime.outputs, [video]);
+  assert.equal(restored[1].data.runtime.status, "SUCCEEDED");
+  assert.equal(restored[2].data.runtime.outputs[0].storageKey, "users/1/outputs/2559/1.mp3");
+  assert.equal(restored[2].data.runtime.runId, 128);
+  assert.equal(restored[3].data.runtime.status, "IDLE");
+});
+
+test("新一轮产物刷新会覆盖节点携带的旧产物", () => {
+  const old = { storageKey: "users/1/outputs/2452/1.mp4" };
+  const fresh = { storageKey: "users/1/outputs/2600/1.mp4" };
+  const nodes = [{ id: "v", data: { runtime: { status: "SUCCEEDED", outputs: [old] } } }];
+  const restored = runtime.applyWorkflowSnapshotToNodes(nodes, {
+    workflowId: 9, activeRuns: [], steps: [{ nodeId: "v", status: "SUCCEEDED", outputs: [fresh] }],
+  });
+  assert.deepEqual(restored[0].data.runtime.outputs, [fresh]);
+});
+
+test("运行中的空产物步骤刷新状态但保住持久产物", () => {
+  const carried = { storageKey: "users/1/outputs/2453/1.mp4" };
+  const nodes = [{ id: "v", data: { runtime: { status: "SUCCEEDED", outputs: [carried] } } }];
+  const restored = runtime.applyWorkflowSnapshotToNodes(nodes, {
+    workflowId: 9, activeRuns: [{ id: 12, status: "RUNNING" }],
+    steps: [{ nodeId: "v", status: "RUNNING", progress: 42, outputs: [] }],
+  });
+  assert.equal(restored[0].data.runtime.status, "RUNNING");
+  assert.equal(restored[0].data.runtime.progress, 42);
+  assert.deepEqual(restored[0].data.runtime.outputs, [carried]);
+});
+
+test("abort suppresses a late aggregate response", async () => {
   const snapshot = { workflowId: 9, activeRuns: [], steps: [{ nodeId: "a", status: "IDLE", outputs: [] }] };
-  const restored = runtime.applyWorkflowSnapshotToNodes?.(nodes, snapshot);
-  assert.deepEqual(restored?.[0].data.runtime.outputs, []);
   const controller = new AbortController(); let updates = 0;
   await runtime.restoreWorkflowSnapshot?.({ workflowId: 9, signal: controller.signal,
     snapshot: async (_id, { signal }) => { assert.equal(signal, controller.signal); controller.abort(); return snapshot; },
@@ -50,6 +116,22 @@ test("unsaved node retry sends only prior run identity, leaving reuse authority 
   await runtime.executeWorkflowRun({ graph: { nodes: [], edges: [] }, modelId: 2, nodeId: "v", previousRunId: 12,
     start: async (request) => { received = request; return { id: 13, status: "SUCCEEDED", steps: [] }; }, onRun: () => {} });
   assert.equal(received.previousRunId, 12);
+});
+
+test("run mode forwards forceRegenerate for whole-graph and single-node runs, omits it in reuse mode", async () => {
+  const seen = [];
+  const run = (extra) => runtime.executeWorkflowRun({
+    graph: { nodes: [], edges: [] }, modelId: 2, ...extra,
+    start: async (request) => { seen.push(request); return { id: 1, status: "SUCCEEDED", steps: [] }; },
+    onRun: () => {},
+  });
+  await run({});
+  await run({ forceRegenerate: true });
+  await run({ nodeId: "v", forceRegenerate: true }); // 节点卡片「生成」按钮（4.6.2）
+  assert.equal(seen[0].forceRegenerate, undefined, "reuse 模式不带字段，后端按缺省 false 处理");
+  assert.equal(seen[1].forceRegenerate, true);
+  assert.equal(seen[2].nodeId, "v");
+  assert.equal(seen[2].forceRegenerate, true, "单节点运行同样要能强制重跑上游");
 });
 
 test("reopen restores latest durable outputs into current nodes and resumes an active run", async () => {

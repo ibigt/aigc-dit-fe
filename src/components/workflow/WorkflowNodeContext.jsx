@@ -5,7 +5,8 @@ import { createContext, useContext } from "react";
 // uploadAudio(file) -> { storageKey, url, name, duration }, getClips(id) -> clips,
 // getEditingSources(id) -> [{ id, title, status, enabled }]（剪辑节点上游视频源，含失败/生成中状态）,
 // refreshRuntime() -> Promise<boolean>（重拉运行时快照，换最新产物地址，需求 4.2.5.9）,
-// toggleLock(id), toggleCollapse(id), models -> catalog.
+// toggleLock(id), toggleCollapse(id), models -> catalog,
+// runMode -> "reuse" | "regenerate"（顶栏运行方式；generateMedia/execute 会据此带 forceRegenerate，需求 4.6.2）.
 export const WorkflowNodeContext = createContext({
   updateMedia: () => {},
   updatePrompt: () => {},
@@ -30,6 +31,7 @@ export const WorkflowNodeContext = createContext({
   refreshRuntime: async () => false,
   running: false,
   models: [],
+  runMode: "reuse",
 });
 
 export const useWorkflowNode = () => useContext(WorkflowNodeContext);

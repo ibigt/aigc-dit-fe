@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { mediaUrl } from "../../../lib/media.js";
 import Icon from "./Icons.jsx";
-import { ZOOM_LEVELS, clipDuration, exportFlatClips, filmDuration, findSnap, formatTime, mainVideoTrack, snapTargets, splitAt, timelineDuration, updateClip, moveClipToTrack, removeClips, addClip, sourceClipFromQueue } from "./model.js";
+import MediaThumb, { resolveThumbUrls } from "./MediaThumb.jsx";
+import { ZOOM_LEVELS, addTrack, clipDuration, exportFlatClips, filmDuration, findSnap, formatTime, mainVideoTrack, mediaKindOf, snapTargets, splitAt, timelineDuration, updateClip, updateTrack, moveClipToTrack, removeClips, addClip, sourceClipFromQueue } from "./model.js";
 import { useEditingStore } from "./store.js";
 
 const THUMB_SHADES = ["linear-gradient(160deg,#31445f,#22304a)", "linear-gradient(160deg,#4a3a6e,#2c2444)",
@@ -10,6 +10,7 @@ const THUMB_SHADES = ["linear-gradient(160deg,#31445f,#22304a)", "linear-gradien
 // 轨道语义色 / 图标（视觉规范 §10.3：激活指示条跟随轨道类型，不固定蓝色）
 const TRACK_SEM = { text: "var(--tx)", video: "var(--v)", audio: "var(--a)", graphic: "var(--g)" };
 const TRACK_ICON = { text: "text", video: "video", audio: "audio", graphic: "graphic" };
+const TRACK_LABEL = { text: "文字", graphic: "图形", video: "视频", audio: "音频" };
 const TRACK_HINT = { text: "拖入文字 / 导入 SRT", video: "拖入视频素材", audio: "拖入音频素材", graphic: "拖入图形素材" };
 
 export default function Timeline({ store, sources }) {
@@ -21,6 +22,8 @@ export default function Timeline({ store, sources }) {
   const dragRef = useRef(null);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [preview, setPreview] = useState(null);
+  const [addTrackOpen, setAddTrackOpen] = useState(false);
+  const [dragOverTrack, setDragOverTrack] = useState(null);
   // 文字/图形片段内联编辑态（双击片段或点 ✎ 进入），提交时走一次 commit = 一条撤销记录
   const [editing, setEditing] = useState(null);
   const pxPerSec = view.pxPerSec;
@@ -58,6 +61,10 @@ export default function Timeline({ store, sources }) {
   function beginDrag(event, clip, track, mode) {
     if (event.button !== 0) return;
     event.stopPropagation();
+    if (track.locked) {
+      store.toast(`轨道「${track.name}」已锁定，先解锁再编辑`, "error");
+      return;
+    }
     store.setView({}); // 触发一次渲染保证 selection 生效
     const fromTrackId = track.id;
     const original = { start: Number(clip.start) || 0, duration: clipDuration(clip), trimStart: Number(clip.trimStart) || 0, trimEnd: Number(clip.trimEnd) || 0 };
@@ -176,22 +183,55 @@ export default function Timeline({ store, sources }) {
     store.setView({ editClipId: null });
   }, [view.editClipId, timeline, store]);
 
+  // 轨道开关：锁定 / 可见 / 静音，均进撤销栈
+  function toggleTrack(track, key) {
+    const next = key === "visible" ? track.visible === false : key === "muted" ? !track.muted : !track.locked;
+    const labels = { locked: "锁定轨道", visible: "切换轨道可见", muted: "切换轨道静音" };
+    store.commit(labels[key], (doc) => ({ ...doc, timeline: updateTrack(doc.timeline, track.id, { [key]: next }) }));
+    const stateText = key === "visible" ? (next ? "显示" : "隐藏") : key === "muted" ? (next ? "取消静音" : "静音") : (next ? "锁定" : "解锁");
+    store.toast(`已${stateText}轨道「${track.name}」`, "ok");
+  }
+
+  function addTrackByType(type) {
+    store.commit("添加轨道", (doc) => ({ ...doc, timeline: addTrack(doc.timeline, type) }));
+    store.toast(`已添加${TRACK_LABEL[type]}轨`, "ok");
+  }
+
   // 暴露给顶栏/快捷键：用 ref 承接，避免每层透传
   useEffect(() => {
     timelineActionsRef.current = { split, removeSelected, startSolo, exitSolo };
   });
 
+  // 素材拖入轨道的落点判定：视频素材只进视频轨、音频素材只进音频轨（文字/图形轨不接收外部素材）
+  function dropKindOf(event) {
+    const raw = event.dataTransfer.getData("application/x-editing-source");
+    if (!raw) return null;
+    const item = sources[Number(raw)];
+    if (!item) return null;
+    return { item, kind: mediaKindOf(item) === "audio" ? "audio" : "video" };
+  }
+
   function dropSource(event, track) {
     event.preventDefault();
-    const raw = event.dataTransfer.getData("application/x-editing-source");
-    if (!raw) return;
-    const index = Number(raw);
-    const item = sources[index];
-    if (!item || track.type !== "video" || !item.output?.storageKey && !item.storageKey) return;
+    setDragOverTrack(null);
+    const drop = dropKindOf(event);
+    if (!drop) return;
+    const { item, kind } = drop;
+    if (!item.output?.storageKey && !item.storageKey) { store.toast("该素材暂无可播放产物", "error"); return; }
+    if (mediaKindOf(item) === "image") { store.toast("图片素材暂不支持加入时间线（静帧合成待上线）", "error"); return; }
+    if (track.type !== kind) {
+      store.toast(kind === "audio"
+        ? `音频素材只能落在音频轨，「${track.name}」不接收`
+        : `视频素材只能落在视频轨，「${track.name}」不接收`, "error");
+      return;
+    }
+    if (track.locked) { store.toast(`轨道「${track.name}」已锁定，先解锁再拖入素材`, "error"); return; }
     const rect = lanesRef.current?.getBoundingClientRect();
     const start = Math.max(0, (event.clientX - (rect?.left || 0) + (lanesRef.current?.scrollLeft || 0)) / pxPerSec);
     const source = sourceClipFromQueue(item);
-    store.commit("添加素材", (doc) => ({ ...doc, timeline: addClip(doc.timeline, track.id, { ...source, start }), selection: [] }));
+    store.commit(kind === "audio" ? "添加音频" : "添加素材", (doc) => ({
+      ...doc, timeline: addClip(doc.timeline, track.id, { ...source, start }), selection: [],
+    }));
   }
 
   const main = mainVideoTrack(timeline);
@@ -239,26 +279,56 @@ export default function Timeline({ store, sources }) {
       <div className="ce-tracks">
         <div className="ce-thead">
           {timeline.tracks.map((track) => (
-            <div key={track.id} className={`ce-trk-h ${track.id === main?.id ? "active" : ""}`}
-              style={{ height: track.height, "--sem": TRACK_SEM[track.type] || "var(--v)" }}>
+            <div key={track.id}
+              className={`ce-trk-h ${track.id === main?.id ? "active" : ""} ${view.activeTrackId === track.id ? "selected" : ""} ${track.locked ? "locked" : ""} ${track.visible === false ? "hidden-track" : ""}`}
+              style={{ height: track.height, "--sem": TRACK_SEM[track.type] || "var(--v)" }}
+              onClick={() => store.setView({ activeTrackId: view.activeTrackId === track.id ? null : track.id })}>
               <Icon name={TRACK_ICON[track.type] || "video"} size={14} className="ico" />
               <b>{track.name}</b>
               <span className="ops">
-                <span title="锁定"><Icon name="lock" /></span>
-                <span title="可见"><Icon name="eye" /></span>
-                {track.type === "audio" && <span title="静音"><Icon name="mute" /></span>}
+                <span className={track.locked ? "on" : ""} title={track.locked ? "已锁定，点击解锁" : "锁定轨道"}
+                  onClick={(event) => { event.stopPropagation(); toggleTrack(track, "locked"); }}>
+                  <Icon name="lock" />
+                </span>
+                <span className={track.visible === false ? "off" : ""} title={track.visible === false ? "已隐藏，点击显示" : "隐藏轨道"}
+                  onClick={(event) => { event.stopPropagation(); toggleTrack(track, "visible"); }}>
+                  <Icon name="eye" />
+                </span>
+                {track.type === "audio" && (
+                  <span className={track.muted ? "off" : ""} title={track.muted ? "已静音，点击取消" : "静音轨道"}
+                    onClick={(event) => { event.stopPropagation(); toggleTrack(track, "muted"); }}>
+                    <Icon name={track.muted ? "mute" : "volume"} />
+                  </span>
+                )}
               </span>
             </div>
           ))}
-          <div className="ce-addtrk" onClick={() => store.toast("自定义轨道将在 P2 上线，当前使用四条默认轨道", "info")}>
-            <Icon name="plus" size={12} /> 添加轨道
+          <div className="ce-addtrk-wrap">
+            {addTrackOpen && (
+              <div className="ce-addtrk-menu">
+                {["text", "graphic", "video", "audio"].map((type) => (
+                  <button key={type} onClick={() => { addTrackByType(type); setAddTrackOpen(false); }}>
+                    <Icon name={TRACK_ICON[type]} size={13} /> {TRACK_LABEL[type]}轨
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="ce-addtrk" onClick={() => setAddTrackOpen((open) => !open)}>
+              <Icon name="plus" size={12} /> 添加轨道
+            </div>
           </div>
         </div>
         <div className="ce-lanes" ref={lanesRef} onScroll={(event) => setScrollLeft(event.currentTarget.scrollLeft)}>
           <div className="ce-lanes-inner" style={{ width: contentWidth }}>
             {timeline.tracks.map((track) => (
-              <div key={track.id} className="ce-lane" data-track-id={track.id} style={{ height: track.height }}
-                onDragOver={(event) => { if (track.type === "video") event.preventDefault(); }}
+              <div key={track.id} className={`ce-lane ${dragOverTrack === track.id ? "dragover" : ""}`} data-track-id={track.id} style={{ height: track.height }}
+                onDragOver={(event) => {
+                  if (track.type !== "video" && track.type !== "audio") return;
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "copy";
+                  setDragOverTrack((current) => (current === track.id ? current : track.id));
+                }}
+                onDragLeave={() => setDragOverTrack((current) => (current === track.id ? null : current))}
                 onDrop={(event) => dropSource(event, track)}>
                 {track.clips.length === 0 && <div className="ce-lane-hint">{TRACK_HINT[track.type]}</div>}
                 {track.clips.map((clip) => {
@@ -267,6 +337,10 @@ export default function Timeline({ store, sources }) {
                   const isText = clip.type === "text" || clip.type === "graphic";
                   const playable = (clip.type === "video" || clip.type === "audio") && Boolean(clip.storageKey);
                   const isEditing = editing?.id === clip.id;
+                  // 视频片段没有海报图时用 mp4 的 <video> 首帧，底层纯色格留作加载中/失败兜底
+                  const thumbUrls = clip.type === "video"
+                    ? resolveThumbUrls({ output: clip.output, storageKey: clip.storageKey, posterKey: clip.posterKey }, 120)
+                    : { poster: "", video: "" };
                   return (
                     <Fragment key={clip.id}>
                     <div
@@ -283,10 +357,9 @@ export default function Timeline({ store, sources }) {
                       {clip.type === "video" && (
                         <div className="thumbs">
                           {Array.from({ length: Math.min(12, Math.ceil(width / 40)) }, (_, i) => (
-                            <i key={i} style={{ background: clip.posterKey
-                              ? `url(${mediaUrl(clip.posterKey, { w: 120 })}) center/cover, ${THUMB_SHADES[i % THUMB_SHADES.length]}`
-                              : THUMB_SHADES[(i + clip.id.length) % THUMB_SHADES.length] }} />
+                            <i key={i} style={{ background: THUMB_SHADES[(i + clip.id.length) % THUMB_SHADES.length] }} />
                           ))}
+                          <MediaThumb poster={thumbUrls.poster} video={thumbUrls.video} />
                         </div>
                       )}
                       {clip.type === "audio" && <div className="wv">{Array.from({ length: Math.ceil(width / 3) }, (_, i) => (

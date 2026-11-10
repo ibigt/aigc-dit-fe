@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildClipQueue, nextPlaybackPosition } from "../src/components/workflow/timeline.js";
+import { audioOutputsFor, buildClipQueue, mediaTypeOfNode, nextPlaybackPosition } from "../src/components/workflow/timeline.js";
 
 test("initial queue follows incoming b,a edge traversal and one selected copy per video", () => {
   const videos = ["a", "b"].map((id) => ({ id, data: { media: { selectedOutputIndex: id === "b" ? 1 : 0 }, runtime: { outputs: [0, 1].map((index) => ({ type: "video", storageKey: `users/7/${id}-${index}.mp4`, metadata: { durationSec: 5 } })) } } }));
@@ -187,4 +187,35 @@ test("旧工作流片段没有 enabled 字段时保持启用语义", () => {
 
   assert.equal(clips.length, 1);
   assert.equal(clips[0].enabled, true);
+});
+
+test("kinds 选项把音频节点纳入素材清单，并标记 mediaType 供剪辑台分轨", () => {
+  const video = { id: "v", data: { kind: "VideoGenerator", runtime: { outputs: [{ storageKey: "v.mp4" }] } } };
+  const audio = { id: "a", data: { kind: "AudioGenerator", runtime: { outputs: [{ storageKey: "a.mp3" }] } } };
+  const edges = [{ source: "v", target: "edit" }, { source: "a", target: "edit" }];
+  const both = buildClipQueue([video, audio], edges, [], "edit", [video, audio], { kinds: ["VideoGenerator", "AudioGenerator"] });
+  assert.deepEqual(both.map((clip) => clip.sourceNodeId), ["v", "a"]);
+  assert.deepEqual(both.map((clip) => clip.mediaType), ["video", "audio"]);
+  // 只要视频时音频被种类过滤掉（视频剪辑节点的成片队列就该如此）
+  const onlyVideo = buildClipQueue([video, audio], edges, [], "edit", [video, audio], { kinds: ["VideoGenerator"] });
+  assert.deepEqual(onlyVideo.map((clip) => clip.sourceNodeId), ["v"]);
+  assert.equal(mediaTypeOfNode(audio), "audio");
+  assert.equal(mediaTypeOfNode({ data: { kind: "VideoEditing" } }), "");
+});
+
+test("音频产物解析：上传音频与生成音频都收录，按 storageKey 去重", () => {
+  const node = {
+    id: "a",
+    data: {
+      kind: "AudioGenerator",
+      media: { selectedAudioSource: "uploaded", uploadedAudio: { storageKey: "up.mp3", durationSec: 12 } },
+      runtime: { outputs: [{ storageKey: "up.mp3" }, { storageKey: "gen.mp3" }, { url: "https://x/no-key.mp3" }] },
+    },
+  };
+  const outputs = audioOutputsFor(node);
+  assert.deepEqual(outputs.map((output) => output.storageKey), ["up.mp3", "gen.mp3"]);
+  assert.ok(outputs.every((output) => output.type === "audio"));
+  // 上传音频即使节点没跑过生成，也能作为素材进入剪辑台
+  const uploadedOnly = { id: "b", data: { kind: "AudioGenerator", media: { uploadedAudio: { storageKey: "only.mp3" } } } };
+  assert.deepEqual(audioOutputsFor(uploadedOnly).map((output) => output.storageKey), ["only.mp3"]);
 });

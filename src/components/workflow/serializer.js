@@ -58,7 +58,7 @@ function normalizePorts(ports, kind) {
   }));
 }
 
-export function serializeWorkflow(nodes, edges, { viewport, title, description, createdAt, updatedAt } = {}) {
+export function serializeWorkflow(nodes, edges, { viewport, title, description, createdAt, updatedAt, stickers } = {}) {
   const assets = [];
   const assetKeys = new Set();
   const collectAsset = (node) => {
@@ -134,7 +134,9 @@ export function serializeWorkflow(nodes, edges, { viewport, title, description, 
     edges: standardEdges,
     groups,
     assets,
-    extensions: {},
+    // 贴纸图层（需求 1.8）：走 extensions 承载，导入端按同一字段还原，
+    // 不混进 nodes/edges（它不是画布节点，不参与连线与运行）。
+    extensions: Array.isArray(stickers) && stickers.length ? { stickers } : {},
   };
 }
 
@@ -335,6 +337,8 @@ export function deserializeWorkflow(json) {
   if (cycleIds.length) warnings.push(`检测到环状连线，涉及节点：${cycleIds.join("、")}；已导入但排版和执行会跳过环上节点`);
 
   const viewport = doc.canvas ? { x: Number(doc.canvas.offsetX) || 0, y: Number(doc.canvas.offsetY) || 0, zoom: Number(doc.canvas.scale) || 1 } : null;
+  // 贴纸图层（需求 1.8）：随文件往返，导入端还原到画布图层
+  const rawStickers = Array.isArray(doc.extensions?.stickers) ? doc.extensions.stickers : [];
   return {
     ok: true,
     warnings,
@@ -343,6 +347,7 @@ export function deserializeWorkflow(json) {
     metadata: doc.metadata || {},
     // 兼容模式下无法迁移的字段原值，供调用方展示与再次导出时保留。
     extensions: doc.extensions || {},
+    stickers: rawStickers,
     graph: {
       nodes: [...groupNodes, ...groupedNodes.map(({ __ports, ...node }) => node)],
       edges,

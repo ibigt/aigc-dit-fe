@@ -1,6 +1,7 @@
 node_modules
 dist
 dist-verify
+.verify-build-*
 .deploy.env
 .DS_Store
 *.log

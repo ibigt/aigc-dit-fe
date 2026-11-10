@@ -89,7 +89,7 @@ function AudioOutputPlayer({ output, index, showIndex }) {
 }
 
 export default function AudioGeneratorNode({ id, data, selected }) {
-  const { updateMedia, generateMedia, notify, models, getReferences, getPromptSupplements, removeReference, uploadAudio } = useWorkflowNode();
+  const { updateMedia, generateMedia, notify, models, getReferences, getPromptSupplements, removeReference, uploadAudio, runMode } = useWorkflowNode();
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -112,6 +112,8 @@ export default function AudioGeneratorNode({ id, data, selected }) {
     .map((model) => (typeof model === "string" ? model : model?.name))
     .filter(Boolean);
   const isBusy = generating || data.runtime?.status === "RUNNING";
+  // 与视频/图片节点一致：顶栏「全部重新生成」时单节点生成也带 forceRegenerate
+  const forceRun = runMode === "regenerate";
 
   // 语音参数与快速创作同源：同一份模型目录 audioOptions（音色/格式/语速范围完全一致）
   const audioOptions = useMemo(
@@ -130,6 +132,25 @@ export default function AudioGeneratorNode({ id, data, selected }) {
     const patch = normalizeAudioParams({ voiceId: media.voiceId, format: media.format, speed: media.speed, options: audioOptions });
     if (patch) update(patch);
   }, [media.voiceId, media.format, media.speed, audioOptions]);
+
+  // 音色弹框：点外部或按 Esc 收起（与快速创作的参数弹框同一口径）。
+  // 弹框与触发器同在 .audio-node__voice-field 内，closest 一并放过，点弹框内部不会误关。
+  useEffect(() => {
+    if (!voiceOpen) return undefined;
+    const onPointerDownOutside = (event) => {
+      if (event.target?.closest?.(".audio-node__voice-field")) return;
+      setVoiceOpen(false);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setVoiceOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDownOutside);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDownOutside);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [voiceOpen]);
 
   // 生成结果（含多副本）：播放器 + 波形可视化（需求 4.2.4.5），失败时可重试
   const audioOutputs = (data.runtime?.outputs || [])
@@ -160,6 +181,8 @@ export default function AudioGeneratorNode({ id, data, selected }) {
       notify?.("请补充台词后再生成");
       return;
     }
+    // 点生成时收起音色配置弹框：弹框没有外部点击关闭，留在那里会挡住生成结果的回显
+    setVoiceOpen(false);
     setGenerating(true);
     window.setTimeout(() => {
       generateMedia?.(id);
@@ -364,11 +387,22 @@ export default function AudioGeneratorNode({ id, data, selected }) {
             <Zap size={11} />
             {creditCost}
           </span>
-          <button className="audio-node__generate" onClick={runGeneration}>
+          <button
+            className={`audio-node__generate${forceRun ? " is-force" : ""}`}
+            onClick={runGeneration}
+            title={forceRun
+              ? "全部重新生成：本节点及其上游都不复用历史产物，会重新扣积分"
+              : "复用已有结果：参数与上游未变的节点直接用上次产物"}
+          >
             {isBusy ? (
               <>
                 <Sparkles className="spin" size={13} />
                 生成中
+              </>
+            ) : forceRun ? (
+              <>
+                <RotateCcw size={13} />
+                重新生成
               </>
             ) : (
               <>

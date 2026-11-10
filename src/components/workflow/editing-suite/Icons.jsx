@@ -36,6 +36,7 @@ const GLYPHS = {
   minus: <path d="M5 12h14" />,
   fit: <><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></>,
   x: <path d="M6 6l12 12M18 6L6 18" />,
+  refresh: <><path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-7.6-4.2" /><path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 7.6 4.2" /><path d="M21 3v6h-6M3 21v-6h6" /></>,
 };
 
 export default function Icon({ name, size = 16, className = "", strokeWidth = 1.8, ...rest }) {
