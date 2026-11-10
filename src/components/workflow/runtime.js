@@ -97,7 +97,37 @@ export function waitForWorkflowPoll(signal, delay = 1500) {
   });
 }
 
-export async function executeWorkflowRun({ graph, requestGraph, workflowId, previousRunId, modelId, nodeId, forceRegenerate, save, start, get, wait, onRun, signal }) {
+/**
+ * 收集「停止」按钮要取消的目标。
+ *
+ * 关键口径：localRuns 的 key 是**运行标识**（节点 id 或 "all"），不是后端 run id。
+ * 只有 entry.runId（workflow_run.id）能拿去调 /runs/{id}/cancel；
+ * 早前的实现拿 key 去取 Number()，节点 id 恒为 NaN → 被 filter 掉 → 永远提示
+ * 「没有正在运行的任务」，而节点一直卡在「生成中」。
+ *
+ * @param {Map<string, {controller?: any, runId?: any}>} localRuns 本地登记的运行
+ * @param {Iterable<any>} observedIds 打开画布时服务端已在跑的 run id（只有快照轮询观察到，本地没有控制器）
+ * @returns {{ runIds: number[], pending: Array<[string, any]>, observed: number[] }} runIds=本地发起、可直接取消的后端 run id；pending=POST /runs 还在飞、还不知道 id 的运行；observed=服务端已在跑的 run id
+ */
+export function collectCancelTargets(localRuns, observedIds) {
+  const runIds = new Set();
+  const pending = [];
+  localRuns?.forEach?.((entry, key) => {
+    const runId = Number(entry?.runId);
+    if (Number.isFinite(runId) && runId > 0) { runIds.add(runId); return; }
+    pending.push([key, entry]);
+  });
+  const observed = [];
+  for (const id of observedIds || []) {
+    const numeric = Number(id);
+    if (!Number.isFinite(numeric) || numeric <= 0 || runIds.has(numeric)) continue;
+    runIds.add(numeric);
+    observed.push(numeric);
+  }
+  return { runIds: [...runIds], pending, observed };
+}
+
+export async function executeWorkflowRun({ graph, requestGraph, workflowId, previousRunId, modelId, nodeId, forceRegenerate, save, start, get, wait, onRun, onStart, signal }) {
   try {
     if (signal?.aborted) return null;
     if (workflowId != null) await save(workflowId, graph);
@@ -105,6 +135,10 @@ export async function executeWorkflowRun({ graph, requestGraph, workflowId, prev
     // requestGraph：只影响本次提交的图（如整图运行时跳过缺首帧的节点），落库仍用 graph 原图
     const request = { ...(workflowId != null ? { workflowId } : {}), ...(previousRunId != null ? { previousRunId } : {}), modelId, ...(nodeId ? { nodeId } : {}), ...(forceRegenerate ? { forceRegenerate: true } : {}), graph: requestGraph || graph };
     const run = await start(request);
+    // run 一旦在后端建好就必须把 id 交出去：用户在 POST 返回前点了「停止」时，
+    // 只有拿到 id 才能补一次 cancel，否则后端会留一条没人管的运行（节点永远「生成中」）。
+    // 这个回调不受 signal 影响，必须早于下面的 aborted 判定。
+    onStart?.(run);
     if (signal?.aborted) return null;
     return await resumeWorkflowRun({ run, get, wait, onRun, signal });
   } catch (error) {

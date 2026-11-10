@@ -90,7 +90,7 @@ import { autoArrange } from "./workflow/autoLayout.js";
 import { NodeCollapseButton, NodeDeleteButton, NodeLockButton, NodeTagBadges, nodeCollapsedClass } from "./workflow/NodeCardParts.jsx";
 import { ImportReport } from "./workflow/ImportReport.jsx";
 import StableTextarea from "./workflow/StableTextarea.jsx";
-import { applyRunToCurrentNodes, applyWorkflowSnapshotToNodes, canConnectNodes, executeWorkflowRun, graphWithViewport, hydrateImportedOutputs, isWorkStep, nodePlaybackUrl, nodePosterUrl, nodePreviewUrl, normalizeViewport, portTypesCompatible, waitForWorkflowPoll, restoreWorkflowSnapshot, persistableWorkflowGraph as persistableGraph } from "./workflow/runtime.js";
+import { applyRunToCurrentNodes, applyWorkflowSnapshotToNodes, canConnectNodes, collectCancelTargets, executeWorkflowRun, graphWithViewport, hydrateImportedOutputs, isWorkStep, nodePlaybackUrl, nodePosterUrl, nodePreviewUrl, normalizeViewport, portTypesCompatible, waitForWorkflowPoll, restoreWorkflowSnapshot, persistableWorkflowGraph as persistableGraph } from "./workflow/runtime.js";
 import { getWorkflowRuntimeSnapshot } from "../api/workflows.js";
 import { buildClipQueue } from "./workflow/timeline.js";
 // 独立剪辑台：懒加载，只有打开时才拉 chunk（样式与逻辑全部内聚在 editing-suite/）
@@ -1656,10 +1656,17 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
   const fileRef = useRef(null);
   const zoomLabelRef = useRef(null);
   // 允许同一画布上并存多个运行（例如依次点两个视频节点的「生成」）：
-  // 每次运行各自持有 AbortController，按运行 ID 存放，互不覆盖。
+  // 每次运行各自持有 AbortController，按运行标识（节点 id 或 "all"）存放，互不覆盖。
   // 原先用单个 runLock + 单个 runAbortRef，第二次点击会被锁静默拦下（表现为「点了没反应」），
   // 即使放行也会覆盖控制器导致第一次运行无法停止。
-  const runAbortMapRef = useRef(new Map());
+  //
+  // 注意 key 只是「运行标识」，**不是**后端 run id：「停止」要按 workflow_run.id 调
+  // /runs/{id}/cancel，所以每次运行还得记住自己拿到的 runId。
+  // 旧实现把 key 当 run id 用（Number(key) 恒为 NaN，被 filter 掉 → 数组为空），
+  // 于是「停止」永远提示「没有正在运行的任务」，节点却一直卡在「生成中」。
+  const localRunRef = useRef(new Map()); // 运行标识 -> { controller, runId, stopRequested }
+  // 只观察到、本地没发起的运行（打开画布时服务端已有在跑的任务）：停止时同样要能取消
+  const observedRunIdsRef = useRef(new Set());
   // 快照恢复用的独立控制器：此前它与运行轮询共用 runAbortRef，两者互相覆盖，
   // 导致「打开画布时正在跑」的场景下运行轮询 abort 不到、runLock 永不释放，
   // 之后点生成/重试全部被 runGraph 开头静默拦下（表现为「点击没反应」）。
@@ -1676,7 +1683,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
   const historyRef = useRef([]);
   const futureRef = useRef([]);
   const nodeClipboardRef = useRef(null);
-  useEffect(() => () => { runAbortMapRef.current.forEach((controller) => controller?.abort()); runAbortMapRef.current.clear(); window.clearTimeout(cycleHighlightTimer.current); }, []);
+  useEffect(() => () => { localRunRef.current.forEach((entry) => entry?.controller?.abort()); localRunRef.current.clear(); window.clearTimeout(cycleHighlightTimer.current); }, []);
   // 标题行内重命名：进入编辑态后自动聚焦并全选，失焦/回车提交，Esc 取消
   useEffect(() => {
     if (!editingTitle) return;
@@ -1845,6 +1852,12 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     restoreWorkflowSnapshot({ workflowId, signal: controller.signal, snapshot: getWorkflowRuntimeSnapshot, get: getWorkflowRun,
       onSnapshot: (snapshot) => {
         setNodes((current) => applyWorkflowSnapshotToNodes(current, snapshot));
+        // 记录服务端在跑的 run id：打开画布时若已有任务在跑，节点会显示「生成中」，
+        // 此时本地没有控制器，「停止」必须靠这些 id 去调 cancel，否则永远提示「没有正在运行的任务」。
+        observedRunIdsRef.current = new Set((snapshot.activeRuns || [])
+          .filter((run) => run?.status === "RUNNING")
+          .map((run) => Number(run?.id))
+          .filter((id) => Number.isFinite(id) && id > 0));
         setRunning(snapshot.activeRuns?.some((run) => run.status === "RUNNING") || false);
         setRunProgress(snapshot.steps.filter((step) => step.status === "SUCCEEDED").length);
         setRunTotal(snapshot.steps.length || 1);
@@ -1852,6 +1865,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     }).catch((error) => { if (!controller.signal.aborted) showToast(error.message || "运行恢复失败，请重新打开工作流", 3600); })
       .finally(() => {
         if (restoreAbortRef.current === controller) restoreAbortRef.current = null;
+        observedRunIdsRef.current.clear();
         if (!controller.signal.aborted) setRunning(false);
       });
     return () => controller.abort();
@@ -2397,7 +2411,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
   // 剪辑台「取消等待」：abort 掉该节点的运行控制器，轮询循环下一轮即退出。
   // runGraph 里 runKey 就是 onlyNode，所以直接用 nodeId 取控制器。
   const abortEditingExport = useCallback((nodeId) => {
-    runAbortMapRef.current.get(nodeId)?.abort();
+    localRunRef.current.get(nodeId)?.controller?.abort();
   }, []);
 
   const getClips = useCallback((nodeId) => {
@@ -3023,30 +3037,64 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
   async function cancelActiveRun() {
     // 同一画布可能并存多个运行（例如两个视频节点各点了一次生成）：
     // 停止按钮需要把所有进行中的运行一起取消，而不是只停最后一个。
-    const runIds = [...runAbortMapRef.current.keys()].map(Number).filter(Number.isFinite);
-    if (!runIds.length) {
+    //
+    // 关键：要取消的是**后端 workflow_run.id**，不是本地登记用的 key（节点 id / "all"）。
+    // 旧实现把 key 当 run id 用（Number(key) 恒为 NaN → 被 filter 掉 → 数组恒空），
+    // 于是永远提示「没有正在运行的任务」，而且在 try 之前就 return，
+    // 本地轮询控制器没被 abort，节点就一直卡在「生成中」。
+    const { runIds, pending: pendingEntries, observed: observedIds } = collectCancelTargets(localRunRef.current, observedRunIdsRef.current);
+    if (!runIds.length && !pendingEntries.length) {
       showToast("没有正在运行的任务", 2200);
       return;
     }
+    // POST /runs 还没返回的运行：此时还不知道 run id，只能先记下停止意图。
+    // 先记意图再发请求：否则「取消请求在飞」的这段时间里 run 建好，
+    // onStart 触发时还看不到意图，后端会留下一条没人管的运行。
+    pendingEntries.forEach(([, entry]) => { if (entry) entry.stopRequested = true; });
+    const cancelledRuns = [];
+    const cancelled = new Set();
+    const failed = new Set();
     try {
       // 先让后端收敛运行状态，再停本地轮询：反过来先 abort，轮询拿不到 CANCELLED 终态，
       // 节点卡片会一直停在「生成中」，且停止失败时前端已无法感知后端仍在跑
       for (const runId of runIds) {
+        const observed = observedIds.includes(runId);
         try {
           const run = await cancelWorkflowRun(runId);
-          if (run?.steps) applyRunToCurrentNodes(setNodes, run);
+          cancelled.add(runId);
+          if (run?.steps) cancelledRuns.push(run);
         } catch (error) {
-          showToast(error.message || `运行 ${runId} 停止失败`, 3000);
+          failed.add(runId);
+          // 观察到的运行多半已经自己收敛了，失败就静默跳过，不要用「停止失败」吓人
+          if (!observed) showToast(error.message || `运行 ${runId} 停止失败`, 3000);
         }
       }
-      showToast(runIds.length > 1 ? `已停止 ${runIds.length} 个任务` : "已停止运行", 2400);
+      // 取消请求在飞的这段时间里，POST /runs 可能刚好返回、run id 才拿到：补一次取消。
+      // stopRequested 的由 onStart 负责取消（那里拿得到准确的 run id），不重复发。
+      localRunRef.current.forEach((entry) => {
+        const runId = Number(entry?.runId);
+        if (!Number.isFinite(runId) || runId <= 0 || cancelled.has(runId) || entry?.stopRequested) return;
+        cancelled.add(runId);
+        cancelWorkflowRun(runId)
+          .then((cancelledRun) => { if (cancelledRun?.steps) applyRunToCurrentNodes(setNodes, cancelledRun); })
+          .catch(() => {});
+      });
+      showToast(cancelled.size > 1 ? `已停止 ${cancelled.size} 个任务` : "已停止运行", 2400);
     } finally {
-      runAbortMapRef.current.forEach((controller) => controller?.abort());
-      runAbortMapRef.current.clear();
+      // 只停「确认已取消」的本地轮询：取消失败的运行继续轮询，
+      // 否则后端还在跑、前端却不再更新，节点会永远卡在「生成中」。
+      localRunRef.current.forEach((entry, key) => {
+        const runId = Number(entry?.runId);
+        if (Number.isFinite(runId) && failed.has(runId)) return;
+        entry?.controller?.abort();
+        localRunRef.current.delete(key);
+      });
       // 快照恢复的轮询与运行轮询是两条独立的循环：只停运行时轮询时，
       // 恢复轮询仍会按 activeRuns 每 4 秒把节点刷回「生成中」，表现为「停止后几秒又开始生成」。
-      restoreAbortRef.current?.abort();
-      setRunning(false);
+      if (!failed.size) restoreAbortRef.current?.abort();
+      cancelledRuns.forEach((run) => applyRunToCurrentNodes(setNodes, run));
+      observedRunIdsRef.current.clear();
+      setRunning(localRunRef.current.size > 0);
     }
   }
 
@@ -3126,8 +3174,12 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     // 以「本次运行的目标节点」为键登记控制器：不同节点可并存，
     // 同一节点重复点击则替换旧控制器（旧运行随之被 abort，避免同一节点两个任务打架）。
     const runKey = onlyNode || "all";
-    runAbortMapRef.current.get(runKey)?.abort();
-    runAbortMapRef.current.set(runKey, controller);
+    localRunRef.current.get(runKey)?.controller?.abort();
+    // runId 先留空：后端 run 建好（onStart）后才填上，「停止」按它调 cancel。
+    // stopRequested：用户在 POST /runs 返回前就点了停止 → run 建好后补一次 cancel。
+    // entry 用闭包持有（不靠 map 反查）：「停止」会清空 map，那时 run 可能才刚建好。
+    const runEntry = { controller, runId: null, stopRequested: false };
+    localRunRef.current.set(runKey, runEntry);
     setRunning(true);
     setRunProgress(0);
     setRunMenuOpen(false);
@@ -3190,6 +3242,19 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
           if (Date.now() - started > 25 * 60 * 1000) throw new Error("工作流仍在运行，可稍后在我的创作查看结果");
           return waitForWorkflowPoll(signal);
         },
+        onStart: (run) => {
+          // 后端 run 已建好：登记真实 run id，「停止」才能按它调 cancel。
+          const runId = Number(run?.id);
+          if (!Number.isFinite(runId) || runId <= 0) return;
+          runEntry.runId = runId;
+          // 用户在 POST /runs 返回前就点了停止：现在补一次取消，
+          // 否则后端留一条没人管的运行，节点会永远停在「生成中」。
+          if (runEntry.stopRequested) {
+            cancelWorkflowRun(runId)
+              .then((cancelled) => { if (cancelled?.steps) applyRunToCurrentNodes(setNodes, cancelled); })
+              .catch(() => {});
+          }
+        },
         onRun: (run) => {
           (run.steps || []).filter((step) => ["FAILED", "BLOCKED", "SKIPPED"].includes(step.status)).forEach((step) => {
             const key = `${run.id}:${step.nodeId}`;
@@ -3221,8 +3286,8 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
       return null;
     } finally {
       // 只清理自己这一条：其它节点发起的运行可能仍在跑，不能一并抹掉
-      if (runAbortMapRef.current.get(runKey) === controller) runAbortMapRef.current.delete(runKey);
-      setRunning(runAbortMapRef.current.size > 0);
+      if (localRunRef.current.get(runKey)?.controller === controller) localRunRef.current.delete(runKey);
+      setRunning(localRunRef.current.size > 0);
     }
   }
 

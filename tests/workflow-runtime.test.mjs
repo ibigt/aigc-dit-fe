@@ -372,3 +372,66 @@ test("落库 graph 带视口，运行 graph 保持纯净", () => {
   assert.equal(runtime.graphWithViewport(graph, null), graph, "无有效视口时不加字段");
   assert.deepEqual(runtime.normalizeViewport(saved.viewport), saved.viewport, "保存值可原样读回");
 });
+
+// ---- 「停止」按钮：按后端 workflow_run.id 取消，而不是拿本地登记的 key 当 run id ----
+// 回归：节点显示「生成中」，点「停止」却提示「没有正在运行的任务」。
+// 根因：localRunRef 的 key 是运行标识（节点 id / "all"），旧实现取 Number(key) 恒为 NaN，
+//      被 filter 掉后数组恒空；且 return 写在 try/finally 之前，本地轮询也没停。
+
+test("停止目标按后端 run id 收集，不把节点 id / all 当 run id", () => {
+  const local = new Map([
+    ["node-a", { controller: {}, runId: 101 }],
+    ["node-b", { controller: {}, runId: 202 }],
+    ["all", { controller: {}, runId: 303 }],
+  ]);
+  const { runIds, pending } = runtime.collectCancelTargets(local, []);
+  assert.deepEqual(runIds.sort((a, b) => a - b), [101, 202, 303]);
+  assert.deepEqual(pending, [], "都拿到 run id 了，没有待定项");
+});
+
+test("节点 id 不能被当成 run id（旧实现的 NaN 过滤就是这个坑）", () => {
+  const local = new Map([["node-1750000000000", { controller: {}, runId: null }]]);
+  const { runIds, pending } = runtime.collectCancelTargets(local, []);
+  assert.deepEqual(runIds, [], "节点 id 不是 run id，不该进取消列表");
+  assert.equal(pending.length, 1, "runId 未知 → 归入待定，等 onStart 拿到 id 再补取消");
+  assert.equal(pending[0][0], "node-1750000000000");
+});
+
+test("runId 未知的运行进待定列表，拿到 id 后不再重复", () => {
+  const local = new Map([["all", { controller: {}, runId: null }]]);
+  const first = runtime.collectCancelTargets(local, []);
+  assert.deepEqual(first.runIds, []);
+  assert.equal(first.pending.length, 1);
+  local.set("all", { controller: {}, runId: 55 });
+  const second = runtime.collectCancelTargets(local, []);
+  assert.deepEqual(second.runIds, [55]);
+  assert.deepEqual(second.pending, []);
+});
+
+test("打开画布时服务端已在跑的运行也能被停止（本地没有控制器）", () => {
+  const { runIds, observed } = runtime.collectCancelTargets(new Map(), [77, "88", null, "bad"]);
+  assert.deepEqual(runIds.sort((a, b) => a - b), [77, 88]);
+  assert.deepEqual(observed.sort((a, b) => a - b), [77, 88]);
+});
+
+test("同一 run id 不重复取消", () => {
+  const local = new Map([["node-a", { controller: {}, runId: 101 }]]);
+  const { runIds } = runtime.collectCancelTargets(local, [101, 101]);
+  assert.deepEqual(runIds, [101]);
+});
+
+test("onStart 在 run 建好后立刻交出 run id，即使此时已被 abort", async () => {
+  const controller = new AbortController();
+  const seen = [];
+  const result = await runtime.executeWorkflowRun({
+    graph: { nodes: [], edges: [] }, modelId: 2, signal: controller.signal,
+    start: async () => {
+      controller.abort(); // 模拟「POST /runs 在飞时用户点了停止」
+      return { id: 909, status: "RUNNING", steps: [] };
+    },
+    onStart: (run) => seen.push(run?.id),
+    onRun: () => {},
+  });
+  assert.deepEqual(seen, [909], "run id 必须交出去，否则没法补 cancel");
+  assert.equal(result, null, "已 abort 不再轮询");
+});
