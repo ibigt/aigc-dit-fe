@@ -71,6 +71,16 @@ export function analyzeDramaScript(episodeId, payload) {
   return api.post(`/drama/episodes/${episodeId}/script/analyze`, payload, { timeout: 600000 });
 }
 
+/** 深度解析：v2 五段流水线。超时与标准解析一致。 */
+export function analyzeDramaScriptV2(episodeId, payload) {
+  return api.post(`/drama/v2/episodes/${episodeId}/script/analyze`, payload, { timeout: 600000 });
+}
+
+/** v2 下游重跑（资产 + 分镜）。页面暂不挂按钮。 */
+export function regenerateDramaScriptV2(episodeId, payload) {
+  return api.post(`/drama/v2/episodes/${episodeId}/script/regenerate`, payload, { timeout: 600000 });
+}
+
 export function saveDramaScript(episodeId, payload) {
   return api.put(`/drama/episodes/${episodeId}/script`, payload);
 }

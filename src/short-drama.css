@@ -2020,6 +2020,26 @@
 .drama-script__status.is-locked { color: #1f8a5b; border-color: #bfe4cf; background: #e8f6ee; }
 .drama-script__status:disabled:not(.is-locked) { opacity: .62; cursor: not-allowed; }
 .drama-analyze-btn { height: 34px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px; color: #fff; border: 1px solid #6572ed; border-radius: 8px; background: #6572ed; font-size: 12px; font-weight: 700; box-shadow: none; white-space: nowrap; }
+/* 「深度解析」滑块：一键分析剧本旁的开关。关 = 标准解析（v1），开 = 深度解析（v2）。 */
+.drama-analyze-group { display: inline-flex; align-items: center; gap: 10px; }
+.drama-deep-toggle { display: inline-flex; align-items: center; gap: 7px; color: var(--drama-muted, #536070); font-size: 13px; white-space: nowrap; cursor: pointer; user-select: none; }
+.drama-deep-toggle__text { line-height: 1; }
+.drama-deep-toggle .toggle-switch { cursor: pointer; }
+.drama-deep-toggle input:disabled + span { opacity: .45; cursor: not-allowed; }
+/* 「深度解析」说明：开关旁边的问号，点开是一段解释（写在正文区顶部，不挤工具条）。 */
+.drama-deep-help { width: 18px; height: 18px; display: inline-grid; place-items: center; padding: 0; color: var(--drama-muted, #626d7b); border: 1px solid var(--drama-line, #dfe4eb); border-radius: 50%; background: transparent; cursor: pointer; }
+.drama-deep-help:hover { color: #3a49b8; border-color: #b9c2f0; background: #f2f4ff; }
+.drama-deep-help:focus-visible { outline: 2px solid #6572ed; outline-offset: 1px; }
+.drama-deep-note { padding: 10px 12px; color: var(--drama-muted, #626d7b); border: 1px solid var(--drama-line, #e5e8ee); border-radius: 10px; background: var(--drama-panel, #fff); font-size: 12px; line-height: 1.75; }
+.drama-deep-note p { margin: 0; }
+.drama-deep-note p + p { margin-top: 6px; }
+.drama-deep-note strong { color: var(--drama-text, #1f2633); }
+.drama-deep-note__title { color: var(--drama-text, #1f2633); font-weight: 600; }
+.drama-deep-note table { width: 100%; margin-top: 8px; border-collapse: collapse; table-layout: fixed; }
+.drama-deep-note th, .drama-deep-note td { padding: 6px 8px; border: 1px solid var(--drama-line, #e5e8ee); text-align: left; vertical-align: top; line-height: 1.7; }
+.drama-deep-note thead th { color: var(--drama-text, #1f2633); background: var(--drama-soft, #f6f7fa); font-weight: 600; }
+.drama-deep-note tbody th { width: 88px; color: var(--drama-muted, #626d7b); font-weight: 500; white-space: nowrap; }
+.drama-deep-note__foot { margin-top: 8px; }
 .drama-script-settings { position: sticky; top: 0; padding: 16px; border: 2px solid var(--drama-line, #e5e8ee); border-radius: 4px; background: #fff; }
 .drama-script-settings .settings-block:last-of-type { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
 .drama-ratio-grid { grid-template-columns: repeat(3, 1fr); }
