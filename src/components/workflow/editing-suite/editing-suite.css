@@ -396,7 +396,8 @@
 /* ── 监视器叠加层（文字 / 图形）与音频通道 ── */
 .ce-monitor audio{display:none}
 .ce-overlay{position:absolute;inset:0;z-index:4;pointer-events:none;overflow:hidden}
-.ce-ov-text{position:absolute;bottom:14%;max-width:88%;line-height:1.35;white-space:pre-wrap;
+/* 文字叠加底部偏移与后端 OverlayRenderer.drawText 的 height*0.08 同口径（14.53 下移） */
+.ce-ov-text{position:absolute;bottom:8%;max-width:88%;line-height:1.35;white-space:pre-wrap;
   word-break:break-word;text-shadow:0 1px 3px rgba(0,0,0,.85)}
 .ce-ov-graphic{position:absolute;--c:#6cb2ec}
 .ce-ov-shape-rect{width:18%;height:18%;background:var(--c);border-radius:2px}
