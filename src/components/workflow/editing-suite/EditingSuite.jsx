@@ -7,6 +7,7 @@ import {
   seedAudioSources, syncTimelineSources,
 } from "./model.js";
 import { downloadSrt, toSrt } from "./srt.js";
+import { downloadMediaFile, mediaDownloadName, mediaUrl } from "../../../lib/media.js";
 import { createEditingStore, useEditingStore } from "./store.js";
 import Timeline, { timelineActionsRef } from "./Timeline.jsx";
 import PlayerStage from "./PlayerStage.jsx";
@@ -22,7 +23,7 @@ const ASPECT_SHAPE = { "16:9": "r169", "9:16": "r916", "1:1": "r11", "4:3": "r43
 const EXPORT_WAIT_TIMEOUT_MS = 10 * 60 * 1000;
 
 export default function EditingSuite({
-  nodeId, title, clips, sources, savedTimeline, savedImportedSources,
+  nodeId, title, clips, sources, savedTimeline, savedImportedSources, savedFilm,
   onClose, onDraft, onExport, onAbort, onRefresh,
 }) {
   // 视频片段由 clips 自动聚合到 V1；音频素材只在 sources 里，需同样自动落到 A1。
@@ -37,6 +38,12 @@ export default function EditingSuite({
   const storeRef = useRef(null);
   // 导出等待期间挂一个「立即解除」的 resolve，供顶栏「取消等待」按钮触发
   const exportCancelRef = useRef(null);
+  // 最近一次导出的成片产物（type=film）：用于在剪辑台内直接播放 / 下载。
+  // 成片只落在剪辑节点上，而剪辑台是全屏浮层（position:fixed, z-index 10001），
+  // 不给入口用户就只能回画布看节点卡 → 「导出成功但找不到文件」。
+  // 初值取节点上已有的成片 → 重新打开剪辑台仍能看到并下载上次的成片。
+  const [film, setFilm] = useState(savedFilm || null);
+  const [filmDownloading, setFilmDownloading] = useState(false);
   if (!storeRef.current) storeRef.current = createEditingStore(initial);
   const store = storeRef.current;
   const state = useEditingStore(store);
@@ -231,7 +238,20 @@ export default function EditingSuite({
       }
       if (outcome?.value?.status === "SUCCEEDED") {
         store.markClean();
-        store.toast("成片导出完成，节点时长与分辨率已更新", "ok");
+        // 接住成片产物：EDIT 步骤的 outputs 里 type=film 的那条带 storageKey。
+        // 没接住的话用户只能回画布看节点卡（剪辑台是全屏浮层，挡住节点卡）→ 「找不到文件」。
+        const produced = (outcome.value.steps || [])
+          .flatMap((step) => step?.outputs || [])
+          .find((output) => output?.type === "film" && (output.storageKey || output.url));
+        if (produced) {
+          setFilm(produced);
+          // 导出成片的语义就是「把成片给用户拿走」→ 成功后直接落进浏览器下载列表。
+          // 下载失败不阻断导出结果展示（结果条里还能手动再点一次）。
+          downloadFilmFile(produced).catch(() => {
+            store.toast("成片已生成，但自动下载被浏览器拦截，请点结果条上的「下载成片」", "error");
+          });
+        }
+        store.toast(produced ? "成片导出完成，正在下载" : "成片导出完成，节点时长与分辨率已更新", "ok");
         onRefresh?.();
       } else {
         // runGraph 内部已经 toast 过具体原因，这里只说明成片没落地，别再误报「导出完成」
@@ -248,6 +268,35 @@ export default function EditingSuite({
 
   function cancelExportWait() {
     exportCancelRef.current?.();
+  }
+
+  // 下载成片：走 /api/media（带 token）取回文件再触发本地下载，
+  // 直接开 url 会被浏览器当媒体播放而不是存盘。
+  async function downloadFilmFile(target) {
+    const key = target?.storageKey || target?.url;
+    if (!key) throw new Error("无可下载的成片");
+    const filename = mediaDownloadName({
+      title: title || "成片",
+      fallback: "成片",
+      type: "film",
+      storageKey: target.storageKey,
+      src: target.url,
+    });
+    await downloadMediaFile(key, filename);
+    return filename;
+  }
+
+  async function downloadFilm() {
+    if (!film || filmDownloading) return;
+    setFilmDownloading(true);
+    try {
+      await downloadFilmFile(film);
+      store.toast("成片已开始下载", "ok");
+    } catch {
+      store.toast("成片下载失败，请刷新产物后重试", "error");
+    } finally {
+      setFilmDownloading(false);
+    }
   }
 
   const flat = exportFlatClips(timeline);
@@ -293,6 +342,36 @@ export default function EditingSuite({
             </button>
           )}
         </div>
+        {film && (
+          <div className="ce-film-result" role="status">
+            <div className="ce-film-result__label">
+              <Icon name="film" size={13} />
+              <span>成片已生成</span>
+            </div>
+            <video
+              className="ce-film-result__video"
+              src={mediaUrl(film.storageKey || film.url)}
+              poster={film.posterUrl || (film.posterKey ? mediaUrl(film.posterKey) : undefined)}
+              controls
+              preload="metadata"
+              playsInline
+            />
+            <div className="ce-film-result__actions">
+              <span className="ce-film-result__meta">
+                {film.metadata?.width && film.metadata?.height
+                  ? `${film.metadata.width}×${film.metadata.height}`
+                  : ""}
+                {film.metadata?.durationSec ? ` · ${formatTime(film.metadata.durationSec)}` : ""}
+              </span>
+              <button className="btn2" disabled={filmDownloading} onClick={downloadFilm}>
+                <Icon name="download" size={13} /> {filmDownloading ? "下载中…" : "下载成片"}
+              </button>
+              <button className="btn2" onClick={() => { setFilm(null); store.setView({ dialog: null }); }}>
+                关闭
+              </button>
+            </div>
+          </div>
+        )}
         {driftNotes.length > 0 && (
           <div className="ce-source-banner" data-tone={drift.missing.length ? "warn" : "info"}>
             <Icon name="refresh" size={13} />

@@ -3891,6 +3891,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
                 sources={getEditingSourceClips(editingSuiteNodeId)}
                 savedTimeline={target?.data?.editing?.timeline}
                 savedImportedSources={target?.data?.editing?.importedSources}
+                savedFilm={(target?.data?.runtime?.outputs || []).find((output) => output?.type === "film" || output?.storageKey?.endsWith("/film.mp4"))}
                 onClose={() => setEditingSuiteNodeId(null)}
                 onDraft={(draft) => updateEditingDraft(editingSuiteNodeId, draft)}
                 onExport={() => commitEditingExport(editingSuiteNodeId)}
