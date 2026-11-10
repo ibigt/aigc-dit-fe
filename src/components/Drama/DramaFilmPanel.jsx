@@ -307,7 +307,7 @@ export function DramaFilmPanel({ series, episode, episodes = [], onSelectEpisode
           </div>
         )}
         <div className="youxi-final-player">
-          <div className="youxi-film-stage">
+          <div className="youxi-film-stage" data-ratio={ratio}>
             {filmSrc ? (
               <video
                 key={`${filmSrc}|${filmVersion}`}

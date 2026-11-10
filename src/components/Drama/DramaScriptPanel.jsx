@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, CircleCheck, Plus, Sparkles, Trash2 } from "lucide-react";
-import { analyzeDramaScript, bindDramaTextModel, fetchDramaTextModels } from "../../api/drama.js";
+import { ChevronRight, CircleCheck, HelpCircle, Plus, Sparkles, Trash2 } from "lucide-react";
+import { isRetryableRequestError } from "../../api/client.js";
+import { analyzeDramaScript, analyzeDramaScriptV2, bindDramaTextModel, fetchDramaTextModels } from "../../api/drama.js";
 import { ConfirmDialog } from "../ConfirmDialog.jsx";
 import { DemoSelect } from "../DemoSelect.jsx";
+
+const DEEP_PARSE_KEY = "drama-deep-parse";
 
 const ANALYSIS_STAGES = [
   { label: "读取剧本", detail: "正在读取和理解剧本原文…" },
@@ -59,6 +62,10 @@ export function DramaScriptPanel({
   const [analysisStartedAt, setAnalysisStartedAt] = useState(null);
   const [analysisNow, setAnalysisNow] = useState(Date.now());
   const [deleteEpisodeTarget, setDeleteEpisodeTarget] = useState(null);
+  const [deepParse, setDeepParse] = useState(
+    () => window.localStorage.getItem(DEEP_PARSE_KEY) === "1",
+  );
+  const [deepHelpOpen, setDeepHelpOpen] = useState(false);
   const wasAnalyzing = useRef(false);
 
   useEffect(() => {
@@ -80,9 +87,12 @@ export function DramaScriptPanel({
   const analyze = useMutation({
     mutationFn: async () => {
       if (!episode) throw new Error("请先创建剧集");
-      return analyzeDramaScript(episode.id, {
-        sourceText: raw,
-      });
+      const payload = { sourceText: raw };
+      // 深度解析开着才走 v2；失败不自动改走标准解析。
+      if (deepParse) {
+        return analyzeDramaScriptV2(episode.id, payload);
+      }
+      return analyzeDramaScript(episode.id, payload);
     },
     onMutate: () => {
       window.setTimeout(() => {
@@ -213,7 +223,39 @@ export function DramaScriptPanel({
                   }}
               />
             </div>
-            <div>
+            <div className="drama-analyze-group">
+              <label
+                  className="drama-deep-toggle"
+                  title={deepParse
+                      ? "深度解析已开启：分步解析，产出更完整，耗时更长、积分消耗更高"
+                      : "标准解析：整份剧本一次性解析，耗时较短、积分消耗较低。点击旁边的问号查看两种方式的差别"}
+              >
+                <span className="drama-deep-toggle__text">深度解析</span>
+                <span className="toggle-switch">
+                  <input
+                      type="checkbox"
+                      aria-label="深度解析"
+                      checked={deepParse}
+                      disabled={analyzing}
+                      onChange={(event) => {
+                        const checked = event.target.checked;
+                        setDeepParse(checked);
+                        window.localStorage.setItem(DEEP_PARSE_KEY, checked ? "1" : "0");
+                      }}
+                  />
+                  <span />
+                </span>
+              </label>
+              <button
+                  className="drama-deep-help"
+                  type="button"
+                  aria-label="深度解析说明"
+                  aria-expanded={deepHelpOpen}
+                  title="深度解析说明"
+                  onClick={() => setDeepHelpOpen((open) => !open)}
+              >
+                <HelpCircle size={13} />
+              </button>
               <button
                   className="button button--primary drama-analyze-btn"
                   type="button"
@@ -227,6 +269,43 @@ export function DramaScriptPanel({
           </div>
 
           <div className="drama-script__body">
+            {deepHelpOpen && (
+              <div className="drama-deep-note">
+                <p className="drama-deep-note__title">标准解析与深度解析的差别</p>
+                <table>
+                  <thead>
+                    <tr>
+                      <th scope="col" />
+                      <th scope="col">标准解析（默认）</th>
+                      <th scope="col">深度解析</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <th scope="row">处理方式</th>
+                      <td>整份剧本一次性提交模型，直接产出场次、资产与分镜。</td>
+                      <td>先梳理故事骨架与场次结构，再统一人物与地点的称谓，最后抽取资产与分镜。</td>
+                    </tr>
+                    <tr>
+                      <th scope="row">校验方式</th>
+                      <td>解析失败时自动重试。</td>
+                      <td>每个阶段均会校验，未通过则自动重写。</td>
+                    </tr>
+                    <tr>
+                      <th scope="row">耗时与消耗</th>
+                      <td>较快，积分消耗较低。</td>
+                      <td>较慢，积分消耗较高。</td>
+                    </tr>
+                    <tr>
+                      <th scope="row">产出质量</th>
+                      <td>剧本较长时可能出现内容遗漏或生成中断。</td>
+                      <td>人物与场景不会重复拆分，资产信息更为完整。</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p className="drama-deep-note__foot">该开关会记住你的选择，刷新页面后保持不变。</p>
+              </div>
+            )}
             <div className="drama-script__raw">
               <span>剧本原文 / 一句话梗概</span>
               <div className="drama-script__editor">
@@ -269,7 +348,11 @@ export function DramaScriptPanel({
                         <span key={stage.label} className={index < currentStage.index ? "done" : index === currentStage.index ? "active" : ""}>{stage.label}</span>
                     ))}
                   </div>
-                  <p className="analysis-background-note">离开页面不会取消分析。分场完成后会在后台自动拆镜，可到「分镜」页查看进度。</p>
+                  <p className="analysis-background-note">
+                    {analyze.isError && isRetryableRequestError(analyze.error)
+                        ? "请求超时，服务端仍在解析，请稍候。离开页面不会取消分析。"
+                        : "离开页面不会取消分析。分场完成后会在后台自动拆镜，可到「分镜」页查看进度。"}
+                  </p>
                 </section>
             )}
 
