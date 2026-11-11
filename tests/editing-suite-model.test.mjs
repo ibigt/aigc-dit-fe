@@ -774,3 +774,67 @@ test("exportOverlays 忽略禁用片段与空文本", () => {
   const blank = addClip(disabled, "T1", { type: "text", start: 0, duration: 1, text: "   " });
   assert.equal(exportOverlays(blank), null);
 });
+
+// 14.55 端到端实测发现的缺陷：字幕尾段超出成片长度时，**整条字幕被静默丢弃**。
+// 成片是「裁剪后 + 空隙压缩」，长度常短于时间线上叠加层的跨度（用户按时间线总长拖字幕）。
+// 旧实现里 filmTimeMapper 对超界时间返回 null → exportOverlays 直接 continue → 字幕凭空消失。
+// 正确语义：夹到成片结尾，保留有效部分。
+test("exportOverlays 字幕超出成片长度时夹到结尾，不整条丢弃", () => {
+  const base = migrateClips([flatWithKey("v1", "users/7/v1.mp4")]);
+  const track = mainVideoTrack(base);
+  const videoId = track.clips[0].id;
+  // 视频只留 4s
+  const shortVideo = updateClip(base, videoId, { start: 0, duration: 4, trimStart: 0, trimEnd: 4 });
+  // 字幕 0.175s 起、6s 长 → 尾段到 6.175s，超出 4s 成片
+  const withText = addClip(shortVideo, "T1", {
+    type: "text", start: 0.175, duration: 6, text: "端到端验证字幕",
+    textStyle: { id: "title", fontSize: 32, color: "#ffffff", weight: 700, align: "center" },
+  });
+  const overlays = exportOverlays(withText);
+  assert.ok(overlays, "字幕不能被整条丢弃");
+  const text = overlays.find((item) => item.kind === "text");
+  assert.equal(text.text, "端到端验证字幕");
+  assert.equal(text.start, 0.175);
+  assert.equal(text.end, 4, "尾段夹到成片结尾（4s）");
+  assert.equal(text.fontSize, 32, "字号是预览 CSS px，由后端按画幅换算");
+});
+
+test("exportOverlays 完全落在成片之后的叠加仍被丢弃", () => {
+  const base = migrateClips([flatWithKey("v1", "users/7/v1.mp4")]);
+  const track = mainVideoTrack(base);
+  const videoId = track.clips[0].id;
+  const shortVideo = updateClip(base, videoId, { start: 0, duration: 4, trimStart: 0, trimEnd: 4 });
+  const withText = addClip(shortVideo, "T1", {
+    type: "text", start: 10, duration: 2, text: "完全在片外", textStyle: { fontSize: 16 },
+  });
+  assert.equal(exportOverlays(withText), null, "片外叠加没有对应画面，应丢弃");
+});
+
+test("sourceClipFromQueue 优先读 metadata.durationMs（音频产物补写后不再按 5s 兜底）", () => {
+  const clip = sourceClipFromQueue({
+    sourceNodeId: "audio-1", mediaType: "audio", trimStart: 0,
+    output: { storageKey: "users/7/a.mp3", metadata: { durationMs: 3440 } },
+  });
+  assert.equal(clip.duration, 3.44);
+  assert.equal(clip.sourceDuration, 3.44);
+});
+
+test("sourceClipFromQueue 时长全缺失时仍回落 5s，且 sourceDuration 为 0（跳过裁剪校验）", () => {
+  const clip = sourceClipFromQueue({
+    sourceNodeId: "audio-2", mediaType: "audio", trimStart: 0,
+    output: { storageKey: "users/7/b.mp3" },
+  });
+  assert.equal(clip.duration, 5);
+  assert.equal(clip.sourceDuration, 0);
+});
+
+test("validateTrim：出点超过素材实际时长直接报错（不等导出被 ffmpeg 拦）", () => {
+  const bad = validateTrim({ trimStart: 0, trimEnd: 5.95, sourceDuration: 3.44 });
+  assert.equal(bad.ok, false);
+  assert.match(bad.error, /不能超过素材实际时长 3\.44s/);
+  const ok = validateTrim({ trimStart: 0, trimEnd: 3.4, sourceDuration: 3.44 });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.duration, 3.4);
+  // 源时长未知时保持旧行为，不拦截
+  assert.equal(validateTrim({ trimStart: 0, trimEnd: 99 }).ok, true);
+});

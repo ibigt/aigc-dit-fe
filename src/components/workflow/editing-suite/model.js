@@ -113,7 +113,7 @@ const round3 = (value) => Math.round(value * 1000) / 1000;
  * patch 同步 duration：clipDuration 优先用 trimEnd-trimStart，但拖拽裁剪 / 旧草稿迁移
  * 会读写 clip.duration，两处保持一致才不会让时间线宽度与导出时长分叉。
  */
-export function validateTrim({ trimStart, trimEnd, minDuration = MIN_TRIM_DURATION } = {}) {
+export function validateTrim({ trimStart, trimEnd, minDuration = MIN_TRIM_DURATION, sourceDuration = 0 } = {}) {
   const toNumber = (raw) => {
     if (typeof raw === "number") return raw;
     const text = String(raw ?? "").trim();
@@ -129,6 +129,12 @@ export function validateTrim({ trimStart, trimEnd, minDuration = MIN_TRIM_DURATI
   }
   if (end <= start) {
     return { ok: false, error: "出点必须大于入点" };
+  }
+  // 出点不得超过素材真实时长：早于导出拦截，避免 ffmpeg 阶段才报「裁剪范围超过源视频时长」。
+  // 源时长未知（0/缺失）时跳过，保持旧行为。
+  const limit = Number(sourceDuration);
+  if (Number.isFinite(limit) && limit > 0 && end > limit + 0.05) {
+    return { ok: false, error: `出点不能超过素材实际时长 ${round3(limit)}s` };
   }
   const duration = round3(end - start);
   if (duration < minDuration) {
@@ -148,6 +154,15 @@ export function trimRangeOf(clip) {
     ? Number(clip.trimEnd)
     : trimStart + clipDuration(clip);
   return { trimStart, trimEnd };
+}
+
+/** 产物真实时长（秒）：durationSec 优先，缺省回退 metadata.durationMs/1000，都没有返回 0。 */
+export function sourceDurationSec(output) {
+  if (!output) return 0;
+  const sec = Number(output.durationSec ?? output.metadata?.durationSec);
+  if (Number.isFinite(sec) && sec > 0) return sec;
+  const ms = Number(output.durationMs ?? output.metadata?.durationMs);
+  return Number.isFinite(ms) && ms > 0 ? ms / 1000 : 0;
 }
 
 const uid = (prefix) => `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
@@ -178,7 +193,7 @@ export function migrateClips(saved, options = {}) {
     const trimEnd = Number(item.trimEnd);
     const duration = Number.isFinite(trimEnd) && trimEnd > trimStart
       ? trimEnd - trimStart
-      : Number(item.output?.durationSec ?? item.output?.metadata?.durationSec) || 5;
+      : sourceDurationSec(item.output) || 5;
     const clip = {
       id: uid("clip"),
       // 稳定片段标识：同源同输出的多段靠它区分（后端按 clipId 去重，不能按 source+output）
@@ -268,13 +283,16 @@ function effectIdOf(clip) {
   return effect ? effect.id : null;
 }
 
-// 导出用叠加层（排期 #7）：文字轨与图形轨的片段，start/end 为成片内绝对时间。
+// 导出用叠加层（排期 #7）：文字/图形轨的片段，start/end 为成片内绝对时间。
 // 视频导出是「空隙压缩的首尾拼接」，成片时间与时间线时间在 V1 无空隙时一致；
-// 有空隙时按「已导出视频片段累计时长」折算成片位置，保证叠加落在正确画面上。
+// 有空隙时按「已导出视频片段累计时长」折算成片位置。
+// V2 画中画不经此函数（独立 exportPipClips → editing.pipClips 通道）。
 export function exportOverlays(timeline) {
   const overlays = [];
   const videoClips = exportedVideoClips(timeline);
   const timelineToFilm = filmTimeMapper(videoClips);
+  // 成片总长 = 已导出视频片段时长之和（空隙压缩后）。叠加层超出部分夹到这个长度。
+  const filmDuration = videoClips.reduce((sum, clip) => sum + clipDuration(clip), 0);
   for (const { clip } of allClips(timeline)) {
     if (clip.type !== "text" && clip.type !== "graphic") continue;
     if (clip.enabled === false) continue;
@@ -283,7 +301,12 @@ export function exportOverlays(timeline) {
     if (end <= start) continue;
     const filmStart = timelineToFilm(start);
     const filmEnd = timelineToFilm(end);
-    if (filmEnd <= filmStart) continue;
+    // 显式判空：落在中间空隙里 filmStart 为 null，此时不能进叠加层
+    // （`filmEnd <= null` 在 JS 里等价于 `filmEnd <= 0`，会误放行）。
+    if (filmStart == null || filmEnd == null) continue;
+    // 末尾超界：夹到成片结尾，保留有效部分（14.55：整条丢弃会让字幕凭空消失）
+    const clippedEnd = Math.min(filmEnd, filmDuration || filmEnd);
+    if (clippedEnd <= filmStart) continue;
     if (clip.type === "text") {
       const content = String(clip.text || "");
       // 空白文字不导出：后端也会丢弃，避免「有叠加层但什么都没画」的无效烧录
@@ -292,7 +315,7 @@ export function exportOverlays(timeline) {
       overlays.push({
         kind: "text",
         start: filmStart,
-        end: filmEnd,
+        end: clippedEnd,
         text: content,
         color: style.color || "#ffffff",
         // 字号是预览器（.ce-monitor，宽 ≤560px）上的 CSS px，不是成片像素。
@@ -306,7 +329,7 @@ export function exportOverlays(timeline) {
       overlays.push({
         kind: "graphic",
         start: filmStart,
-        end: filmEnd,
+        end: clippedEnd,
         shape: graphic.shape || "rect",
         color: graphic.color || "#6cb2ec",
         x: Number(graphic.x) || 50,
@@ -317,6 +340,45 @@ export function exportOverlays(timeline) {
     }
   }
   return overlays.length ? overlays : null;
+}
+
+// V2 画中画导出：副视频轨（type=video 且非主轨 V1）上的片段 → editing.pipClips。
+// start/end 为成片内绝对时间（与 overlays 同一套 filmTimeMapper 折算）；
+// x/y/scale/opacity 来自 clip.pip（属性面板可调，默认右上角 30% 宽）。
+export function exportPipClips(timeline) {
+  const mainId = mainVideoTrack(timeline)?.id;
+  const videoClips = exportedVideoClips(timeline);
+  const timelineToFilm = filmTimeMapper(videoClips);
+  const filmTotal = videoClips.reduce((sum, clip) => sum + clipDuration(clip), 0);
+  const pips = [];
+  for (const { clip, track } of allClips(timeline)) {
+    if (clip.type !== "video" || !track || track.type !== "video" || track.id === mainId) continue;
+    if (clip.enabled === false || !clip.storageKey) continue;
+    const start = Number(clip.start) || 0;
+    const end = start + clipDuration(clip);
+    if (end <= start) continue;
+    const filmStart = timelineToFilm(start);
+    const filmEnd = timelineToFilm(end);
+    if (filmStart == null || filmEnd == null) continue;
+    const clippedEnd = Math.min(filmEnd, filmTotal || filmEnd);
+    if (clippedEnd <= filmStart) continue;
+    const pip = clip.pip || {};
+    pips.push({
+      start: filmStart,
+      end: clippedEnd,
+      sourceNodeId: clip.sourceNodeId,
+      outputIndex: Number(clip.outputIndex) || 0,
+      trimStart: Number(clip.trimStart) || 0,
+      trimEnd: Number(clip.trimEnd) || (Number(clip.trimStart) || 0) + clipDuration(clip),
+      x: Number(pip.x) || 70,
+      y: Number(pip.y) || 25,
+      scale: Number(pip.scale) || 30,
+      opacity: Number(pip.opacity) || 100,
+      muted: Boolean(clip.muted),
+      ...(clip.imported && clip.localKey ? { localKey: clip.localKey } : {}),
+    });
+  }
+  return pips.length ? pips : null;
 }
 
 function exportedVideoClips(timeline) {
@@ -331,6 +393,11 @@ function exportedVideoClips(timeline) {
  * 时间线时间 → 成片时间。成片是「空隙压缩的首尾拼接」：第 i 段在成片里的起点
  * = 前面所有已导出片段的时长之和。返回 null 表示该时间点落在未导出区间（如空隙），
  * 调用方据此丢弃叠加层。
+ *
+ * 注意（14.55 端到端实测）：末尾**超界**（叠加层时长超过成片总长）是常见情况——
+ * 用户加的字幕常按时间线总长拖拽，而成片是「裁剪后 + 空隙压缩」，两者长度不一致。
+ * 这类超界不能整条丢弃，应映射到成片结尾再由调用方裁剪 end；
+ * 只有落在**中间空隙**里的时间点才真正没有画面，返回 null。
  */
 function filmTimeMapper(videoClips) {
   const segments = [];
@@ -349,6 +416,12 @@ function filmTimeMapper(videoClips) {
     // 末段末尾：贴到成片结尾（避免尾部叠加被误丢）
     if (segments.length && time === segments[segments.length - 1].to) {
       return segments[segments.length - 1].film + (segments[segments.length - 1].to - segments[segments.length - 1].from);
+    }
+    // 超出成片总长（末尾超界）：夹到成片结尾，交给调用方裁剪 end。
+    // 只对「在最后一段之后」的时间点生效——中间空隙仍返回 null。
+    const last = segments[segments.length - 1];
+    if (last && time > last.to) {
+      return last.film + (last.to - last.from);
     }
     return null;
   };
@@ -660,6 +733,8 @@ export function importedSourceFromAsset(asset = {}, fallbackName = "") {
     mediaType,
     storageKey,
     outputIndex: 0,
+    // 源时长给裁剪前置校验用：durationMs 缺失时按 0（校验跳过），别把 5s 兜底当成真实时长
+    sourceDuration: Number(asset.durationMs) > 0 ? durationSec : 0,
     output: {
       storageKey,
       posterKey: asset.posterKey || "",
@@ -688,13 +763,16 @@ export function normalizeImportedSources(list) {
 export function sourceClipFromQueue(item) {
   const trimStart = Number(item.trimStart) || 0;
   const trimEnd = Number(item.trimEnd);
+  // 素材真实时长：裁剪数值输入的前置校验用（缺失则为 0，只跳过该校验）
+  const sourceDuration = sourceDurationSec(item.output) || 0;
   const duration = Number.isFinite(trimEnd) && trimEnd > trimStart
     ? trimEnd - trimStart
-    : Number(item.output?.durationSec ?? item.output?.metadata?.durationSec) || 5;
+    : sourceDuration || 5;
   return {
     // 素材类型来自上游节点种类（视频生成 / 音频生成），决定落哪条轨道与片段渲染形态
     type: item.mediaType === "audio" ? "audio" : "video",
     duration,
+    sourceDuration,
     trimStart,
     trimEnd: Number.isFinite(trimEnd) ? trimEnd : trimStart + duration,
     sourceNodeId: item.sourceNodeId,
