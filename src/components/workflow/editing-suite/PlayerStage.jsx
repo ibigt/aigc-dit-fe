@@ -216,43 +216,52 @@ export default function PlayerStage({ store }) {
     setLiveFilter((current) => (current === next ? current : next));
   }), [store, timeline, filterTarget]);
 
-  // V2 画中画跟随：播放头处激活的 PiP 片段装载/seek/定位（与主视频同一套容差）
-  useEffect(() => store.subscribeTime((t) => {
-    const video = pipVideoRef.current;
-    if (!video) return;
-    const active = soloClip ? null
-      : pipClips.find(({ clip }) => t >= (Number(clip.start) || 0) && t < clipEnd(clip)) || null;
-    if (!active) {
-      if (!video.paused) video.pause();
-      video.style.display = "none";
-      pipStateRef.current.src = "";
-      return;
-    }
-    const clip = active.clip;
-    const pip = clip.pip || {};
-    const url = mediaUrl(clip.storageKey);
-    video.style.display = "block";
-    video.style.width = `${Number.isFinite(Number(pip.scale)) ? Number(pip.scale) : 30}%`;
-    video.style.left = `${Number.isFinite(Number(pip.x)) ? Number(pip.x) : 70}%`;
-    video.style.top = `${Number.isFinite(Number(pip.y)) ? Number(pip.y) : 25}%`;
-    video.style.opacity = String((Number.isFinite(Number(pip.opacity)) ? Number(pip.opacity) : 100) / 100);
-    if (pipStateRef.current.src !== url) {
-      pipStateRef.current.src = url;
-      video.src = url;
-      video.onloadedmetadata = () => {
-        try { video.currentTime = (Number(clip.trimStart) || 0) + Math.max(0, t - (Number(clip.start) || 0)); } catch { /* seek before metadata */ }
-        video.muted = true; // PiP 声音暂不混预览，成片按 muted 字段处理
-        video.play().catch(() => { /* noop */ });
-      };
-      video.load();
-    } else {
+  // V2 画中画跟随：播放头处激活的 PiP 片段装载/seek/定位（与主视频同一套容差）。
+  // 除订阅时间外立即同步一次：静止态、切换播放状态、改位置/大小后播放头不动也能立刻看到叠层。
+  useEffect(() => {
+    const syncPip = (t) => {
+      const video = pipVideoRef.current;
+      if (!video) return;
+      const active = soloClip ? null
+        : pipClips.find(({ clip }) => t >= (Number(clip.start) || 0) && t < clipEnd(clip)) || null;
+      if (!active) {
+        if (!video.paused) video.pause();
+        video.style.display = "none";
+        pipStateRef.current.src = "";
+        return;
+      }
+      const clip = active.clip;
+      const pip = clip.pip || {};
+      const url = mediaUrl(clip.storageKey);
+      video.style.display = "block";
+      video.style.width = `${Number.isFinite(Number(pip.scale)) ? Number(pip.scale) : 30}%`;
+      video.style.left = `${Number.isFinite(Number(pip.x)) ? Number(pip.x) : 70}%`;
+      video.style.top = `${Number.isFinite(Number(pip.y)) ? Number(pip.y) : 25}%`;
+      video.style.opacity = String((Number.isFinite(Number(pip.opacity)) ? Number(pip.opacity) : 100) / 100);
       const expected = (Number(clip.trimStart) || 0) + Math.max(0, t - (Number(clip.start) || 0));
+      if (pipStateRef.current.src !== url) {
+        pipStateRef.current.src = url;
+        video.src = url;
+        video.onloadedmetadata = () => {
+          try { video.currentTime = expected; } catch { /* seek before metadata */ }
+          video.muted = true; // PiP 声音暂不混预览，成片按 muted 字段处理
+          if (playingRef.current) video.play().catch(() => { /* noop */ });
+        };
+        video.load();
+        return;
+      }
       if (Math.abs(video.currentTime - expected) > 0.35) {
         try { video.currentTime = expected; } catch { /* noop */ }
       }
-      if (video.paused && playingRef.current) video.play().catch(() => { /* noop */ });
-    }
-  }), [store, pipClips, soloClip]);
+      if (playingRef.current) {
+        if (video.paused) video.play().catch(() => { /* noop */ });
+      } else if (!video.paused) {
+        video.pause();
+      }
+    };
+    syncPip(store.getTime());
+    return store.subscribeTime(syncPip);
+  }, [store, pipClips, soloClip, timeline, playing]);
 
   function jump(delta) {
     const t = store.getTime();
@@ -280,6 +289,8 @@ export default function PlayerStage({ store }) {
       <div className="ce-monitor" style={{ aspectRatio: `${aspect.w}/${aspect.h}`, "--arn": aspect.w / aspect.h }}>
         <video ref={videoA} playsInline preload="auto" style={{ filter: liveFilter }} />
         <video ref={videoB} playsInline preload="auto" style={{ display: "none" }} />
+        {/* V2 画中画：副视频轨叠在主画面上，位置/大小/不透明度由播放头同步（成片同口径烧录） */}
+        <video ref={pipVideoRef} className="ce-pip-video" playsInline preload="auto" muted />
         {/* 音频轨独立通道：与画面共用播放头，不进画面合成 */}
         <audio ref={audioEl} preload="auto" />
         {!clips.length && !audioClips.length && <div className="empty"><Icon name="film" /> 时间线为空，先添加素材</div>}

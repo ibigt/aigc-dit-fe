@@ -223,7 +223,8 @@ export default function RightPane({ store }) {
               </>
             )}
 
-            {(clip.type === "video" || clip.type === "audio") && (
+            {/* 画中画只叠加画面、不混入副轨音轨，音量/静音控件对它无效，直接不展示 */}
+            {(clip.type === "video" || clip.type === "audio") && !clipOnPipTrack && (
               <>
                 <div className="ce-grp">音频</div>
                 <div className="ce-slid">
@@ -253,7 +254,7 @@ export default function RightPane({ store }) {
                 )}
                 {clipOnPipTrack && (
                   <>
-                    <div className="ce-hint">画中画：该片段叠在主画面上方导出（位置/大小即时生效）。</div>
+                    <div className="ce-hint">画中画：该片段叠在主画面上方导出，预览与成片同口径；仅叠加画面，不混入副轨原声。</div>
                     {(() => {
                       const pip = clip.pip || {};
                       const pipSlider = (label, key, min, max, def) => {

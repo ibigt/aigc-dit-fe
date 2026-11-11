@@ -6,7 +6,7 @@ import {
   aspectSize, clipDuration, clipEnd, clipFilter, emptyTimeline, exportFlatClips, filmDuration,
   findSnap, mainVideoTrack, mediaKindOf, migrateClips, moveClipToTrack, playableAudioClips, removeClips,
   removeTrack, snapTargets, sourceClipFromQueue, splitAt, timelineDuration, updateClip, updateTrack, addTrack,
-  seedAudioSources, audioTracks, addClip, exportAudioClips, exportClipStyles, exportOverlays,
+  seedAudioSources, audioTracks, addClip, exportAudioClips, exportClipStyles, exportOverlays, exportPipClips,
   MIN_TRIM_DURATION, validateTrim, trimRangeOf,
   sourceKeyOf, inspectSourceDrift, syncTimelineSources,
   LOCAL_SOURCE_PREFIX, importedSourceFromAsset, normalizeImportedSources,
@@ -837,4 +837,86 @@ test("validateTrim：出点超过素材实际时长直接报错（不等导出�
   assert.equal(ok.duration, 3.4);
   // 源时长未知时保持旧行为，不拦截
   assert.equal(validateTrim({ trimStart: 0, trimEnd: 99 }).ok, true);
+});
+
+// ── V2 画中画（副视频轨）独立导出通道 ──────────────────────────────────────
+
+test("exportPipClips：无副视频轨片段时返回 null，且画中画不污染 overlays / V1 拼接", () => {
+  const base = migrateClips([flatWithKey("v1", "users/7/v1.mp4")]);
+  assert.equal(exportPipClips(base), null);
+  assert.equal(exportOverlays(base), null);
+  assert.equal(exportFlatClips(base).length, 1);
+});
+
+test("exportPipClips：副视频轨片段带全量 PiP 字段，不进文字/图形叠加通道", () => {
+  const base = migrateClips([flatWithKey("v1", "users/7/v1.mp4")]);
+  const withPip = seed(base, "V2", {
+    id: "pip-1", type: "video", start: 1, duration: 2, trimStart: 0.5, trimEnd: 2.5,
+    storageKey: "users/7/pip.mp4", sourceNodeId: "v2", outputIndex: 1, muted: true,
+    pip: { x: 20, y: 80, scale: 45, opacity: 70 },
+  });
+  const pips = exportPipClips(withPip);
+  assert.equal(pips.length, 1);
+  assert.deepEqual(pips[0], {
+    start: 1, end: 3, sourceNodeId: "v2", outputIndex: 1,
+    trimStart: 0.5, trimEnd: 2.5, x: 20, y: 80, scale: 45, opacity: 70, muted: true,
+  });
+  assert.equal(exportOverlays(withPip), null, "画中画必须走独立 pipClips 通道，不能烧成 PNG");
+  assert.equal(exportFlatClips(withPip).length, 1, "副视频轨不能混进 V1 首尾拼接");
+});
+
+test("exportPipClips：缺省 PiP 参数用右上角 30% 宽，空隙压缩后折算成片时间", () => {
+  const base = migrateClips([
+    flatWithKey("v1", "users/7/a.mp4"), flatWithKey("v2", "users/7/b.mp4"),
+  ]);
+  const secondId = mainVideoTrack(base).clips[1].id;
+  // V1：0-5s + 7-10s（中间 2s 空隙），成片为 0-5s + 5-8s
+  const withGap = updateClip(base, secondId, { start: 7, duration: 3, trimStart: 0, trimEnd: 3 });
+  const withPip = seed(withGap, "V2", {
+    id: "pip-2", type: "video", start: 7, duration: 2, trimStart: 0, trimEnd: 2,
+    storageKey: "users/7/pip.mp4", sourceNodeId: "v3",
+  });
+  const pips = exportPipClips(withPip);
+  assert.equal(pips.length, 1);
+  assert.equal(pips[0].start, 5, "时间线 7s 折算成成片 5s");
+  assert.equal(pips[0].end, 7);
+  assert.equal(pips[0].x, 70);
+  assert.equal(pips[0].y, 25);
+  assert.equal(pips[0].scale, 30);
+  assert.equal(pips[0].opacity, 100);
+  assert.equal(pips[0].muted, false);
+});
+
+test("exportPipClips：禁用/无素材/落在空隙的片段丢弃，本地导入带 localKey", () => {
+  const base = migrateClips([flatWithKey("v1", "users/7/v1.mp4")]);
+  let timeline = seed(base, "V2", {
+    id: "off", type: "video", start: 0, duration: 2, trimStart: 0, trimEnd: 2,
+    storageKey: "users/7/off.mp4", enabled: false,
+  });
+  timeline = seed(timeline, "V2", {
+    id: "blank", type: "video", start: 0, duration: 2, trimStart: 0, trimEnd: 2,
+  });
+  timeline = seed(timeline, "V2", {
+    id: "local", type: "video", start: 2, duration: 2, trimStart: 0, trimEnd: 2,
+    storageKey: "users/7/assets/local.mp4", localKey: "users/7/assets/local.mp4", imported: true,
+    sourceNodeId: "local-1", pip: { x: 10, y: 10, scale: 50, opacity: 80 },
+  });
+  const pips = exportPipClips(timeline);
+  assert.equal(pips.length, 1);
+  assert.equal(pips[0].localKey, "users/7/assets/local.mp4");
+  assert.equal(pips[0].start, 2);
+  assert.equal(pips[0].scale, 50);
+  assert.equal(pips[0].opacity, 80);
+});
+
+test("exportPipClips：超出成片尾部的画中画夹到成片结尾", () => {
+  const base = migrateClips([flatWithKey("v1", "users/7/v1.mp4")]);
+  const withPip = seed(base, "V2", {
+    id: "long", type: "video", start: 3, duration: 8, trimStart: 0, trimEnd: 8,
+    storageKey: "users/7/pip.mp4", sourceNodeId: "v2",
+  });
+  const pips = exportPipClips(withPip);
+  assert.equal(pips.length, 1);
+  assert.equal(pips[0].start, 3);
+  assert.equal(pips[0].end, 5, "成片只有 5s，尾部夹住");
 });
