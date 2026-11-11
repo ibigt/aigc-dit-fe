@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  EFFECT_PRESETS, TRANSITION_PRESETS, clipDuration, removeTrack,
+  EFFECT_PRESETS, TRANSITION_PRESETS, clipDuration, mainVideoTrack, removeTrack,
   trimRangeOf, updateClip, updateTrack, validateTrim,
 } from "./model.js";
 import { useEditingStore } from "./store.js";
@@ -16,6 +16,9 @@ export default function RightPane({ store }) {
   const view = state.view;
   const clip = timeline.tracks.flatMap((track) => track.clips).find((item) => selection.includes(item.id));
   const track = view.activeTrackId ? timeline.tracks.find((item) => item.id === view.activeTrackId) : null;
+  // V2 画中画：片段是否在副视频轨（非主轨 V1 的 video 轨）——决定是否显示画中画控件
+  const clipOnPipTrack = clip ? timeline.tracks.some((item) => item.type === "video"
+    && item.id !== mainVideoTrack(timeline)?.id && item.clips.some((entry) => entry.id === clip.id)) : false;
   const [draft, setDraft] = useState({});
   // 初值直接取首个 clip 的真实裁剪区间，避免首帧闪一下「出点必须大于入点」。
   const [trimDraft, setTrimDraft] = useState(() => {
@@ -37,7 +40,8 @@ export default function RightPane({ store }) {
     setTrimDraft({ trimStart: trimText(range.trimStart), trimEnd: trimText(range.trimEnd) });
   }, [clip?.id, clip?.trimStart, clip?.trimEnd, clip?.duration, isMediaClip]);
 
-  const trimResult = isMediaClip ? validateTrim(trimDraft) : null;
+  // 源时长参与校验：出点超素材实际时长时直接标错，不必等导出被 ffmpeg 拦
+  const trimResult = isMediaClip ? validateTrim({ ...trimDraft, sourceDuration: clip?.sourceDuration }) : null;
 
   function apply(patch) {
     if (!clip) return;
@@ -47,7 +51,7 @@ export default function RightPane({ store }) {
   // 失焦 / 回车提交：非法输入保留输入态并标错提示，不写 timeline；值未变不压撤销栈。
   function commitTrim() {
     if (!clip || !isMediaClip) return;
-    const result = validateTrim(trimDraft);
+    const result = validateTrim({ ...trimDraft, sourceDuration: clip.sourceDuration });
     if (!result.ok) {
       store.toast(result.error, "error");
       return;
@@ -238,13 +242,43 @@ export default function RightPane({ store }) {
               <>
                 <div className="ce-sep"></div>
                 <div className="ce-grp">画面</div>
-                <div className="ce-slid">
-                  <div className="row"><span>不透明度</span><b>{Math.round(Number(clip.opacity ?? 100))}</b></div>
-                  <input className="ce-range" type="range" min="0" max="100" value={Number(clip.opacity ?? 100)}
-                    style={{ "--pct": `${Number(clip.opacity ?? 100)}%`, "--range-fill": "var(--v)" }}
-                    onChange={(event) => setDraft((current) => ({ ...current, opacity: Number(event.target.value) }))}
-                    onPointerUp={(event) => apply({ opacity: Number(event.target.value) })} />
-                </div>
+                {!clipOnPipTrack && (
+                  <div className="ce-slid">
+                    <div className="row"><span>不透明度</span><b>{Math.round(Number(clip.opacity ?? 100))}</b></div>
+                    <input className="ce-range" type="range" min="0" max="100" value={Number(clip.opacity ?? 100)}
+                      style={{ "--pct": `${Number(clip.opacity ?? 100)}%`, "--range-fill": "var(--v)" }}
+                      onChange={(event) => setDraft((current) => ({ ...current, opacity: Number(event.target.value) }))}
+                      onPointerUp={(event) => apply({ opacity: Number(event.target.value) })} />
+                  </div>
+                )}
+                {clipOnPipTrack && (
+                  <>
+                    <div className="ce-hint">画中画：该片段叠在主画面上方导出（位置/大小即时生效）。</div>
+                    {(() => {
+                      const pip = clip.pip || {};
+                      const pipSlider = (label, key, min, max, def) => {
+                        const value = Number.isFinite(Number(pip[key])) ? Number(pip[key]) : def;
+                        return (
+                          <div className="ce-slid" key={key}>
+                            <div className="row"><span>{label}</span><b>{key === "scale" || key === "opacity" ? Math.round(value) : `${Math.round(value)}%`}</b></div>
+                            <input className="ce-range" type="range" min={min} max={max} value={value}
+                              style={{ "--pct": `${(value - min) / (max - min) * 100}%`, "--range-fill": "var(--v)" }}
+                              onChange={(event) => setDraft((current) => ({ ...current, pip: { ...(current.pip || clip.pip || {}), [key]: Number(event.target.value) } }))}
+                              onPointerUp={(event) => apply({ pip: { ...(draft.pip || clip.pip || {}), [key]: Number(event.target.value) } })} />
+                          </div>
+                        );
+                      };
+                      return (
+                        <>
+                          {pipSlider("水平位置", "x", 0, 100, 70)}
+                          {pipSlider("垂直位置", "y", 0, 100, 25)}
+                          {pipSlider("大小（画面宽 %）", "scale", 5, 100, 30)}
+                          {pipSlider("不透明度", "opacity", 0, 100, 100)}
+                        </>
+                      );
+                    })()}
+                  </>
+                )}
               </>
             )}
 

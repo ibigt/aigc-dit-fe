@@ -48,6 +48,16 @@ export default function PlayerStage({ store }) {
     if (soloClip) return soloClip.type === "audio" && soloClip.storageKey ? [{ ...soloClip }] : [];
     return playableAudioClips(timeline);
   }, [timeline, soloClip]);
+
+  // V2 画中画：副视频轨（非主轨）片段，叠在主画面上方预览
+  const mainTrackId = mainVideoTrack(timeline)?.id;
+  const pipClips = useMemo(() => (timeline.tracks || [])
+    .filter((item) => item.type === "video" && item.id !== mainTrackId)
+    .flatMap((item) => item.clips.map((clip) => ({ clip, trackVisible: item.visible !== false })))
+    .filter(({ clip, trackVisible }) => trackVisible && clip.enabled !== false && clip.storageKey)
+    .sort((a, b) => a.clip.start - b.clip.start), [timeline, mainTrackId]);
+  const pipVideoRef = useRef(null);
+  const pipStateRef = useRef({ src: "" });
   const aspect = ASPECTS.find((item) => item.id === timeline.aspect) || ASPECTS[0];
   const selected = (timeline.tracks || []).flatMap((track) => track.clips).find((clip) => selection.includes(clip.id));
   const filterTarget = soloClip || selected;
@@ -205,6 +215,44 @@ export default function PlayerStage({ store }) {
     const next = active ? clipFilter(active.clip) : filterTarget ? clipFilter(filterTarget) : "none";
     setLiveFilter((current) => (current === next ? current : next));
   }), [store, timeline, filterTarget]);
+
+  // V2 画中画跟随：播放头处激活的 PiP 片段装载/seek/定位（与主视频同一套容差）
+  useEffect(() => store.subscribeTime((t) => {
+    const video = pipVideoRef.current;
+    if (!video) return;
+    const active = soloClip ? null
+      : pipClips.find(({ clip }) => t >= (Number(clip.start) || 0) && t < clipEnd(clip)) || null;
+    if (!active) {
+      if (!video.paused) video.pause();
+      video.style.display = "none";
+      pipStateRef.current.src = "";
+      return;
+    }
+    const clip = active.clip;
+    const pip = clip.pip || {};
+    const url = mediaUrl(clip.storageKey);
+    video.style.display = "block";
+    video.style.width = `${Number.isFinite(Number(pip.scale)) ? Number(pip.scale) : 30}%`;
+    video.style.left = `${Number.isFinite(Number(pip.x)) ? Number(pip.x) : 70}%`;
+    video.style.top = `${Number.isFinite(Number(pip.y)) ? Number(pip.y) : 25}%`;
+    video.style.opacity = String((Number.isFinite(Number(pip.opacity)) ? Number(pip.opacity) : 100) / 100);
+    if (pipStateRef.current.src !== url) {
+      pipStateRef.current.src = url;
+      video.src = url;
+      video.onloadedmetadata = () => {
+        try { video.currentTime = (Number(clip.trimStart) || 0) + Math.max(0, t - (Number(clip.start) || 0)); } catch { /* seek before metadata */ }
+        video.muted = true; // PiP 声音暂不混预览，成片按 muted 字段处理
+        video.play().catch(() => { /* noop */ });
+      };
+      video.load();
+    } else {
+      const expected = (Number(clip.trimStart) || 0) + Math.max(0, t - (Number(clip.start) || 0));
+      if (Math.abs(video.currentTime - expected) > 0.35) {
+        try { video.currentTime = expected; } catch { /* noop */ }
+      }
+      if (video.paused && playingRef.current) video.play().catch(() => { /* noop */ });
+    }
+  }), [store, pipClips, soloClip]);
 
   function jump(delta) {
     const t = store.getTime();

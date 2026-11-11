@@ -42,7 +42,12 @@ function clamp(value, min, max) {
 
 function createClip(node, output, outputIndex, persisted, order) {
   const trimStart = Number(persisted?.trimStart ?? 0);
-  const outputDuration = Number(output.durationSec ?? output.duration ?? output.metadata?.durationSec);
+  const outputDurationSec = Number(output.durationSec ?? output.duration ?? output.metadata?.durationSec);
+  const outputDurationMs = Number(output.durationMs ?? output.metadata?.durationMs);
+  // 优先 durationSec；缺失时回退 durationMs/1000（音频产物由任务完成时 ffprobe 补写）
+  const outputDuration = Number.isFinite(outputDurationSec) && outputDurationSec > 0
+    ? outputDurationSec
+    : Number.isFinite(outputDurationMs) && outputDurationMs > 0 ? outputDurationMs / 1000 : outputDurationSec;
   const trimEnd = persisted?.trimEnd == null ? (outputDuration > 0 ? outputDuration : null) : Number(persisted.trimEnd);
   const validationError = !Number.isFinite(trimStart) || trimStart < 0 || (trimEnd != null && (!Number.isFinite(trimEnd) || trimEnd <= trimStart))
     ? "裁剪入点/出点范围无效" : outputDuration > 0 && (trimStart >= outputDuration || trimEnd > outputDuration)

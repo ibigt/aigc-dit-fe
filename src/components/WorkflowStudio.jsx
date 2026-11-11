@@ -2373,13 +2373,13 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
   // 独立剪辑台草稿双写：每次草稿提交写回 timeline v2 + 扁平 clips[] + audioClips[]。
   // clips 供节点卡队列 / runGraph / 后端 compose（主视频轨拼接）；audioClips 供后端把音频轨混入成片（amix）。
   // 不进画布撤销栈：剪辑台内部有自己的 50 步栈，画布只需在「导出成片」时记一条。
-  const updateEditingDraft = useCallback((nodeId, { timeline, clips, audioClips, importedSources = [], clipStyles = null, overlays = null }) => {
+  const updateEditingDraft = useCallback((nodeId, { timeline, clips, audioClips, importedSources = [], clipStyles = null, overlays = null, pipClips = null }) => {
     setNodes((items) => items.map((node) => {
       if (node.id !== nodeId) return node;
       // importedSources 是剪辑台本地导入的素材清单，不在 graph.nodes 里，只能随草稿透传。
-      // clipStyles / overlays（排期 #7）是成片烧录用的样式与叠加层，与 clips 同序：
-      // 为 null 时必须**删掉旧字段**——只展开不覆盖会让上一次的字幕/调节残留，
-      // 表现为「删了字幕，导出成片里还有字幕」。后端把 null 与缺省都当空列表，
+      // clipStyles / overlays / pipClips（排期 #7 / V2 画中画）是成片烧录用的样式、叠加层
+      // 与副视频轨画中画清单，与 clips 同序：为 null 时必须**删掉旧字段**——只展开不覆盖
+      // 会让上一次的字幕/调节/画中画残留。后端把 null 与缺省都当空列表，
       // toStep 都不写字段，step map 仍与旧版逐字节一致（运行指纹不漂移）。
       const editing = {
         ...node.data.editing,
@@ -2391,6 +2391,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
       };
       if (clipStyles) editing.clipStyles = clipStyles; else delete editing.clipStyles;
       if (overlays) editing.overlays = overlays; else delete editing.overlays;
+      if (pipClips) editing.pipClips = pipClips; else delete editing.pipClips;
       return { ...node, data: {
         ...node.data,
         media: { ...node.data.media, clips, ratio: timeline.aspect, resolution: timeline.quality },

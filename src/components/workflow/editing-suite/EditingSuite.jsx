@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  ASPECTS, QUALITIES, exportAudioClips, exportClipStyles, exportFlatClips, exportOverlays,
+  ASPECTS, QUALITIES, exportAudioClips, exportClipStyles, exportFlatClips, exportOverlays, exportPipClips,
   filmDuration, formatTime,
   inspectSourceDrift, migrateClips, normalizeImportedSources, resolutionText,
   seedAudioSources, syncTimelineSources,
@@ -120,6 +120,7 @@ export default function EditingSuite({
       audioClips: exportAudioClips(timeline),
       clipStyles: exportClipStyles(timeline),
       overlays: exportOverlays(timeline),
+      pipClips: exportPipClips(timeline),
       importedSources,
     });
   }, [timeline, importedSources]);
