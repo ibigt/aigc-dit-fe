@@ -489,12 +489,6 @@ export default function MediaGeneratorNode({ id, data, selected }) {
             ))}
           </div>
         )}
-        {isFramesMode && !media.frames?.firstKey && frameSourceCount < 1 && (
-          <small className="media-node__frames-hint">首尾帧模式请补齐首帧与尾帧：首帧必填（图框选图或连接图片/上游视频取其尾帧），尾帧可选但推荐设置以锁定结束画面</small>
-        )}
-        {isVideoRefMode && (
-          <small className="media-node__frames-hint">参考生成：图片+视频（+音频，作口型或节奏参考）混合参考——视频保留动作与运镜，图片定人物与风格</small>
-        )}
         {supplements.length > 0 && (
           <div className="media-node__supplements" aria-label="提示词补充">
             {supplements.map((item) => (

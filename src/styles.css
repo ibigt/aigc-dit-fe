@@ -10381,7 +10381,6 @@ a {
 .media-node__reference-chip > span { position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: rgba(10,13,18,.75); }
 .media-node__reference-chip > small { position: absolute; right: 2px; bottom: 2px; left: 2px; overflow: hidden; padding: 1px 3px; border-radius: 3px; color: #fff; background: rgba(10,13,18,.72); font-size: 6px; text-overflow: ellipsis; white-space: nowrap; }
 .media-node__reference-chip > small em { margin-right: 2px; color: var(--node-accent); font-style: normal; font-weight: 700; }
-.media-node__frames-hint { display: block; margin: -3px 0 6px; color: #d9a441; font-size: 9px; }
 /* 参考帧（B2）：首帧/尾帧显式图框，一行两个槽位 + 一个上传按钮，三者同尺寸小方块（对齐「+」框） */
 .media-node__frames { display: flex; align-items: stretch; gap: 5px; margin: 0 0 7px; }
 .media-node__frame-slot { position: relative; flex: 0 0 48px; width: 48px; height: 48px; overflow: hidden; display: grid; place-items: center; border: 1px dashed #5a616c; border-radius: 6px; background: rgba(30,34,40,.6); }
