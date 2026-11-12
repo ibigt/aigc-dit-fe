@@ -146,7 +146,7 @@ function toReferenceMaterial(asset) {
 }
 const creationPresets = {
   audio: [
-    { id: "brand-voice", title: "品牌旁白", description: "清晰沉稳的产品与品牌解说", prompt: "欢迎来到同道创作平台，让每一个灵感都拥有自己的声音。" },
+    { id: "brand-voice", title: "品牌旁白", description: "清晰沉稳的产品与品牌解说", prompt: "欢迎来到{appName}创作平台，让每一个灵感都拥有自己的声音。" },
     { id: "story-voice", title: "故事讲述", description: "自然、有温度的叙事表达", prompt: "夜幕降临，城市的灯光次第亮起，一段新的故事正悄然开始。" },
     { id: "short-video", title: "短视频口播", description: "紧凑有力的社交媒体口播", prompt: "只需几步，就能把你的创意快速变成可分享的作品。" },
   ],
@@ -1200,7 +1200,7 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
         : "描述您想要生成的视频内容，例如，「一个孩子在公园里放风筝，金色阳光，镜头上移。」";
     }
     if (generationType === "audio") {
-      return "输入需要朗读的文本，例如，「欢迎使用同道智能语音创作平台。」";
+      return `输入需要朗读的文本，例如，「欢迎使用${config?.appName || "同道"}智能语音创作平台。」`;
     }
     return "描述您想生成的图片，例如，「夕阳映照在海面上，鲜艳的色彩与汹涌的波涛交相辉映。」";
   }
@@ -1230,7 +1230,12 @@ export function FastCreate({ config, onConsumeCredits = () => {}, theme = "light
     return `url("/media/quick-create/image-product.jpg")`;
   }
 
-  const presets = creationPresets[generationType] || [];
+  const appName = config?.appName || "同道";
+  const presets = (creationPresets[generationType] || []).map((preset) => (
+    preset.prompt?.includes("{appName}")
+      ? { ...preset, prompt: preset.prompt.replaceAll("{appName}", appName) }
+      : preset
+  ));
   const paramButtonIcon = generationType === "audio" ? <AudioLines size={14} /> : <Maximize2 size={14} />;
 
   function renderCreationTypeSwitch() {

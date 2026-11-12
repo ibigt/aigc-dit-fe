@@ -160,7 +160,7 @@ export function LandingPage({ config, user, onLogout, onUserUpdate }) {
               <article><span><Images size={22} /></span><h3>素材沉淀</h3><p>统一管理图片与视频，创作时用 @ 即可引用。</p></article>
               <article><span><Layers3 size={22} /></span><h3>积分与副本</h3><p>按模型售价、参数与副本实时计价，成片可回看下载。</p></article>
             </div>
-            <button className="button button--light button--large" type="button" onClick={() => navigate(user ? "/console" : "/register")}>进入同道工作室 <ArrowRight size={18} /></button>
+            <button className="button button--light button--large" type="button" onClick={() => navigate(user ? "/console" : "/register")}>进入{config.appName}工作室 <ArrowRight size={18} /></button>
           </div>
         </section>
       </main>

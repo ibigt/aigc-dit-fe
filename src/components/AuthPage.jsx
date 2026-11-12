@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext.jsx";
 
-export function AuthPage({ mode }) {
+export function AuthPage({ config, mode }) {
   const navigate = useNavigate();
   const { login, register } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
@@ -13,6 +13,7 @@ export function AuthPage({ mode }) {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const isRegister = mode === "register";
+  const appName = config?.appName || "同道";
 
   async function submit(event) {
     event.preventDefault();
@@ -45,8 +46,8 @@ export function AuthPage({ mode }) {
         <div className="auth-brand-shade" />
       </div>
 
-      <section className="auth-brand" aria-label="同道 LIGHTFLOW STUDIO">
-        <div className="auth-brand-cn">同道</div>
+      <section className="auth-brand" aria-label={`${appName} LIGHTFLOW STUDIO`}>
+        <div className="auth-brand-cn">{appName}</div>
         <div className="auth-wordmark">LIGHTFLOW STUDIO</div>
         <p>让 想 法 ， 成 为 影 像</p>
         <div className="auth-signature"><span />CREATE<br />WITH<br />AI</div>
@@ -55,7 +56,7 @@ export function AuthPage({ mode }) {
       <section className="auth-panel" aria-labelledby="auth-title">
         <header>
           <h1 id="auth-title">{isRegister ? "创建账户" : "欢迎回来"}</h1>
-          <p>{isRegister ? "注册同道 LIGHTFLOW STUDIO，开启你的 AI 创作之旅" : "登录同道 LIGHTFLOW STUDIO，开启你的 AI 创作之旅"}</p>
+          <p>{isRegister ? `注册${appName} LIGHTFLOW STUDIO，开启你的 AI 创作之旅` : `登录${appName} LIGHTFLOW STUDIO，开启你的 AI 创作之旅`}</p>
         </header>
 
         <div className="auth-tabs" role="tablist" aria-label="登录或注册">

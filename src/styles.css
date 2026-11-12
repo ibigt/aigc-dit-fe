@@ -272,10 +272,28 @@ a {
 .landing-nav {
     height: 78px;
     display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
     position: relative;
     z-index: 10;
+}
+
+.landing-nav .brand {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.landing-nav .brand__copy {
+    min-width: 0;
+    overflow: hidden;
+}
+
+.landing-nav .brand__copy strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .landing-nav nav {
@@ -748,9 +766,12 @@ a {
 }
 
 .auth-brand-cn {
+    max-width: 40vw;
     font-size: 36px;
     font-weight: 600;
     line-height: 1.4;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .auth-wordmark {
@@ -803,7 +824,8 @@ a {
     color: #b9bec8;
     font-size: 16px;
     line-height: 1.7;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .auth-tabs {
@@ -1050,6 +1072,7 @@ a {
     }
 
     .auth-brand-cn {
+        max-width: 100%;
         font-size: 22px;
     }
 
@@ -1287,13 +1310,18 @@ a {
 }
 
 .sidebar .brand-name {
+    min-width: 0;
+    overflow: hidden;
     color: #fff;
     font-size: 16px;
     font-weight: 650;
     letter-spacing: .02em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .sidebar .collapse-button {
+    flex: 0 0 auto;
     margin-left: auto;
     width: 34px;
     height: 34px;

@@ -73,9 +73,18 @@ function decorateModel(model) {
   };
 }
 
+function bootAppName() {
+  if (typeof window !== "undefined" && typeof window.__DIT_APP_NAME__ === "string" && window.__DIT_APP_NAME__.trim()) {
+    return window.__DIT_APP_NAME__.trim();
+  }
+  return "同道";
+}
+
+const bootName = bootAppName();
+
 export const fallbackConfig = {
-  appName: "同道",
-  shortName: "同道",
+  appName: bootName,
+  shortName: bootName,
   tagline: "把想象，编排成光影",
   description: "面向创作者的 AI 影像生成平台",
   apiBaseUrl: "/api",

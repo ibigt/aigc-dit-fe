@@ -133,7 +133,7 @@ export function ConsoleShell({ config, user, onLogout, onUserUpdate }) {
       <aside className="sidebar" aria-label="主导航">
         <div className="brand-header">
           <div className="brand-mark" aria-hidden="true"><LogoMark /></div>
-          <span className="brand-name">{config?.appName ?? "同道"}</span>
+          <span className="brand-name" title={config?.appName}>{config?.appName}</span>
           <button
             className="collapse-button"
             type="button"

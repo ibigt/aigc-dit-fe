@@ -14,8 +14,14 @@ export function App() {
     loadRuntimeConfig().then(setConfig);
   }, []);
 
+  useEffect(() => {
+    const name = config.appName || "同道";
+    document.title = `${name}｜AI 影像创作平台`;
+    document.querySelector('meta[name="description"]')?.setAttribute("content", `${name} AI 影像创作平台`);
+  }, [config.appName]);
+
   if (loading) {
-    return <div className="app-boot">正在进入同道…</div>;
+    return <div className="app-boot">正在进入{config.appName || "同道"}…</div>;
   }
 
   return (

@@ -121,7 +121,7 @@ trap cleanup EXIT
 
 tar -czf "$ARCHIVE" \
   -C "$ROOT" dist nginx.conf \
-  -C "$ROOT/deploy" Dockerfile.prebuilt
+  -C "$ROOT/deploy" Dockerfile.prebuilt 40-app-name.sh
 
 echo "[2/4] 上传发布包到 $DEPLOY_USER@$DEPLOY_HOST..."
 "${SCP[@]}" "$ARCHIVE" "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_ARCHIVE"
