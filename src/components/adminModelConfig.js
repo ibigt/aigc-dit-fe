@@ -2,11 +2,27 @@ export function textReasoningEnabled(adapterConfig) {
   return adapterConfig?.enableThinking === true;
 }
 
-export function withTextReasoning(adapterConfig, enabled = false) {
-  return {
+export function withTextReasoning(adapterConfig, enabled = false, identity = {}) {
+  const next = {
     ...(adapterConfig || {}),
     enableThinking: enabled === true,
   };
+  delete next.thinkingField;
+  delete next.thinkingType;
+  if (enabled === true || !usesOfficialThinkingSwitch(next, identity)) {
+    return next;
+  }
+  next.thinkingField = "thinking";
+  next.thinkingType = "disabled";
+  return next;
+}
+
+function usesOfficialThinkingSwitch(adapterConfig, identity) {
+  const haystack = [identity?.modelKey, identity?.endpoint, identity?.name, adapterConfig?.chatModel]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes("deepseek") || haystack.includes("minimax");
 }
 
 const OFFICIAL_TOKEN_PLAN = "官方API（token plan）";

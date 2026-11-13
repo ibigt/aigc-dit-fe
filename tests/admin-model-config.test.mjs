@@ -11,6 +11,29 @@ test("text reasoning defaults to disabled", () => {
 test("text reasoning preserves explicit setting", () => {
   assert.equal(textReasoningEnabled({ enableThinking: true }), true);
   assert.equal(withTextReasoning({ chatModel: "qwen" }, true).enableThinking, true);
+  assert.equal(withTextReasoning({ chatModel: "qwen" }, false, { modelKey: "qwen-plus" }).thinkingField, undefined);
+});
+
+test("deepseek thinking off persists the official switch", () => {
+  const saved = withTextReasoning({ chatModel: "deepseek-chat" }, false, {
+    name: "deepseek-自定义凭据",
+    modelKey: "deepseek-chat",
+    endpoint: "https://api.deepseek.com",
+  });
+  assert.equal(saved.enableThinking, false);
+  assert.equal(saved.thinkingField, "thinking");
+  assert.equal(saved.thinkingType, "disabled");
+});
+
+test("turning thinking on clears the official switch", () => {
+  const saved = withTextReasoning({
+    chatModel: "deepseek-chat",
+    thinkingField: "thinking",
+    thinkingType: "disabled",
+  }, true, { modelKey: "deepseek-chat" });
+  assert.equal(saved.enableThinking, true);
+  assert.equal(saved.thinkingField, undefined);
+  assert.equal(saved.thinkingType, undefined);
 });
 
 const adapters = [
