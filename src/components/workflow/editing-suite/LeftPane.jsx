@@ -11,7 +11,7 @@ import { useEditingStore } from "./store.js";
 import Icon from "./Icons.jsx";
 import MediaThumb, { resolveThumbUrls } from "./MediaThumb.jsx";
 
-// 与后端 AssetUploadPolicy 保持一致；图片可上传列示，但落轨需等静帧合成（排期 #7）
+// 与后端 AssetUploadPolicy 保持一致；图片可本地导入并落 V1 主轨（14.61 起按静帧段烧录）
 const ACCEPTED = ".mp4,.webm,.mov,.mp3,.wav,.m4a,.aac,.flac,.ogg,.jpg,.jpeg,.png,.webp,.gif";
 const MAX_IMPORT_BYTES = { video: 200 * 1024 * 1024, audio: 100 * 1024 * 1024, image: 20 * 1024 * 1024 };
 
