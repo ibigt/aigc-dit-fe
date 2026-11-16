@@ -58,18 +58,18 @@ export default function LeftPane({ store, sources, onImportSources, onRemoveImpo
     return [...map.entries()];
   }, [visibleSources]);
 
-  // 素材落轨规则：视频 → 主视频轨，音频 → 第一条音频轨（没有就自动补一条）。
+  // 素材落轨规则：视频/图片 → 主视频轨（图片按时长烧录成静帧段），音频 → 第一条音频轨（没有就自动补一条）。
   // 起始位置取该轨现有片段的末尾，沿用「首尾相接」的直觉；音频轨可再自由拖动对齐。
   function appendSource(item) {
     if (!item?.output?.storageKey && !item?.storageKey) { store.toast("该素材暂无可播放产物", "error"); return; }
-    if (mediaKindOf(item) === "image") { store.toast("图片素材暂不支持加入时间线（静帧合成待上线）", "error"); return; }
-    const kind = mediaKindOf(item) === "audio" ? "audio" : "video";
+    const kind = mediaKindOf(item);
+    const trackKind = kind === "audio" ? "audio" : "video";
     let target = "";
-    store.commit(kind === "audio" ? "添加音频素材" : "添加素材", (doc) => {
+    store.commit(kind === "audio" ? "添加音频素材" : kind === "image" ? "添加图片素材" : "添加素材", (doc) => {
       let next = doc.timeline;
       let track = kind === "audio" ? audioTracks(next)[0] : mainVideoTrack(next);
       if (!track) {
-        if (kind === "video") return doc;
+        if (kind !== "audio") return doc;
         next = addTrack(next, "audio");
         track = audioTracks(next)[0];
       }
@@ -79,7 +79,7 @@ export default function LeftPane({ store, sources, onImportSources, onRemoveImpo
       return { ...doc, timeline: addClip(next, track.id, { ...sourceClipFromQueue(item), start }), selection: [] };
     });
     // 明确告诉用户落在哪条轨道：音频不会跑到视频轨，也不用猜
-    if (target) store.toast(`${kind === "audio" ? "音频" : "视频"}素材已加入「${target}」`, "ok");
+    if (target) store.toast(`${kind === "audio" ? "音频" : kind === "image" ? "图片" : "视频"}素材已加入「${target}」`, "ok");
   }
 
   // 本地文件 → 素材库上传 → source 清单。素材只列在剪辑台草稿里，不往画布 graph 塞节点；
@@ -114,7 +114,6 @@ export default function LeftPane({ store, sources, onImportSources, onRemoveImpo
       if (imported.length) onImportSources?.(imported);
       const parts = [];
       if (imported.length) parts.push(`已导入 ${imported.length} 个素材到素材面板，双击或拖入时间线`);
-      if (imported.some((item) => item.mediaType === "image")) parts.push("图片暂不支持加入时间线");
       if (failures.length) parts.push(`${failures.length} 个失败：${failures[0]}`);
       store.toast(parts.join("；") || "未导入任何素材", failures.length && !imported.length ? "error" : (failures.length ? "info" : "ok"));
     } finally {
@@ -256,7 +255,7 @@ export default function LeftPane({ store, sources, onImportSources, onRemoveImpo
                         const shade = THUMB_SHADES[index % THUMB_SHADES.length];
                         return (
                           <div key={`${key}-${index}`} className={`ce-mcard ${item.imported ? "imported" : ""}`} draggable
-                            title={kind === "image" ? "图片素材：暂不支持加入时间线" : `${kind === "audio" ? "音频" : "视频"}素材：拖入时间线，或双击追加`}
+                            title={`${kind === "image" ? "图片" : kind === "audio" ? "音频" : "视频"}素材：拖入时间线，或双击追加`}
                             onDragStart={(event) => {
                               event.dataTransfer.setData("application/x-editing-source", String(sourceIndex));
                               event.dataTransfer.effectAllowed = "copy";
@@ -276,7 +275,7 @@ export default function LeftPane({ store, sources, onImportSources, onRemoveImpo
                                   <i key={i} style={{ height: 6 + (Math.sin(i * 1.9) + 1) * 9 }} />
                                 ))}</span>
                               )}
-                              {kind !== "image" && (
+                              {kind !== "audio" && (
                                 <button className="ce-add" title="添加到时间线" onClick={(event) => { event.stopPropagation(); appendSource(item); }}><Icon name="plus" size={12} /></button>
                               )}
                             </div>
@@ -290,7 +289,7 @@ export default function LeftPane({ store, sources, onImportSources, onRemoveImpo
                     </div>
                   </div>
                 ))}
-                <div className="ce-hint">音频素材自动落到音频轨 A1，视频素材落到主视频轨 V1；本地导入的素材需手动加入时间线。图片暂仅列示。</div>
+                <div className="ce-hint">音频素材自动落到音频轨 A1，视频/图片素材落到主视频轨 V1（图片默认展示 5 秒，可在右侧调整）；本地导入的素材需手动加入时间线。</div>
                 <input ref={importRef} type="file" accept={ACCEPTED} multiple hidden onChange={importFiles} />
                 <div className={`ce-upload ${importing ? "busy" : ""}`} onClick={() => !importing && importRef.current?.click()}>
                   <Icon name="upload" size={14} /> {importing ? "上传中…" : "导入本地素材"}

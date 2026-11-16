@@ -578,6 +578,28 @@ test("importedSourceFromAsset 识别音频 / 图片，缺失时长回落 5s，�
   assert.equal(importedSourceFromAsset({ id: 3, kind: "video" }), null);
 });
 
+test("图片素材落视频轨：sourceClipFromQueue 产出 image 片段并进扁平导出（静帧段）", () => {
+  const source = importedSourceFromAsset({ id: 9, kind: "image", storageKey: "users/7/pic.png", name: "海报" });
+  const clip = sourceClipFromQueue(source);
+  assert.equal(clip.type, "image");
+  assert.equal(clip.trimStart, 0);
+  assert.equal(clip.trimEnd, 5);
+  assert.equal(clip.localKey, "users/7/pic.png");
+  // 时长口径与 video/audio 一致（trimEnd - trimStart）
+  assert.equal(clipDuration(clip), 5);
+  // 落 V1 后进扁平导出：后端按图片静帧段烧录
+  let timeline = migrateClips([]);
+  timeline = addClip(timeline, mainVideoTrack(timeline).id, { ...clip, start: 0 });
+  const flat = exportFlatClips(timeline);
+  assert.equal(flat.length, 1);
+  assert.equal(flat[0].localKey, "users/7/pic.png");
+  assert.equal(flat[0].trimEnd, 5);
+  assert.equal(filmDuration(timeline), 5);
+  // 漂移检测不把图片片段当 text/graphic 忽略
+  const drift = inspectSourceDrift(timeline, []);
+  assert.ok(drift.missing.some((item) => item.clipId === clip.id) || drift.missing.length === 0);
+});
+
 test("normalizeImportedSources 只保留合法导入项并按 sourceNodeId 去重", () => {
   const one = importedSourceFromAsset({ id: 1, kind: "video", storageKey: "users/7/a.mp4" });
   const two = importedSourceFromAsset({ id: 2, kind: "audio", storageKey: "users/7/b.mp3" });

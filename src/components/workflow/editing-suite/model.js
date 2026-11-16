@@ -90,7 +90,7 @@ export function resolutionText(aspect, quality) {
 
 export function clipDuration(clip) {
   if (!clip) return 0;
-  if (clip.type === "video" || clip.type === "audio") {
+  if (clip.type === "video" || clip.type === "audio" || clip.type === "image") {
     const start = Number(clip.trimStart) || 0;
     const end = Number(clip.trimEnd);
     return Number.isFinite(end) && end > start ? end - start : Number(clip.duration) || 0;
@@ -769,8 +769,9 @@ export function sourceClipFromQueue(item) {
     ? trimEnd - trimStart
     : sourceDuration || 5;
   return {
-    // 素材类型来自上游节点种类（视频生成 / 音频生成），决定落哪条轨道与片段渲染形态
-    type: item.mediaType === "audio" ? "audio" : "video",
+    // 素材类型来自上游节点种类（视频生成 / 音频生成 / 图片），决定落哪条轨道与片段渲染形态。
+    // 图片与视频同样落视频轨：预览静帧、导出时后端按 trimEnd-trimStart 烧成静帧段。
+    type: item.mediaType === "audio" ? "audio" : item.mediaType === "image" ? "image" : "video",
     duration,
     sourceDuration,
     trimStart,
@@ -877,7 +878,7 @@ export function inspectSourceDrift(timeline, sources = []) {
   const outdated = [];
   const missing = [];
   for (const { clip } of allClips(timeline)) {
-    if (clip.type !== "video" && clip.type !== "audio") continue;
+    if (clip.type !== "video" && clip.type !== "audio" && clip.type !== "image") continue;
     // 本地导入片段不依赖画布上游节点，既不算缺失也不算过期
     if (clip.imported) continue;
     const key = sourceKeyOf(clip);

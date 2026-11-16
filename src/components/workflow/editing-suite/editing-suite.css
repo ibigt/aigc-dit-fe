@@ -262,6 +262,10 @@
 .ce-clip.sel{box-shadow:0 0 0 2px var(--accr);border-color:var(--acc)!important;z-index:2}
 .ce-clip.disabled{filter:grayscale(.6);opacity:.5}
 .c-video{background:rgba(101,165,238,.18);border-color:rgba(101,165,238,.55)}
+.c-image{background:rgba(154,119,233,.16);border-color:rgba(154,119,233,.5)}
+.ce-clip .thumbs.img{position:absolute;inset:0;overflow:hidden}
+.ce-clip .thumbs.img img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.ce-monitor .ce-still-image{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
 .c-audio{background:rgba(79,183,128,.16);border-color:rgba(79,183,128,.5)}
 .c-text{background:rgba(214,168,36,.16);border-color:rgba(214,168,36,.5)}
 .c-graphic{background:rgba(197,106,184,.16);border-color:rgba(197,106,184,.5)}

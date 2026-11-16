@@ -38,9 +38,19 @@ export default function PlayerStage({ store }) {
       ? (soloClip.type !== "audio" && soloClip.storageKey ? [soloClip] : [])
       : (mainVideoTrack(timeline)?.clips || []);
     return source
-      .filter((clip) => clip.enabled !== false && clip.storageKey)
+      .filter((clip) => clip.enabled !== false && clip.storageKey && clip.type !== "image")
       .sort((a, b) => a.start - b.start)
       .map((clip) => ({ ...clip, url: mediaUrl(clip.storageKey) }));
+  }, [timeline, soloClip]);
+
+  // 图片片段（视频轨上的静帧段）：不能喂给 <video>，用独立 <img> 图层按播放头显示/隐藏
+  const imageClips = useMemo(() => {
+    const source = soloClip
+      ? (soloClip.type === "image" && soloClip.storageKey ? [soloClip] : [])
+      : (mainVideoTrack(timeline)?.clips || []);
+    return source
+      .filter((clip) => clip.enabled !== false && clip.storageKey && clip.type === "image")
+      .sort((a, b) => a.start - b.start);
   }, [timeline, soloClip]);
 
   // 音频轨预览：与视频共用同一个播放头。独奏音频片段时只播这一段。
@@ -58,6 +68,8 @@ export default function PlayerStage({ store }) {
     .sort((a, b) => a.clip.start - b.clip.start), [timeline, mainTrackId]);
   const pipVideoRef = useRef(null);
   const pipStateRef = useRef({ src: "" });
+  // 图片静帧段 <img> 节点表：播放头 tick 里直接改 display（不触发 React 渲染）
+  const stillImageRefs = useRef(new Map());
   const aspect = ASPECTS.find((item) => item.id === timeline.aspect) || ASPECTS[0];
   const selected = (timeline.tracks || []).flatMap((track) => track.clips).find((clip) => selection.includes(clip.id));
   const filterTarget = soloClip || selected;
@@ -181,6 +193,14 @@ export default function PlayerStage({ store }) {
       const total = soloClip ? rangeEnd - rangeStart : timelineDuration(timeline);
       timeRef.current.innerHTML = `<b>${formatTime(shown)}</b> <span>/ ${formatTime(total)}</span>`;
     }
+    // 图片静帧段：播放头落在片段区间内才显示（直接写 DOM，不触发 React 渲染）
+    for (const [id, node] of stillImageRefs.current) {
+      if (!node) continue;
+      const clip = imageClips.find((item) => item.id === id);
+      const visible = clip && t >= (Number(clip.start) || 0) && t < clipEnd(clip);
+      const display = visible ? "" : "none";
+      if (node.style.display !== display) node.style.display = display;
+    }
     if (overlayRef.current) {
       const active = activeClipsAt(timeline, t);
       const html = active.map(({ clip }) => {
@@ -206,7 +226,7 @@ export default function PlayerStage({ store }) {
       }).join("");
       if (overlayRef.current.innerHTML !== html) overlayRef.current.innerHTML = html;
     }
-  }), [store, timeline, soloClip, rangeStart, rangeEnd]);
+  }), [store, timeline, soloClip, rangeStart, rangeEnd, imageClips]);
 
   // 视频滤镜：当前播放头处视频片段的调节 + 特效（未播放时回落到选中片段）
   const [liveFilter, setLiveFilter] = useState("none");
@@ -291,6 +311,11 @@ export default function PlayerStage({ store }) {
         <video ref={videoB} playsInline preload="auto" style={{ display: "none" }} />
         {/* V2 画中画：副视频轨叠在主画面上，位置/大小/不透明度由播放头同步（成片同口径烧录） */}
         <video ref={pipVideoRef} className="ce-pip-video" playsInline preload="auto" muted />
+        {/* 图片静帧段：按播放头显隐的 <img> 图层（导出时后端烧成等时长静帧） */}
+        {imageClips.map((clip) => (
+          <img key={clip.id} className="ce-still-image" src={mediaUrl(clip.storageKey)} alt=""
+            ref={(node) => { stillImageRefs.current.set(clip.id, node); }} style={{ objectFit: "contain" }} />
+        ))}
         {/* 音频轨独立通道：与画面共用播放头，不进画面合成 */}
         <audio ref={audioEl} preload="auto" />
         {!clips.length && !audioClips.length && <div className="empty"><Icon name="film" /> 时间线为空，先添加素材</div>}

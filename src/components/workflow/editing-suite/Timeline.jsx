@@ -202,13 +202,14 @@ export default function Timeline({ store, sources }) {
     timelineActionsRef.current = { split, removeSelected, startSolo, exitSolo };
   });
 
-  // 素材拖入轨道的落点判定：视频素材只进视频轨、音频素材只进音频轨（文字/图形轨不接收外部素材）
+  // 素材拖入轨道的落点判定：视频/图片素材进视频轨（图片按时长烧录静帧）、音频素材进音频轨（文字/图形轨不接收外部素材）
   function dropKindOf(event) {
     const raw = event.dataTransfer.getData("application/x-editing-source");
     if (!raw) return null;
     const item = sources[Number(raw)];
     if (!item) return null;
-    return { item, kind: mediaKindOf(item) === "audio" ? "audio" : "video" };
+    const kind = mediaKindOf(item);
+    return { item, kind: kind === "audio" ? "audio" : "video" };
   }
 
   function dropSource(event, track) {
@@ -218,16 +219,15 @@ export default function Timeline({ store, sources }) {
     if (!drop) return;
     const { item, kind } = drop;
     if (!item.output?.storageKey && !item.storageKey) { store.toast("该素材暂无可播放产物", "error"); return; }
-    if (mediaKindOf(item) === "image") { store.toast("图片素材暂不支持加入时间线（静帧合成待上线）", "error"); return; }
     if (track.type !== kind) {
       store.toast(kind === "audio"
         ? `音频素材只能落在音频轨，「${track.name}」不接收`
-        : `视频素材只能落在视频轨，「${track.name}」不接收`, "error");
+        : `视频/图片素材只能落在视频轨，「${track.name}」不接收`, "error");
       return;
     }
     if (track.locked) { store.toast(`轨道「${track.name}」已锁定，先解锁再拖入素材`, "error"); return; }
     const rect = lanesRef.current?.getBoundingClientRect();
-    const start = Math.max(0, (event.clientX - (rect?.left || 0) + (lanesRef.current?.scrollLeft || 0)) / pxPerSec);
+    const start = Math.max(0, (event.clientX - (rect?.left || 0)) + (lanesRef.current?.scrollLeft || 0)) / pxPerSec;
     const source = sourceClipFromQueue(item);
     store.commit(kind === "audio" ? "添加音频" : "添加素材", (doc) => ({
       ...doc, timeline: addClip(doc.timeline, track.id, { ...source, start }), selection: [],
@@ -335,10 +335,11 @@ export default function Timeline({ store, sources }) {
                   const shown = preview?.clipId === clip.id ? { ...clip, ...preview } : clip;
                   const width = Math.max(8, clipDuration(shown) * pxPerSec);
                   const isText = clip.type === "text" || clip.type === "graphic";
-                  const playable = (clip.type === "video" || clip.type === "audio") && Boolean(clip.storageKey);
+                  const playable = (clip.type === "video" || clip.type === "audio" || clip.type === "image") && Boolean(clip.storageKey);
                   const isEditing = editing?.id === clip.id;
-                  // 视频片段没有海报图时用 mp4 的 <video> 首帧，底层纯色格留作加载中/失败兜底
-                  const thumbUrls = clip.type === "video"
+                  // 视频片段没有海报图时用 mp4 的 <video> 首帧，底层纯色格留作加载中/失败兜底；
+                  // 图片片段直接用 poster 展示静帧
+                  const thumbUrls = clip.type === "video" || clip.type === "image"
                     ? resolveThumbUrls({ output: clip.output, storageKey: clip.storageKey, posterKey: clip.posterKey }, 120)
                     : { poster: "", video: "" };
                   return (
@@ -359,6 +360,11 @@ export default function Timeline({ store, sources }) {
                           {Array.from({ length: Math.min(12, Math.ceil(width / 40)) }, (_, i) => (
                             <i key={i} style={{ background: THUMB_SHADES[(i + clip.id.length) % THUMB_SHADES.length] }} />
                           ))}
+                          <MediaThumb poster={thumbUrls.poster} video={thumbUrls.video} />
+                        </div>
+                      )}
+                      {clip.type === "image" && (
+                        <div className="thumbs img">
                           <MediaThumb poster={thumbUrls.poster} video={thumbUrls.video} />
                         </div>
                       )}
