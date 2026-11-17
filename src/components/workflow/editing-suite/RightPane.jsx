@@ -6,6 +6,7 @@ import {
 import { useEditingStore } from "./store.js";
 import { downloadMediaFile, mediaDownloadName } from "../../../lib/media.js";
 import Icon from "./Icons.jsx";
+import AssistantPane from "./AssistantPane.jsx";
 import { EDITING_ASSISTANT_ENABLED } from "./flags.js";
 
 const trimText = (value) => String(Math.round((Number(value) || 0) * 1000) / 1000);
@@ -26,8 +27,16 @@ export default function RightPane({ store }) {
     return { trimStart: trimText(range.trimStart), trimEnd: trimText(range.trimEnd) };
   });
   const [downloading, setDownloading] = useState(false);
-  useEffect(() => { setDraft(clip || {}); },
-    [clip?.id, clip?.adjust?.brightness, clip?.adjust?.contrast, clip?.adjust?.saturate, clip?.text, clip?.graphic?.color, clip?.graphic?.scale]);
+  // 拖动中的值在 draft 里，松手才写入 timeline。依赖必须覆盖这些字段，撤销或时间线改动才能把滑杆拉回来。
+  useEffect(() => { setDraft(clip || {}); }, [
+    clip?.id,
+    clip?.volume,
+    clip?.opacity,
+    clip?.pip?.x, clip?.pip?.y, clip?.pip?.scale, clip?.pip?.opacity,
+    clip?.adjust?.brightness, clip?.adjust?.contrast, clip?.adjust?.saturate,
+    clip?.text,
+    clip?.graphic?.color, clip?.graphic?.x, clip?.graphic?.y, clip?.graphic?.scale, clip?.graphic?.opacity,
+  ]);
 
   const isMediaClip = clip?.type === "video" || clip?.type === "audio";
   // 剪辑助手入口隐藏期间，rightTab 不允许停在 "assistant"（否则右栏既没有 Tab 也没有内容，一片空白）。
@@ -101,7 +110,9 @@ export default function RightPane({ store }) {
     (value) => setDraft((current) => ({ ...current, adjust: { ...adjust, [key]: value } })),
     (value) => apply({ adjust: { ...adjust, [key]: value } }));
 
-  const volume = Number(clip?.volume ?? 1);
+  const volume = numberOr(draft.volume, clip?.volume, 1);
+  const opacity = numberOr(draft.opacity, clip?.opacity, 100);
+  const pipLive = { ...(clip?.pip || {}), ...(draft.pip || {}) };
   const graphic = draft.graphic || clip?.graphic || {};
   const textStyle = draft.textStyle || clip?.textStyle || {};
   const effect = (clip?.effects || [])[0] || null;
@@ -117,9 +128,7 @@ export default function RightPane({ store }) {
         )}
       </div>
       <div className="ce-rbody">
-        {EDITING_ASSISTANT_ENABLED && activeTab === "assistant" && (
-          <div className="ce-empty"><Icon name="sparkle" />剪辑助手<br />下个版本上线：对话式批量动作，动作可撤销</div>
-        )}
+        {EDITING_ASSISTANT_ENABLED && activeTab === "assistant" && <AssistantPane store={store} />}
 
         {activeTab === "props" && track && !clip && (
           <>
@@ -223,8 +232,8 @@ export default function RightPane({ store }) {
               </>
             )}
 
-            {/* 画中画只叠加画面、不混入副轨音轨，音量/静音控件对它无效，直接不展示 */}
-            {(clip.type === "video" || clip.type === "audio") && !clipOnPipTrack && (
+            {/* 副轨与主轨同一套音量 / 静音：未静音时预览出声，成片在素材有音轨时混入 */}
+            {(clip.type === "video" || clip.type === "audio") && (
               <>
                 <div className="ce-grp">音频</div>
                 <div className="ce-slid">
@@ -232,7 +241,11 @@ export default function RightPane({ store }) {
                   <input className="ce-range" type="range" min="0" max="2" step="0.05" value={volume}
                     style={{ "--pct": `${Math.min(100, volume / 2 * 100)}%`, "--range-fill": "var(--a)" }}
                     onChange={(event) => setDraft((current) => ({ ...current, volume: Number(event.target.value) }))}
-                    onPointerUp={(event) => apply({ volume: Number(event.target.value) })} />
+                    onPointerUp={(event) => {
+                      const next = Number(event.target.value);
+                      setDraft((current) => ({ ...current, volume: next }));
+                      apply({ volume: next });
+                    }} />
                 </div>
                 <label className="ce-check"><input type="checkbox" checked={Boolean(clip.muted)} onChange={(event) => apply({ muted: event.target.checked })} /> 静音</label>
                 <label className="ce-check"><input type="checkbox" checked={clip.enabled !== false} onChange={(event) => apply({ enabled: event.target.checked })} /> 启用片段</label>
@@ -245,27 +258,41 @@ export default function RightPane({ store }) {
                 <div className="ce-grp">画面</div>
                 {!clipOnPipTrack && (
                   <div className="ce-slid">
-                    <div className="row"><span>不透明度</span><b>{Math.round(Number(clip.opacity ?? 100))}</b></div>
-                    <input className="ce-range" type="range" min="0" max="100" value={Number(clip.opacity ?? 100)}
-                      style={{ "--pct": `${Number(clip.opacity ?? 100)}%`, "--range-fill": "var(--v)" }}
+                    <div className="row"><span>不透明度</span><b>{Math.round(opacity)}</b></div>
+                    <input className="ce-range" type="range" min="0" max="100" value={opacity}
+                      style={{ "--pct": `${opacity}%`, "--range-fill": "var(--v)" }}
                       onChange={(event) => setDraft((current) => ({ ...current, opacity: Number(event.target.value) }))}
-                      onPointerUp={(event) => apply({ opacity: Number(event.target.value) })} />
+                      onPointerUp={(event) => {
+                        const next = Number(event.target.value);
+                        setDraft((current) => ({ ...current, opacity: next }));
+                        apply({ opacity: next });
+                      }} />
                   </div>
                 )}
                 {clipOnPipTrack && (
                   <>
-                    <div className="ce-hint">画中画：该片段叠在主画面上方导出，预览与成片同口径；仅叠加画面，不混入副轨原声。</div>
+                    <div className="ce-hint">画中画：该片段叠在主画面上方导出，预览与成片同口径。</div>
                     {(() => {
-                      const pip = clip.pip || {};
                       const pipSlider = (label, key, min, max, def) => {
-                        const value = Number.isFinite(Number(pip[key])) ? Number(pip[key]) : def;
+                        const value = numberOr(pipLive[key], undefined, def);
                         return (
                           <div className="ce-slid" key={key}>
                             <div className="row"><span>{label}</span><b>{key === "scale" || key === "opacity" ? Math.round(value) : `${Math.round(value)}%`}</b></div>
                             <input className="ce-range" type="range" min={min} max={max} value={value}
                               style={{ "--pct": `${(value - min) / (max - min) * 100}%`, "--range-fill": "var(--v)" }}
-                              onChange={(event) => setDraft((current) => ({ ...current, pip: { ...(current.pip || clip.pip || {}), [key]: Number(event.target.value) } }))}
-                              onPointerUp={(event) => apply({ pip: { ...(draft.pip || clip.pip || {}), [key]: Number(event.target.value) } })} />
+                              onChange={(event) => {
+                                const next = Number(event.target.value);
+                                setDraft((current) => ({
+                                  ...current,
+                                  pip: { ...(clip.pip || {}), ...(current.pip || {}), [key]: next },
+                                }));
+                              }}
+                              onPointerUp={(event) => {
+                                const next = Number(event.target.value);
+                                const pip = { ...(clip.pip || {}), ...(draft.pip || {}), [key]: next };
+                                setDraft((current) => ({ ...current, pip }));
+                                apply({ pip });
+                              }} />
                           </div>
                         );
                       };
@@ -382,4 +409,9 @@ export default function RightPane({ store }) {
       </div>
     </div>
   );
+}
+
+function numberOr(primary, fallback, def) {
+  const raw = primary ?? fallback ?? def;
+  return Number.isFinite(Number(raw)) ? Number(raw) : def;
 }

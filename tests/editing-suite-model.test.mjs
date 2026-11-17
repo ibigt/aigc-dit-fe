@@ -881,7 +881,7 @@ test("exportPipClips：副视频轨片段带全量 PiP 字段，不进文字/图
   assert.equal(pips.length, 1);
   assert.deepEqual(pips[0], {
     start: 1, end: 3, sourceNodeId: "v2", outputIndex: 1,
-    trimStart: 0.5, trimEnd: 2.5, x: 20, y: 80, scale: 45, opacity: 70, muted: true,
+    trimStart: 0.5, trimEnd: 2.5, x: 20, y: 80, scale: 45, opacity: 70, muted: true, volume: 1,
   });
   assert.equal(exportOverlays(withPip), null, "画中画必须走独立 pipClips 通道，不能烧成 PNG");
   assert.equal(exportFlatClips(withPip).length, 1, "副视频轨不能混进 V1 首尾拼接");
@@ -907,6 +907,22 @@ test("exportPipClips：缺省 PiP 参数用右上角 30% 宽，空隙压缩后�
   assert.equal(pips[0].scale, 30);
   assert.equal(pips[0].opacity, 100);
   assert.equal(pips[0].muted, false);
+  assert.equal(pips[0].volume, 1);
+});
+
+test("exportPipClips：写出片段音量，轨道静音时按只出画面导出", () => {
+  const base = migrateClips([flatWithKey("v1", "users/7/v1.mp4")]);
+  const withPip = seed(base, "V2", {
+    id: "pip-vol", type: "video", start: 0, duration: 2, trimStart: 0, trimEnd: 2,
+    storageKey: "users/7/pip.mp4", sourceNodeId: "v2", volume: 0.4, muted: false,
+  });
+  const pips = exportPipClips(withPip);
+  assert.equal(pips[0].volume, 0.4);
+  assert.equal(pips[0].muted, false);
+  const silenced = updateTrack(withPip, "V2", { muted: true });
+  const muted = exportPipClips(silenced);
+  assert.equal(muted[0].muted, true);
+  assert.equal(muted[0].volume, 0.4);
 });
 
 test("exportPipClips：禁用/无素材/落在空隙的片段丢弃，本地导入带 localKey", () => {

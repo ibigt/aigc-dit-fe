@@ -199,6 +199,9 @@
   font-size:11px;line-height:16px;padding:6px 8px;resize:vertical;min-height:56px}
 .ce-field:hover{border-color:var(--line2)}
 .ce-field:focus{outline:none;border-color:var(--acc)}
+.ce-assistant-lead{margin-top:0}
+.ce-assistant-actions{display:flex;flex-direction:column;gap:8px}
+.ce-assistant-actions .btn2{width:100%;justify-content:flex-start}
 .ce-empty{color:var(--t3);font-size:11px;line-height:1.9;text-align:center;padding:32px 8px}
 .ce-empty svg{width:24px;height:24px;margin:0 auto 10px;opacity:.55}
 .ce-sep{height:1px;background:var(--line1);margin:12px 0}

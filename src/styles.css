@@ -10496,53 +10496,6 @@ a {
 .video-editing-node__empty { height: 214px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border: 1px dashed #46505c; border-radius: 8px; background: #11151a; color: #7b8794; }
 .video-editing-node__empty small { font-size: 9px; }
 .video-editing-node__empty-hint { color: #5d6875; }
-.video-editing-node__queue { border-top: 1px solid #2a313a; padding-top: 6px; }
-.video-editing-node__queue-toggle { width: calc(100% - 16px); margin: 0 8px 6px; display: flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; border: 1px solid #3a434f; border-radius: 7px; background: #20242b; color: #c6cdd6; font-size: 9px; font-weight: 600; cursor: pointer; }
-.video-editing-node__queue-toggle:hover { background: #262b33; }
-.video-editing-node__queue-toggle svg { transition: transform .15s ease; }
-.video-editing-node__clips { margin: 0 8px 8px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; max-height: 188px; overflow-y: auto; }
-.video-editing-node__clip { display: flex; align-items: center; gap: 7px; min-height: 40px; padding: 5px 7px; border: 1px solid #3a434f; border-radius: 8px; background: #1d2128; color: #c6cdd6; transition: background .15s, border-color .15s, opacity .15s, box-shadow .15s; }
-.video-editing-node__clip:hover { border-color: #4a5562; background: #222730; }
-.video-editing-node__clip:active { cursor: grabbing; }
-.video-editing-node__clip.is-active { border-color: #7584ff; background: #232a3d; box-shadow: 0 0 0 1px rgba(117,132,255,.35); }
-.video-editing-node__clip[data-dragging="true"] { opacity: .45; border-style: dashed; }
-.video-editing-node__clip[data-drop-target="true"] { border-color: #4f81c7; box-shadow: inset 0 2px 0 0 #4f81c7; }
-.video-editing-node__clip[data-disabled="true"] { opacity: .5; }
-.video-editing-node__clip-grip { display: inline-flex; align-items: center; color: #6b7682; padding: 2px 1px; cursor: grab; }
-.video-editing-node__clip-grip:active { cursor: grabbing; }
-.video-editing-node__clip-index { flex: 0 0 auto; min-width: 17px; height: 17px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #2e343d; color: #aeb8c4; font-weight: 700; font-size: 8px; }
-.video-editing-node__clip-thumb { flex: 0 0 auto; width: 52px; height: 30px; border-radius: 5px; overflow: hidden; background: #0e1217; border: 1px solid #2a313a; display: inline-flex; align-items: center; justify-content: center; color: #4a5562; }
-.video-editing-node__clip-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; background: #0e1217; }
-.video-editing-node__clip-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; text-align: left; }
-.video-editing-node__clip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #e7ecf3; font-size: 9px; font-weight: 600; }
-.video-editing-node__clip-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #8f9aa7; font-size: 8px; }
-.video-editing-node__clip-error { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #ff9d9d; font-size: 8px; }
-.video-editing-node__clip-tools { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; }
-.video-editing-node__clip-tools button, .video-editing-node__clip-download { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 1px solid #3a434f; border-radius: 5px; background: #252a31; color: #aeb8c4; cursor: pointer; text-decoration: none; }
-.video-editing-node__clip-tools button:hover:not(:disabled), .video-editing-node__clip-download:hover { background: #2f3640; color: #eaf3ff; border-color: #4a5562; }
-.video-editing-node__clip-tools button:disabled { opacity: .3; cursor: default; }
-.video-editing-node__clip-download { color: #aeb8c4; }
-.video-editing-node__trim { margin: 0 8px 8px; padding: 7px 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px 6px; align-items: center; border: 1px solid #46505c; border-radius: 7px; background: #1b2027; font-size: 9px; color: #c6cdd6; }
-.video-editing-node__trim strong { grid-column: 1 / -1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #eaf3ff; font-size: 9px; }
-.video-editing-node__trim label { display: inline-flex; align-items: center; gap: 5px; color: #8f9aa7; }
-.video-editing-node__trim input { min-width: 0; flex: 1; height: 20px; padding: 0 5px; border: 1px solid #454d58; border-radius: 5px; color: #eaf3ff; background: #11151a; font-size: 9px; outline: 0; }
-.video-editing-node__trim input:focus { border-color: #4f81c7; }
-.video-editing-node__trim-actions { display: inline-flex; gap: 4px; }
-.video-editing-node__trim-actions button { height: 20px; padding: 0 8px; border: 1px solid #4f81c7; border-radius: 5px; color: #eaf3ff; background: #29496f; font-size: 9px; font-weight: 700; cursor: pointer; }
-.video-editing-node__trim-actions button:last-child { border-color: #454d58; background: #252a31; font-weight: 400; }
-.video-editing-node__trim > small { grid-column: 1 / -1; color: #ff9d9d; font-size: 8px; }
-.video-editing-node__trim > small:not([data-error]) { color: #8f9aa7; }
-.clip-trim-backdrop { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: 24px; background: rgba(7, 8, 12, .72); backdrop-filter: blur(7px); }
-.clip-trim-panel { width: min(360px, 92vw); padding: 16px; display: grid; gap: 12px; border: 1px solid rgba(255, 255, 255, .14); border-radius: 14px; background: #25252a; color: var(--text-body); box-shadow: 0 28px 90px rgba(0, 0, 0, .58); }
-.clip-trim-panel strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #fff; font-size: 15px; }
-.clip-trim-panel label { display: grid; gap: 6px; color: #a6adba; font-size: 12px; }
-.clip-trim-panel input { height: 34px; padding: 0 10px; border: 1px solid #4a4d55; border-radius: 8px; color: #fff; background: #1b1c20; outline: 0; }
-.clip-trim-panel input:focus { border-color: #7584ff; box-shadow: 0 0 0 2px rgba(117, 132, 255, .24); }
-.clip-trim-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.clip-trim-actions button { height: 32px; padding: 0 14px; border: 1px solid transparent; border-radius: 8px; color: #fff; background: #4f5dff; font-weight: 700; cursor: pointer; }
-.clip-trim-actions button:last-child { color: #c9ced9; border-color: #4a4d55; background: transparent; }
-.clip-trim-actions button:hover { filter: brightness(1.1); }
-.clip-trim-panel > small { color: #a6adba; font-size: 11px; }
 .flow-stage .workflow-card { color: #273345; background: #fff; border-color: #d9dfe8; box-shadow: 0 8px 22px rgba(35, 52, 78, .12); }
 .flow-stage .workflow-card--prompt { min-width: 286px; max-width: 340px; }
 .flow-stage .workflow-card--image { --node-accent: #d6a824; min-width: 312px; max-width: 368px; }
@@ -11186,7 +11139,7 @@ a {
 }
 .video-editing-node__modes button.active { background: #29496f; color: #eaf3ff; border-color: #4f81c7; }
 .video-editing-node__actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 8px 8px; }
-/* 「打开剪辑台」为完整编辑入口，铺满一行以区别卡片内的快速合成动作（UC-AIGC-V1C20-007） */
+/* 「打开剪辑台」为完整编辑入口，铺满一行；「快捷预览成片」只按草稿出一版成片 */
 .video-editing-node__open-suite {
   flex: 1 0 100%; height: 30px; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
   border: 1px solid #4f81c7; border-radius: 7px; color: #eaf3ff; background: #29496f;
@@ -11195,7 +11148,7 @@ a {
 .video-editing-node__open-suite:hover { background: #315985; border-color: #6cb2ec; }
 .video-editing-node__action { flex: 1; height: 30px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid #4f81c7; border-radius: 7px; color: #eaf3ff; background: #29496f; font-size: 9px; font-weight: 700; }
 .video-editing-node__action:hover:not(:disabled) { background: #315985; }
-/* 合成成片主动作（绿色强调，区别于播放控制） */
+/* 快捷预览成片：次于「打开剪辑台」，仍用绿色与刷新产物区分 */
 .video-editing-node__compose {
   flex: 1.2; height: 30px; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
   border: 1px solid #2f8f5b; border-radius: 7px; color: #d9f2e4; background: #1f5039;
@@ -11203,7 +11156,7 @@ a {
 }
 .video-editing-node__compose:hover:not(:disabled) { background: #256545; }
 .video-editing-node__compose:disabled { opacity: .45; cursor: default; background: #1f5039; }
-/* 刷新产物（需求 4.2.5.9）：次级动作，弱于「合成成片」 */
+/* 刷新产物（需求 4.2.5.9）：次级动作，弱于「快捷预览成片」 */
 .video-editing-node__refresh {
   flex: 0 0 auto; padding: 0 9px; height: 30px; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
   border: 1px solid #3d5673; border-radius: 7px; color: #b8cbe2; background: #1a2a3d;

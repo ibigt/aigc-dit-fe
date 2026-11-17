@@ -220,7 +220,7 @@ export function migrateClips(saved, options = {}) {
   return timeline;
 }
 
-// 双写：草稿提交时同时导出扁平 clips[]，让节点卡队列 / runGraph / 后端 compose 零改动可用。
+// 双写：草稿提交时同时导出扁平 clips[]，让 runGraph / 后端 compose 继续用扁平列表。卡片不再编辑队列。
 export function exportFlatClips(timeline) {
   const main = mainVideoTrack(timeline);
   if (!main) return [];
@@ -345,6 +345,8 @@ export function exportOverlays(timeline) {
 // V2 画中画导出：副视频轨（type=video 且非主轨 V1）上的片段 → editing.pipClips。
 // start/end 为成片内绝对时间（与 overlays 同一套 filmTimeMapper 折算）；
 // x/y/scale/opacity 来自 clip.pip（属性面板可调，默认右上角 30% 宽）。
+// muted：片段静音或所在轨道静音时为 true，成片不混这段原声（旧草稿 muted=true 仍只出画面）。
+// volume：片段音量，未静音且素材有音轨时由后端 amix。
 export function exportPipClips(timeline) {
   const mainId = mainVideoTrack(timeline)?.id;
   const videoClips = exportedVideoClips(timeline);
@@ -374,7 +376,8 @@ export function exportPipClips(timeline) {
       y: Number(pip.y) || 25,
       scale: Number(pip.scale) || 30,
       opacity: Number(pip.opacity) || 100,
-      muted: Boolean(clip.muted),
+      muted: Boolean(clip.muted) || Boolean(track.muted),
+      volume: Number.isFinite(Number(clip.volume)) ? Number(clip.volume) : 1,
       ...(clip.imported && clip.localKey ? { localKey: clip.localKey } : {}),
     });
   }

@@ -59,15 +59,21 @@ export default function PlayerStage({ store }) {
     return playableAudioClips(timeline);
   }, [timeline, soloClip]);
 
-  // V2 画中画：副视频轨（非主轨）片段，叠在主画面上方预览
+  // V2 画中画：副视频轨（非主轨）片段，叠在主画面上方预览。
+  // 轨道未静音且片段未静音时出声，音量 = 主音量 × 片段音量；图片静帧保持无声。
   const mainTrackId = mainVideoTrack(timeline)?.id;
   const pipClips = useMemo(() => (timeline.tracks || [])
     .filter((item) => item.type === "video" && item.id !== mainTrackId)
-    .flatMap((item) => item.clips.map((clip) => ({ clip, trackVisible: item.visible !== false })))
+    .flatMap((item) => item.clips.map((clip) => ({
+      clip,
+      trackVisible: item.visible !== false,
+      trackMuted: Boolean(item.muted),
+    })))
     .filter(({ clip, trackVisible }) => trackVisible && clip.enabled !== false && clip.storageKey)
     .sort((a, b) => a.clip.start - b.clip.start), [timeline, mainTrackId]);
   const pipVideoRef = useRef(null);
   const pipStateRef = useRef({ src: "" });
+  const pipGainRef = useRef(0);
   // 图片静帧段 <img> 节点表：播放头 tick 里直接改 display（不触发 React 渲染）
   const stillImageRefs = useRef(new Map());
   const aspect = ASPECTS.find((item) => item.id === timeline.aspect) || ASPECTS[0];
@@ -244,8 +250,17 @@ export default function PlayerStage({ store }) {
       if (!video) return;
       const active = soloClip ? null
         : pipClips.find(({ clip }) => t >= (Number(clip.start) || 0) && t < clipEnd(clip)) || null;
+      const applyPipAudio = (clip, trackMuted) => {
+        const silent = Boolean(trackMuted) || clip.muted === true || clip.type === "image";
+        const gain = Number.isFinite(Number(clip.volume)) ? Number(clip.volume) : 1;
+        pipGainRef.current = silent ? 0 : gain;
+        video.muted = silent;
+        video.volume = Math.min(1, Math.max(0, volumeRef.current * pipGainRef.current));
+      };
       if (!active) {
         if (!video.paused) video.pause();
+        video.muted = true;
+        pipGainRef.current = 0;
         video.style.display = "none";
         pipStateRef.current.src = "";
         return;
@@ -253,6 +268,7 @@ export default function PlayerStage({ store }) {
       const clip = active.clip;
       const pip = clip.pip || {};
       const url = mediaUrl(clip.storageKey);
+      applyPipAudio(clip, active.trackMuted);
       video.style.display = "block";
       video.style.width = `${Number.isFinite(Number(pip.scale)) ? Number(pip.scale) : 30}%`;
       video.style.left = `${Number.isFinite(Number(pip.x)) ? Number(pip.x) : 70}%`;
@@ -264,7 +280,7 @@ export default function PlayerStage({ store }) {
         video.src = url;
         video.onloadedmetadata = () => {
           try { video.currentTime = expected; } catch { /* seek before metadata */ }
-          video.muted = true; // PiP 声音暂不混预览，成片按 muted 字段处理
+          applyPipAudio(clip, active.trackMuted);
           if (playingRef.current) video.play().catch(() => { /* noop */ });
         };
         video.load();
@@ -309,8 +325,8 @@ export default function PlayerStage({ store }) {
       <div className="ce-monitor" style={{ aspectRatio: `${aspect.w}/${aspect.h}`, "--arn": aspect.w / aspect.h }}>
         <video ref={videoA} playsInline preload="auto" style={{ filter: liveFilter }} />
         <video ref={videoB} playsInline preload="auto" style={{ display: "none" }} />
-        {/* V2 画中画：副视频轨叠在主画面上，位置/大小/不透明度由播放头同步（成片同口径烧录） */}
-        <video ref={pipVideoRef} className="ce-pip-video" playsInline preload="auto" muted />
+        {/* V2 画中画：副视频轨叠在主画面上。未静音时混入原声，音量由播放头同步；图片静帧保持无声 */}
+        <video ref={pipVideoRef} className="ce-pip-video" playsInline preload="auto" />
         {/* 图片静帧段：按播放头显隐的 <img> 图层（导出时后端烧成等时长静帧） */}
         {imageClips.map((clip) => (
           <img key={clip.id} className="ce-still-image" src={mediaUrl(clip.storageKey)} alt=""
@@ -321,7 +337,7 @@ export default function PlayerStage({ store }) {
         {!clips.length && !audioClips.length && <div className="empty"><Icon name="film" /> 时间线为空，先添加素材</div>}
         <div className="ce-overlay" ref={overlayRef}></div>
         {EDITING_ASSISTANT_ENABLED && (
-          <button className="ce-aipill" title="打开剪辑助手（下个版本上线）"
+          <button className="ce-aipill" title="打开剪辑助手"
             onClick={() => store.setView({ rightTab: "assistant", rightCollapsed: false })}>
             <Icon name="sparkle" size={14} /> 剪辑助手
           </button>
@@ -353,6 +369,8 @@ export default function PlayerStage({ store }) {
               volumeRef.current = value;
               if (videoA.current) videoA.current.volume = value;
               if (audioEl.current) audioEl.current.volume = value;
+              const pip = pipVideoRef.current;
+              if (pip && !pip.muted) pip.volume = Math.min(1, Math.max(0, value * pipGainRef.current));
             }} />
         </span>
       </div>

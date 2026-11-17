@@ -2359,7 +2359,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     setSaved(false);
   }, [markEdited, setNodes]);
 
-  // 剪辑片段的启停 / 排序 / 裁剪区间：都是一次性操作，操作即一条历史
+  // 剪辑片段整表替换。卡片队列已退役，剪辑台草稿走 updateEditingDraft；这里仍可供一次性写回 clips 并记入画布历史。
   const updateClips = useCallback((nodeId, clips) => {
     rememberGraph();
     setNodes((items) => items.map((node) => node.id === nodeId ? { ...node, data: {
@@ -2371,7 +2371,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
   }, [rememberGraph, setNodes]);
 
   // 独立剪辑台草稿双写：每次草稿提交写回 timeline v2 + 扁平 clips[] + audioClips[]。
-  // clips 供节点卡队列 / runGraph / 后端 compose（主视频轨拼接）；audioClips 供后端把音频轨混入成片（amix）。
+  // clips 供 runGraph / 后端 compose（主视频轨拼接）；卡片不再改队列。audioClips 供后端把音频轨混入成片（amix）。
   // 不进画布撤销栈：剪辑台内部有自己的 50 步栈，画布只需在「导出成片」时记一条。
   const updateEditingDraft = useCallback((nodeId, { timeline, clips, audioClips, importedSources = [], clipStyles = null, overlays = null, pipClips = null }) => {
     setNodes((items) => items.map((node) => {
@@ -2441,7 +2441,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
   }, [nodes, edges]);
 
   // 剪辑台素材清单：上游「视频生成 + 音频生成」两类节点的可播放产物，带 mediaType 交给剪辑台分轨。
-  // 与 getClips 分开：getClips 是视频剪辑节点的成片片段队列（只收视频），这里只用于素材面板拖拽。
+  // 与 getClips 分开：getClips 把上游视频收成剪辑台素材（只收视频），这里只用于素材面板拖拽。
   const getEditingSourceClips = useCallback((nodeId) => {
     const candidates = nodes.filter((node) => node.data?.kind === "VideoGenerator" || node.data?.kind === "AudioGenerator");
     return buildClipQueue(candidates, edges, [], nodeId, nodes, { kinds: ["VideoGenerator", "AudioGenerator"] });
@@ -3129,7 +3129,7 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
     // 单节点运行优先用节点自己选的模型（后端 resolveModel 也会按节点模型名解析，
     // 这里的 modelId 只是兜底），否则退回工具条上选的运行模型。
     // 剪辑节点例外：EDIT 步骤不需要模型（上游生成节点各自带模型），modelId 缺省也要放行，
-    // 否则节点上的「合成成片」会被"请先选择运行模型"误拦。
+    // 否则节点上的「快捷预览成片」会被"请先选择运行模型"误拦。
     const editingOnly = onlyNode ? nodes.find((item) => item.id === onlyNode)?.data?.kind === "VideoEditing" : false;
     const nodeModelId = onlyNode && !editingOnly ? nodeModelIdOf(onlyNode) : undefined;
     const modelId = nodeModelId || Number(selectedModel);

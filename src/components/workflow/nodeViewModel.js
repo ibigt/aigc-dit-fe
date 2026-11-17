@@ -51,7 +51,7 @@ export function nodeViewModel(kind, media = {}, runtime = {}) {
     progress,
     tabs: kind === "AudioGenerator" ? ["配音朗读", "AI 音乐"] : [],
     actionLabel: isBusy ? `${isEditing ? "合成中" : "生成中"} ${progress}%`
-      : isEditing ? (status === "SUCCEEDED" ? "重新合成" : "合成成片") : "执行生成",
+      : isEditing ? "快捷预览成片" : "执行生成",
     actionDisabled: isBusy || status === "QUEUED",
     hasInputHandle: true,
     hasOutputHandle: !isEditing,

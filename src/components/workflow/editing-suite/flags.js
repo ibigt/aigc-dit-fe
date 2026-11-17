@@ -8,19 +8,14 @@
 // - 被关闭功能的专属 UI 分支一并隐藏，避免留下点不到的占位内容。
 
 /**
- * 剪辑助手（Editing Copilot）：对话式批量动作（自动配乐 / 一键字幕等），动作可撤销。
+ * 剪辑助手一期：剪辑台里的本地动作面板（播放器入口 + 右栏「助手」页）。
  *
- * 状态：方案已定（`高级工作台-剪辑助手方案.md`），**下个版本实现**。
- * 当前只保留播放器上的入口按钮与右栏「助手」Tab 占位，功能体尚未开发，
- * 因此本期先整体隐藏，避免用户点进一个只有「P2 上线」文案的空面板。
+ * 每个按钮是一条受限动作（op 枚举 + presetId 白名单 + clipIds 引用）。
+ * 前端校验后用 `model.js` 既有纯函数改写 timeline，不直接写时间线。
+ * 一批动作一次 `store.commit`，Ctrl+Z 整步撤回。
+ * 落稿后 `exportFlatClips` / `exportClipStyles` / `exportOverlays` 自动带上，导出链路不改。
  *
- * 落地时的注意事项（来自方案评审）：
- * - 模型只输出受限 Action DSL（op 枚举 + presetId 白名单 + clipIds 引用），
- *   前端校验后用 `model.js` 既有纯函数改写 timeline，不让模型直接写 timeline。
- * - 动作落到 timeline 后 `exportFlatClips` / `exportClipStyles` / `exportOverlays`
- *   自动带上，**导出链路零改动**。
- * - 整批动作一次 `store.commit`（一次对话 = 一次意图），Ctrl+Z 一次全撤。
- * - 两条外部硬边界：**无 ASR 模型**（一键字幕只能台词生成 / SRT 对齐）、
- *   **无 AI 音乐模型**（自动配乐本期不能真生成音乐）。
+ * 不在本期：对话模型、`POST /api/workflows/editing/assistant`、
+ * 自动配乐（无音乐模型）、一键字幕（无语音识别模型）。
  */
-export const EDITING_ASSISTANT_ENABLED = false;
+export const EDITING_ASSISTANT_ENABLED = true;

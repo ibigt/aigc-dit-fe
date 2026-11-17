@@ -8,7 +8,8 @@ test("selects in-card controls and runtime presentation", () => {
   assert.equal(nodeViewModel("VideoGenerator", {}, { status: "RUNNING", progress: 42 }).actionLabel,
     "生成中 42%");
   assert.equal(nodeViewModel("VideoEditing", {}, { status: "SUCCEEDED" }).actionLabel,
-    "重新合成");
+    "快捷预览成片");
+  assert.equal(nodeViewModel("VideoEditing", {}, {}).actionLabel, "快捷预览成片");
   assert.equal(nodeViewModel("VideoEditing", {}, {}).hasOutputHandle, false);
 });
 
