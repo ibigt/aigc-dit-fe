@@ -3785,9 +3785,9 @@ function WorkflowEditor({ record, initialGraph, onBack, models, selectedModel, o
         )}
         <div className="canvas-dock" aria-label="画布工具栏">
           <button className={`canvas-dock__add ${addMenu?.origin === "dock" ? "active" : ""}`} aria-label="添加节点" onClick={() => { setContextMenu(null); setComfyMenuOpen(false); setAddMenu((value) => value?.origin === "dock" ? null : { origin: "dock" }); }}><Plus size={22} /></button>
-          <button className={canvasTool === "select" ? "active" : ""} aria-label="选择工具" onClick={() => setCanvasTool("select")}><MousePointer2 size={17} /></button>
+          <button className={canvasTool === "select" ? "active" : ""} aria-label="选择工具" title="选择：点选、框选、拖动节点、连线" onClick={() => setCanvasTool("select")}><MousePointer2 size={17} /></button>
           <button className={canvasTool === "pan" ? "active" : ""} aria-label="抓手工具" title={canvasTool === "pan" ? "抓手模式：仅平移画布，节点不可拖动与连线" : "切换到抓手模式"} onClick={() => setCanvasTool((current) => current === "pan" ? "select" : "pan")}><ChevronUp size={15} /></button>
-          <button aria-label="导入工作流" onClick={() => fileRef.current?.click()}><FolderOpen size={18} /></button>
+          <button aria-label="导入工作流" title="导入：载入工作台 JSON 或 ComfyUI 工作流，替换当前画布，可撤销" onClick={() => fileRef.current?.click()}><FolderOpen size={18} /></button>
           <button aria-label="自动规整画布" title="按连线自动规整：选中节点时整理所选（含相连上下游），否则整理整图" onClick={autoArrangeCanvas}><WandSparkles size={17} /></button>
           <button className={stickers.length ? "active" : ""} aria-label="添加贴纸" title="贴纸：添加独立可拖动的贴纸图层" onClick={() => { setContextMenu(null); setStickerMenuOpen((value) => !value); }}><Sticker size={17} /></button>
           <button className={watermarkOn ? "active" : ""} aria-label="水印" title="水印：在画布上叠加或隐藏预览水印" onClick={() => setWatermarkOn((value) => !value)}><Droplets size={17} /></button>
